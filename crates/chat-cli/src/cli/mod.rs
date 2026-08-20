@@ -94,6 +94,24 @@ impl OutputFormat {
     }
 }
 
+/// Output format for a `chat` run's response stream. Distinct from [`OutputFormat`], which
+/// controls list-command output (`--list-models`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum RunOutputFormat {
+    /// Human-readable text.
+    #[default]
+    Text,
+    /// The run's ACP events as JSON Lines on stdout, one self-describing event per line.
+    #[value(name = "stream-json")]
+    StreamJson,
+}
+
+impl RunOutputFormat {
+    pub fn is_structured(&self) -> bool {
+        matches!(self, RunOutputFormat::StreamJson)
+    }
+}
+
 /// Authentication owner for a v3 engine ACP session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum AcpAuthMethod {
@@ -242,10 +260,20 @@ impl RootSubcommand {
             // Hidden `chat _ ...` internal subcommands run without auth so
             // tests can drive them in sandboxes that have no logged-in user.
             let is_internal_chat = matches!(self, Self::Chat(ref args) if args.command.is_some());
-            if matches!(self, Self::Chat(ref args) if args.no_interactive) && !is_internal_chat {
-                eprintln!(
+            // Use is_headless (not just no_interactive) so a logged-out stream-json run hits
+            // this machine-readable error, not the interactive login prompt below.
+            let is_headless_chat = matches!(self, Self::Chat(ref args) if args.is_headless());
+            if is_headless_chat && !is_internal_chat {
+                let message = format!(
                     "Not logged in. Set the {KIRO_API_KEY} environment variable or run `{CLI_BINARY_NAME} login` first."
                 );
+                // For a stream-json run, emit a terminal runError on stdout so the machine
+                // consumer gets a record (auth fails before the ACP session launches, so there
+                // is no sessionId yet); the human string still goes to stderr.
+                if matches!(self, Self::Chat(ref args) if args.output_format.is_structured()) {
+                    crate::launch::emit_stream_json_run_error(crate::launch::RunErrorStage::Auth, &message);
+                }
+                eprintln!("{message}");
                 return Ok(ExitCode::FAILURE);
             } else if matches!(self, Self::Chat(_)) && !is_internal_chat {
                 let options = ["Yes", "No"];
@@ -592,6 +620,11 @@ fn chat_telemetry_name() -> String {
 }
 
 async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
+    // stream-json implies non-interactive; force it before engine/interactivity resolution.
+    if args.output_format.is_structured() {
+        args.no_interactive = true;
+    }
+
     if let Some(err) =
         args.remote_sandbox_gate_error(crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox))
     {
@@ -646,6 +679,12 @@ async fn execute_chat(mut args: ChatArgs, os: &mut Os) -> Result<ExitCode> {
     let engine = match args.resolve_agent_engine(os) {
         Ok(engine) => engine,
         Err(err) => {
+            // For a stream-json run, engine resolution fails before the ACP session launches
+            // (most commonly the v1-rejection), so emit a terminal runError on stdout; without
+            // it the consumer reads a clean EOF and cannot tell refusal from empty output.
+            if args.output_format.is_structured() {
+                crate::launch::emit_stream_json_run_error(crate::launch::RunErrorStage::Engine, &err.to_string());
+            }
             crate::launch::emit_cli_invocation_telemetry(
                 &os.telemetry,
                 &os.database,
@@ -749,16 +788,29 @@ async fn launch_acp_session(
     // remote-sessions endpoint, so `--cloud` there would silently run a local
     // session. Reject it until that path supports cloud.
     if non_interactive && (args.cloud || args.repo.is_some()) {
-        bail!(
-            "--cloud/--repo are not supported in non-interactive mode yet; run without --no-interactive and with an interactive stdin"
-        );
+        let message = "--cloud/--repo are not supported in non-interactive mode yet; run without --no-interactive and with an interactive stdin";
+        // Terminal record on the stream-json path so the consumer sees a refusal, not a bare
+        // EOF; this is the only machine-readable record for this refusal.
+        if args.output_format.is_structured() {
+            crate::launch::emit_stream_json_run_error(crate::launch::RunErrorStage::Cloud, message);
+        }
+        bail!("{message}");
     }
     let options = if non_interactive {
-        let input = args.resolve_non_interactive_input()?;
+        let input = match args.resolve_non_interactive_input() {
+            Ok(input) => input,
+            Err(err) => {
+                if args.output_format.is_structured() {
+                    crate::launch::emit_stream_json_run_error(crate::launch::RunErrorStage::Input, &err.to_string());
+                }
+                return Err(err);
+            },
+        };
         crate::launch::LaunchOptions::non_interactive(
             agent_engine,
             mode,
             input,
+            args.output_format.is_structured(),
             args.trust_all_tools,
             args.agent.clone(),
             args.model.clone(),
@@ -1364,6 +1416,59 @@ mod test {
             Some(AcpAuthMethod::Cli)
         ));
         assert!(is_acp_auth_method_supported(chat::AgentEngine::V2, None));
+    }
+
+    #[test]
+    fn run_output_format_is_structured() {
+        assert!(!RunOutputFormat::Text.is_structured());
+        assert!(!RunOutputFormat::default().is_structured());
+        assert!(RunOutputFormat::StreamJson.is_structured());
+    }
+
+    /// `--output-format stream-json` must count as headless even without an explicit
+    /// `--no-interactive`, so a logged-out run takes the machine-error path in the auth
+    /// check rather than the interactive login prompt. Regression guard for that ordering.
+    #[test]
+    fn stream_json_is_headless_without_no_interactive() {
+        let plain = ChatArgs::default();
+        assert!(!plain.is_headless(), "default chat is interactive");
+
+        let explicit = ChatArgs {
+            no_interactive: true,
+            ..Default::default()
+        };
+        assert!(explicit.is_headless(), "--no-interactive is headless");
+
+        let stream_json = ChatArgs {
+            output_format: RunOutputFormat::StreamJson,
+            ..Default::default()
+        };
+        assert!(
+            stream_json.is_headless(),
+            "--output-format stream-json must be headless even without --no-interactive"
+        );
+    }
+
+    #[test]
+    fn chat_parses_output_format_stream_json() {
+        fn parse(extra: &[&str]) -> ChatArgs {
+            let mut argv = vec![CHAT_BINARY_NAME, "chat"];
+            argv.extend_from_slice(extra);
+            match <Cli as clap::Parser>::parse_from(argv).subcommand {
+                Some(RootSubcommand::Chat(args)) => args,
+                other => panic!("expected chat subcommand, got {other:?}"),
+            }
+        }
+
+        assert_eq!(parse(&[]).output_format, RunOutputFormat::Text);
+        assert_eq!(
+            parse(&["--output-format", "stream-json"]).output_format,
+            RunOutputFormat::StreamJson
+        );
+        // Independent of the list-oriented `--format`.
+        let both = parse(&["--output-format", "stream-json", "--format", "json"]);
+        assert_eq!(both.output_format, RunOutputFormat::StreamJson);
+        assert_eq!(both.format, OutputFormat::Json);
     }
 
     #[test]
@@ -2085,6 +2190,115 @@ mod test {
                 ..Default::default()
             };
             assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        // The test harness force-enables the V2NonInteractive rollout, so the non-interactive
+        // default resolves to V2 here. stream-json accepts that default unchanged (on a stable
+        // build the default is V1 and the same path would reject; see stream_json_rejects_*).
+        #[tokio::test]
+        async fn stream_json_accepts_default_engine_when_unspecified() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                no_interactive: true,
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn stream_json_rejects_explicit_v1() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                no_interactive: true,
+                agent_engine: Some(chat::AgentEngine::V1),
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        // stream-json engine selection: accept the effective v2/v3 engine, reject v1 from any source.
+
+        async fn make_os_with_engine_setting(value: &str) -> crate::os::Os {
+            use crate::database::settings::Setting;
+            let mut os = make_os().await;
+            os.database
+                .settings
+                .set(Setting::ChatAgentEngine, value, None)
+                .await
+                .unwrap();
+            os
+        }
+
+        #[tokio::test]
+        async fn stream_json_keeps_explicit_v3_setting() {
+            for value in ["v3", "kas"] {
+                let os = make_os_with_engine_setting(value).await;
+                let args = ChatArgs {
+                    no_interactive: true,
+                    output_format: crate::cli::RunOutputFormat::StreamJson,
+                    input: Some("hi".to_string()),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    args.resolve_agent_engine(&os).unwrap(),
+                    chat::AgentEngine::Kas,
+                    "chat.agentEngine={value} + stream-json should stay Kas, not V2"
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn stream_json_keeps_v2_setting() {
+            let os = make_os_with_engine_setting("v2").await;
+            let args = ChatArgs {
+                no_interactive: true,
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn stream_json_explicit_v2_flag_beats_v1_setting() {
+            let os = make_os_with_engine_setting("v1").await;
+            let args = ChatArgs {
+                no_interactive: true,
+                agent_engine: Some(chat::AgentEngine::V2),
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::V2);
+        }
+
+        #[tokio::test]
+        async fn stream_json_rejects_v1_setting() {
+            let os = make_os_with_engine_setting("v1").await;
+            let args = ChatArgs {
+                no_interactive: true,
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert!(args.resolve_agent_engine(&os).is_err());
+        }
+
+        #[tokio::test]
+        async fn stream_json_v3_flag_stays_kas() {
+            let os = make_os().await;
+            let args = ChatArgs {
+                v3: true,
+                no_interactive: true,
+                output_format: crate::cli::RunOutputFormat::StreamJson,
+                input: Some("hi".to_string()),
+                ..Default::default()
+            };
+            assert_eq!(args.resolve_agent_engine(&os).unwrap(), chat::AgentEngine::Kas);
         }
 
         #[tokio::test]

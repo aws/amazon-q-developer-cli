@@ -71,6 +71,20 @@ pub use v1::launch as launch_v1;
 
 mod auto_migrate;
 
+mod json_streaming;
+pub(crate) use json_streaming::RunErrorStage;
+use json_streaming::{
+    PAYLOAD_SCHEMA_ACP,
+    RunStatus,
+    StreamJsonEvent,
+};
+
+/// ACP protocol version the non-interactive client negotiates in `initialize`, and the value
+/// `runStarted` advertises so a consumer knows which ACP version the `sessionUpdate` payloads
+/// follow. Single source of truth: change this and both the handshake and the advertised
+/// version move together.
+const ACP_PROTOCOL_VERSION: agent_client_protocol::ProtocolVersion = agent_client_protocol::ProtocolVersion::V1;
+
 /// Launch the session according to the configured options.
 pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> Result<ExitCode> {
     let LaunchOptions {
@@ -118,12 +132,13 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
     }
 
     let mut cli_session_completion_emitted = false;
-    let result = if let Interactivity::NonInteractive { input } = interactivity {
+    let result = if let Interactivity::NonInteractive { input, json_output } = interactivity {
         launch_acp_non_interactive(
             os,
             agent_engine,
             mode,
             input,
+            json_output,
             trust_all_tools,
             agent,
             model,
@@ -1264,6 +1279,43 @@ impl AgentNotFoundParams {
     }
 }
 
+/// Byte cap on `runFinished.finalText` (a convenience copy of the assistant text; the full
+/// text is always recoverable from the `sessionUpdate` chunks). Past it, `finalText` is a
+/// truncated prefix and `finalTextTruncated: true`.
+const STREAM_JSON_FINAL_TEXT_CAP_BYTES: usize = 64 * 1024;
+
+/// Append `chunk` to the `finalText` accumulator, keeping it a contiguous UTF-8 prefix of at
+/// most `cap` bytes. Once appending would exceed `cap`, fill the remaining budget up to a char
+/// boundary, set `truncated`, and stop accepting more. So a first over-cap chunk still yields
+/// a real prefix (not an empty string), the prefix never has a hole, and it never splits a
+/// character. No-op once `truncated` is set.
+fn accumulate_final_text(buf: &mut String, truncated: &mut bool, chunk: &str, cap: usize) {
+    if *truncated {
+        return;
+    }
+    if buf.len() + chunk.len() <= cap {
+        buf.push_str(chunk);
+        return;
+    }
+    let mut take = cap - buf.len();
+    while take > 0 && !chunk.is_char_boundary(take) {
+        take -= 1;
+    }
+    buf.push_str(&chunk[..take]);
+    *truncated = true;
+}
+
+/// Emit a terminal stream-json `runError` for a pre-launch failure, keeping the
+/// stream-never-dangles guarantee for consumers that never reach `launch_acp_non_interactive`.
+/// Best-effort: a write failure here has no run to cancel, so it is dropped.
+pub(crate) fn emit_stream_json_run_error(stage: RunErrorStage, message: &str) {
+    use std::io::Write as _;
+    let line = StreamJsonEvent::pre_launch_error(stage, message.to_string()).to_line();
+    let mut stdout = std::io::stdout();
+    let _ = writeln!(stdout, "{line}");
+    let _ = stdout.flush();
+}
+
 /// Drive a non-interactive V2 or V3 session.
 #[allow(clippy::too_many_arguments)]
 async fn launch_acp_non_interactive(
@@ -1271,6 +1323,7 @@ async fn launch_acp_non_interactive(
     agent_engine: AgentEngine,
     mode: Option<AgentMode>,
     input: String,
+    json_output: bool,
     trust_all_tools: bool,
     agent: Option<String>,
     model: Option<String>,
@@ -1291,6 +1344,40 @@ async fn launch_acp_non_interactive(
         trust_all_tools: bool,
         trust_tools: Option<Vec<String>>,
         kas_turn_completion: Arc<Mutex<Option<KasTurnCompletion>>>,
+        /// Emit JSON Lines on stdout (`--output-format stream-json`) instead of text.
+        json_output: bool,
+        /// Assistant text accumulated for the `runFinished.finalText` summary; the bool is
+        /// whether it hit [`STREAM_JSON_FINAL_TEXT_CAP_BYTES`]. stream-json only.
+        final_text: Arc<Mutex<(String, bool)>>,
+        /// Set when a stream-json stdout write fails. ACP runs notification handlers as
+        /// detached tasks and only logs their `Err`, so a returned error can't stop the turn;
+        /// the run future selects on this to cancel the prompt instead.
+        stdout_broken: Arc<tokio::sync::Notify>,
+    }
+
+    impl NonInteractiveAcpClient {
+        /// Emit a stream-json event; on write failure, signal the main future to cancel the
+        /// run (returning `Err` from a notification handler is insufficient — see `stdout_broken`).
+        fn emit_or_signal(&self, event: StreamJsonEvent<'_>) -> std::io::Result<()> {
+            let res = emit_json_line(event);
+            if res.is_err() {
+                self.stdout_broken.notify_one();
+            }
+            res
+        }
+    }
+
+    /// Serialize `event` as a single JSON line on stdout.
+    ///
+    /// Propagates write/flush failures rather than discarding them: if the downstream
+    /// consumer's pipe has closed, the caller must be able to stop the run instead of
+    /// continuing to burn time and credits emitting into a dead stream.
+    fn emit_json_line(event: StreamJsonEvent<'_>) -> std::io::Result<()> {
+        use std::io::Write as _;
+        let s = event.to_line();
+        let mut stdout = std::io::stdout();
+        writeln!(stdout, "{s}")?;
+        stdout.flush()
     }
 
     fn non_interactive_error(reason: &str) -> acp::Error {
@@ -1306,6 +1393,49 @@ async fn launch_acp_non_interactive(
     impl acp::Client for NonInteractiveAcpClient {
         async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
             use std::io::Write as _;
+
+            // KAS turn-completion metadata is captured regardless of output mode; it drives
+            // telemetry and exit handling, not user-facing output.
+            if let acp::SessionUpdate::SessionInfoUpdate(ref update) = args.update
+                && let Some(completion) = parse_kas_turn_completion(update.meta.as_ref())
+            {
+                *self.kas_turn_completion.lock().expect("KAS turn mutex poisoned") = Some(completion);
+            }
+
+            // Machine-readable mode: emit the structured ACP update verbatim as one JSON line
+            // on stdout and skip all human rendering. The event vocabulary is the ACP
+            // `SessionUpdate` the agent already produces (assistant text, tool calls, plans, ...).
+            if self.json_output {
+                // Accumulate assistant text so `runFinished` can carry the final message.
+                if let acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk {
+                    content: acp::ContentBlock::Text(ref text),
+                    ..
+                }) = args.update
+                {
+                    // Bounded accumulation into a clean PREFIX of the assistant text; see
+                    // [`accumulate_final_text`].
+                    let mut guard = self.final_text.lock().expect("final_text mutex poisoned");
+                    let (buf, truncated) = &mut *guard;
+                    accumulate_final_text(buf, truncated, &text.text, STREAM_JSON_FINAL_TEXT_CAP_BYTES);
+                }
+
+                // Carry the session id alongside the ACP update so a consumer can correlate
+                // every record to its run (session_id is a sibling of `update` on
+                // SessionNotification and would otherwise be dropped). A serialize failure
+                // degrades to a typed null record instead of a silent drop, and a write failure
+                // cancels the run.
+                self.emit_or_signal(StreamJsonEvent::SessionUpdate {
+                    session_id: args.session_id.to_string(),
+                    update: &args.update,
+                })
+                .map_err(|e| {
+                    acp::Error::internal_error().data(Some(
+                        serde_json::json!({ "reason": format!("stream-json stdout write failed: {e}") }),
+                    ))
+                })?;
+                return Ok(());
+            }
+
             match args.update {
                 acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk {
                     content: acp::ContentBlock::Text(text),
@@ -1324,11 +1454,7 @@ async fn launch_acp_non_interactive(
                         eprintln!("[tool] status: {status:?}");
                     }
                 },
-                acp::SessionUpdate::SessionInfoUpdate(update) => {
-                    if let Some(completion) = parse_kas_turn_completion(update.meta.as_ref()) {
-                        *self.kas_turn_completion.lock().expect("KAS turn mutex poisoned") = Some(completion);
-                    }
-                },
+                acp::SessionUpdate::SessionInfoUpdate(_) => {},
                 _ => {},
             }
             Ok(())
@@ -1424,6 +1550,22 @@ async fn launch_acp_non_interactive(
             {
                 eprintln!("[warn] {}", params.describe());
             }
+
+            // The agent reports per-turn metering/usage and context data via the
+            // `_kiro.dev/metadata` ext-notification (leading `_` stripped before dispatch).
+            // Human mode ignores it; stream-json surfaces it as a `metadata` event so
+            // consumers get token/credit usage and turn timing.
+            if self.json_output
+                && args.method.as_ref() == "kiro.dev/metadata"
+                && let Ok(params) = serde_json::from_str::<serde_json::Value>(args.params.get())
+            {
+                // Same as the sessionUpdate path: signal on write failure, surface as ACP error.
+                self.emit_or_signal(StreamJsonEvent::Metadata(params)).map_err(|e| {
+                    acp::Error::internal_error().data(Some(
+                        serde_json::json!({ "reason": format!("stream-json stdout write failed: {e}") }),
+                    ))
+                })?;
+            }
             Ok(())
         }
     }
@@ -1434,7 +1576,21 @@ async fn launch_acp_non_interactive(
         .unwrap_or_else(|| "default".to_string());
     let telemetry_agent_mode = metric::AgentMode::from_id(Some(&telemetry_mode_name));
     let kas_turn_completion = Arc::new(Mutex::new(None));
-    let current_exe = std::env::current_exe()?;
+    let final_text = Arc::new(Mutex::new((String::new(), false)));
+    let stdout_broken = Arc::new(tokio::sync::Notify::new());
+
+    // Subprocess spawn / stdio-capture failures happen before `runStarted` is written, so on
+    // the stream-json path terminate the stream with a `launch`-stage `runError` rather than
+    // returning a bare EOF the consumer can't distinguish from empty output. Returns the error
+    // so it composes with `?`.
+    let launch_err = |err: eyre::Report| -> eyre::Report {
+        if json_output {
+            emit_stream_json_run_error(RunErrorStage::Launch, &err.to_string());
+        }
+        err
+    };
+
+    let current_exe = std::env::current_exe().map_err(|e| launch_err(e.into()))?;
     startup.set_failure_stage(StartupFailureStage::AgentLaunch);
     let mut cmd = tokio::process::Command::new(&current_exe);
     cmd.arg("acp");
@@ -1456,18 +1612,21 @@ async fn launch_acp_non_interactive(
         ?agent_engine,
         "spawning ACP server subprocess for non-interactive session"
     );
-    let mut child = cmd.spawn().context("failed to spawn ACP server subprocess")?;
+    let mut child = cmd
+        .spawn()
+        .context("failed to spawn ACP server subprocess")
+        .map_err(&launch_err)?;
     startup.set_failure_stage(StartupFailureStage::ProtocolInit);
 
     let outgoing = child
         .stdin
         .take()
-        .ok_or_else(|| eyre::eyre!("failed to capture ACP subprocess stdin"))?
+        .ok_or_else(|| launch_err(eyre::eyre!("failed to capture ACP subprocess stdin")))?
         .compat_write();
     let incoming = child
         .stdout
         .take()
-        .ok_or_else(|| eyre::eyre!("failed to capture ACP subprocess stdout"))?
+        .ok_or_else(|| launch_err(eyre::eyre!("failed to capture ACP subprocess stdout")))?
         .compat();
 
     let local_set = tokio::task::LocalSet::new();
@@ -1478,6 +1637,9 @@ async fn launch_acp_non_interactive(
                     trust_all_tools,
                     trust_tools,
                     kas_turn_completion: Arc::clone(&kas_turn_completion),
+                    json_output,
+                    final_text: Arc::clone(&final_text),
+                    stdout_broken: Arc::clone(&stdout_broken),
                 },
                 outgoing,
                 incoming,
@@ -1487,24 +1649,67 @@ async fn launch_acp_non_interactive(
             );
             tokio::task::spawn_local(handle_io);
 
-            conn.initialize(
-                acp::InitializeRequest::new(acp::ProtocolVersion::V1).client_info(Some(
-                    acp::Implementation::new(
-                        chat_cli_v2::constants::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
-                        env!("CARGO_PKG_VERSION"),
-                    )
-                    .title(Some("Kiro CLI (non-interactive)".to_string()))
-                    .meta(client_info_user_agent_meta()),
-                )),
-            )
-            .await
-            .context("ACP initialize failed")?;
+            // Emit `runStarted` before session creation: those calls schedule agent
+            // notifications that emit JSON immediately, so it must go first to stay first. It
+            // declares the forwarded payload (ACP at our negotiated protocol version) and the
+            // engine; sessionId isn't known yet, so records correlate via sessionUpdate/runFinished.
+            if json_output {
+                // Derive the wire number from the same ProtocolVersion const the handshake uses
+                // (its u16 is private, but it serializes as the number), so there is no separate
+                // literal to drift.
+                let acp_protocol_version = serde_json::to_value(ACP_PROTOCOL_VERSION)
+                    .ok()
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u16;
+                emit_json_line(StreamJsonEvent::RunStarted {
+                    payload_schema: PAYLOAD_SCHEMA_ACP,
+                    acp_protocol_version,
+                    engine: agent_engine.user_label(),
+                })
+                .context("failed to write runStarted event")?;
+            }
 
-            let cwd = std::env::current_dir().context("failed to resolve current working directory")?;
-            let session = conn
-                .new_session(acp::NewSessionRequest::new(cwd))
+            // Init/session-creation failures happen after `runStarted`; emit a terminal
+            // `runError` before returning so the stream never dangles. No session exists yet.
+            let emit_init_error = |context: &str, message: String| -> Result<()> {
+                if json_output {
+                    emit_json_line(StreamJsonEvent::in_session_error(None, RunErrorStage::Init, message))
+                        .with_context(|| format!("failed to write runError event ({context})"))?;
+                }
+                Ok(())
+            };
+
+            if let Err(e) = conn
+                .initialize(
+                    acp::InitializeRequest::new(ACP_PROTOCOL_VERSION).client_info(Some(
+                        acp::Implementation::new(
+                            chat_cli_v2::constants::KIRO_CLI_NON_INTERACTIVE_CLIENT_NAME,
+                            env!("CARGO_PKG_VERSION"),
+                        )
+                        .title(Some("Kiro CLI (non-interactive)".to_string()))
+                        .meta(client_info_user_agent_meta()),
+                    )),
+                )
                 .await
-                .context("ACP new_session failed")?;
+            {
+                emit_init_error("initialize", e.to_string())?;
+                return Err(eyre::eyre!(e)).context("ACP initialize failed");
+            }
+
+            let cwd = match std::env::current_dir() {
+                Ok(cwd) => cwd,
+                Err(e) => {
+                    emit_init_error("current_dir", e.to_string())?;
+                    return Err(e).context("failed to resolve current working directory");
+                },
+            };
+            let session = match conn.new_session(acp::NewSessionRequest::new(cwd)).await {
+                Ok(session) => session,
+                Err(e) => {
+                    emit_init_error("new_session", e.to_string())?;
+                    return Err(eyre::eyre!(e)).context("ACP new_session failed");
+                },
+            };
             let session_id = session.session_id.clone();
 
             if let Some(ref agent) = agent
@@ -1542,14 +1747,29 @@ async fn launch_acp_non_interactive(
             }
 
             startup.ready(os);
-            let response = conn
-                .prompt(acp::PromptRequest::new(session_id.clone(), vec![
-                    acp::ContentBlock::Text(acp::TextContent::new(input)),
-                ]))
-                .await;
 
-            // Ensure trailing newline after streamed agent text.
-            println!();
+            // Race the turn against a broken-stdout signal. ACP runs notification handlers as
+            // detached tasks whose errors are only logged, so a failed stream-json write can't
+            // stop the turn by returning Err — instead the handler signals `stdout_broken` and
+            // we cancel the in-flight prompt here, so we don't keep burning time/credits
+            // writing into a closed consumer pipe (e.g. `... | head -1`).
+            let response = tokio::select! {
+                r = conn.prompt(acp::PromptRequest::new(session_id.clone(), vec![
+                    acp::ContentBlock::Text(acp::TextContent::new(input)),
+                ])) => r,
+                _ = stdout_broken.notified(), if json_output => {
+                    // Consumer's pipe closed. Nothing more can be written to stdout; exit
+                    // nonzero without attempting a terminal record (that write would fail too).
+                    return Ok(ExitCode::FAILURE);
+                }
+            };
+
+            // Ensure trailing newline after streamed agent text. In stream-json mode each
+            // event is already newline-delimited, so this cosmetic newline is suppressed to
+            // keep stdout pure JSONL.
+            if !json_output {
+                println!();
+            }
 
             let response = match response {
                 Ok(r) => r,
@@ -1566,7 +1786,19 @@ async fn launch_acp_non_interactive(
                         )
                         .await;
                     }
-                    eprintln!("Error: {}", e.message);
+                    if json_output {
+                        // Correlation + classification: carry the session id and the stage at
+                        // which the failure occurred so a consumer can attribute the error and
+                        // distinguish a prompt/turn failure from init/transport failures.
+                        emit_json_line(StreamJsonEvent::in_session_error(
+                            Some(session_id.to_string()),
+                            RunErrorStage::Prompt,
+                            e.message.clone(),
+                        ))
+                        .context("failed to write runError event")?;
+                    } else {
+                        eprintln!("Error: {}", e.message);
+                    }
                     return Ok(ExitCode::FAILURE);
                 },
             };
@@ -1593,6 +1825,35 @@ async fn launch_acp_non_interactive(
                 // so new variants don't accidentally promote to success.
                 _ => ExitCode::FAILURE,
             };
+
+            // stream-json: terminal record with the run's final summary. Covers status, stop
+            // reason, and the final assistant text.
+            //
+            // Token/credit usage and turn duration are delivered during the turn via the
+            // `metadata` event (from the `_kiro.dev/metadata` ext-notification); they are not
+            // duplicated here to avoid two sources of truth that can drift. A consumer that
+            // wants usage totals reads the last `metadata` record before `runFinished`.
+            if json_output {
+                // Serialize stop_reason via serde (snake_case, e.g. "end_turn") to match the
+                // ACP-canonical form used by every other event in the stream. Debug formatting
+                // would emit PascalCase ("EndTurn"), an inconsistency for consumers.
+                let stop_reason = serde_json::to_value(response.stop_reason).unwrap_or(serde_json::Value::Null);
+                let status = if exit_code == ExitCode::SUCCESS {
+                    RunStatus::Success
+                } else {
+                    RunStatus::Error
+                };
+                let (final_text, final_text_truncated) = final_text.lock().expect("final_text mutex poisoned").clone();
+                emit_json_line(StreamJsonEvent::RunFinished {
+                    session_id: session_id.to_string(),
+                    status,
+                    stop_reason,
+                    final_text,
+                    final_text_truncated,
+                })
+                .context("failed to write runFinished event")?;
+            }
+
             Ok(exit_code)
         })
         .await;
@@ -1645,6 +1906,49 @@ async fn launch_acp_non_interactive(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The stream-json wire contract (envelope shapes, stage vocabulary, serialize-failure
+    // fallback) is defined and tested in the `json_streaming` module.
+
+    /// A chunk that fits is appended whole; multiple sub-cap chunks concatenate in order.
+    #[test]
+    fn accumulate_final_text_appends_until_cap() {
+        let (mut buf, mut truncated) = (String::new(), false);
+        accumulate_final_text(&mut buf, &mut truncated, "hello ", 64);
+        accumulate_final_text(&mut buf, &mut truncated, "world", 64);
+        assert_eq!(buf, "hello world");
+        assert!(!truncated);
+    }
+
+    /// A single first chunk larger than the cap yields a real prefix (not empty) and sets
+    /// truncated. The bug this guards against was `finalText: ""` with `truncated: true`.
+    #[test]
+    fn accumulate_final_text_first_oversize_chunk_yields_prefix() {
+        let (mut buf, mut truncated) = (String::new(), false);
+        accumulate_final_text(&mut buf, &mut truncated, "abcdefghij", 4);
+        assert_eq!(buf, "abcd");
+        assert!(truncated);
+    }
+
+    /// Truncation backs off to a char boundary rather than splitting a multibyte character:
+    /// "éé" is 4 bytes, so a 3-byte cap keeps only the first "é" (2 bytes).
+    #[test]
+    fn accumulate_final_text_respects_char_boundaries() {
+        let (mut buf, mut truncated) = (String::new(), false);
+        accumulate_final_text(&mut buf, &mut truncated, "éé", 3);
+        assert_eq!(buf, "é");
+        assert!(truncated);
+    }
+
+    /// Once truncated, later chunks are ignored so the prefix stays contiguous (no hole).
+    #[test]
+    fn accumulate_final_text_stops_after_truncation() {
+        let (mut buf, mut truncated) = (String::new(), false);
+        accumulate_final_text(&mut buf, &mut truncated, "abcdef", 4);
+        accumulate_final_text(&mut buf, &mut truncated, "ghi", 4);
+        assert_eq!(buf, "abcd");
+        assert!(truncated);
+    }
 
     #[test]
     fn remote_endpoint_default_follows_auth_stage() {

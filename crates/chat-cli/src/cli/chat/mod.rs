@@ -341,6 +341,10 @@ pub struct ChatArgs {
     /// and `--list-sessions`).
     #[arg(long, short, value_enum, default_value_t)]
     pub format: crate::cli::OutputFormat,
+    /// Response stream format: `text` (default), or `stream-json` for JSON Lines on
+    /// stdout. `stream-json` implies `--no-interactive`.
+    #[arg(long, value_enum, default_value_t)]
+    pub output_format: crate::cli::RunOutputFormat,
     /// Delete a saved chat session by ID.
     #[arg(short = 'd', long, value_name = "SESSION_ID")]
     pub delete_session: Option<String>,
@@ -419,6 +423,12 @@ where
 }
 
 impl ChatArgs {
+    /// Headless (no TUI, no login prompt): `--no-interactive`, or stream-json which implies it.
+    /// Single source of truth so the auth check and engine resolution agree.
+    pub fn is_headless(&self) -> bool {
+        self.no_interactive || self.output_format.is_structured()
+    }
+
     pub(crate) fn validate_sessions_mode(&self) -> Result<()> {
         if !self.sessions {
             return Ok(());
@@ -549,6 +559,8 @@ impl ChatArgs {
         // is then rejected below). Rollout-gated like every remote surface.
         let cloud_implies_kas = (self.cloud || self.repo.is_some())
             && crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox);
+        // Resolve engine by CLI > setting > default.
+        let structured_output = self.output_format.is_structured();
         let engine = if self.v3 {
             AgentEngine::Kas
         } else if let Some(engine) = self.agent_engine {
@@ -578,6 +590,8 @@ impl ChatArgs {
                 engine.user_label()
             );
         }
+
+        let engine = apply_structured_output_engine(engine, structured_output)?;
 
         // Validate: --legacy-ui conflicts with non-V1 engines
         if self.legacy_ui && engine != AgentEngine::V1 {
@@ -6756,6 +6770,18 @@ fn default_tui_engine(kas_default: bool) -> AgentEngine {
     if kas_default { AgentEngine::Kas } else { AgentEngine::V2 }
 }
 
+/// stream-json needs a V2/V3 ACP engine (V1 can't emit structured events). If the resolved
+/// engine is V1 from any source, reject it rather than switching engines; V2/V3 pass through.
+fn apply_structured_output_engine(engine: AgentEngine, structured_output: bool) -> Result<AgentEngine> {
+    if structured_output && engine == AgentEngine::V1 {
+        bail!(
+            "--output-format stream-json is not supported on the v1 engine. \
+             Pass --agent-engine v2 (or v3)."
+        );
+    }
+    Ok(engine)
+}
+
 /// Whether the Lite UI is reachable for this user, gating `/lite` and its
 /// startup nudge. Honors the launcher's `KIRO_LITE_ROLLOUT_ENABLED` when set,
 /// falling back to the `Feature::Lite` rollout that env var is derived from.
@@ -6782,6 +6808,29 @@ mod tests {
     #[test]
     fn default_tui_engine_is_v2_when_rollout_inactive() {
         assert_eq!(default_tui_engine(false), AgentEngine::V2);
+    }
+
+    #[test]
+    fn structured_output_rejects_v1() {
+        assert!(apply_structured_output_engine(AgentEngine::V1, true).is_err());
+    }
+
+    #[test]
+    fn structured_output_leaves_v2_and_v3_untouched() {
+        for engine in [AgentEngine::V2, AgentEngine::Kas] {
+            assert_eq!(
+                apply_structured_output_engine(engine, true).unwrap(),
+                engine,
+                "stream-json must not change {engine:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_structured_run_never_changes_engine() {
+        for engine in [AgentEngine::V1, AgentEngine::V2, AgentEngine::Kas] {
+            assert_eq!(apply_structured_output_engine(engine, false).unwrap(), engine);
+        }
     }
 
     /// The idle-deadline setting is clamped to the documented ceiling: a

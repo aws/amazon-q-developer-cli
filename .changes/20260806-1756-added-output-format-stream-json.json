@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "`--output-format stream-json` on `chat` emits run events as JSON Lines on stdout for non-interactive and programmatic use. Requires the v2 or v3 engine; pass `--agent-engine v2` on builds where the non-interactive default is v1."
+}

@@ -69,8 +69,9 @@ pub enum Interactivity {
     Interactive,
     /// Run a one-shot non-interactive session. `input` is the user prompt that
     /// drives the single turn; it should have already been resolved from CLI
-    /// args or stdin by the caller.
-    NonInteractive { input: String },
+    /// args or stdin by the caller. `json_output` selects machine-readable JSONL
+    /// (stream-json) output instead of human-readable text.
+    NonInteractive { input: String, json_output: bool },
 }
 
 /// Options controlling how a chat session is launched.
@@ -107,10 +108,13 @@ impl LaunchOptions {
     }
 
     /// Build [`LaunchOptions`] for a non-interactive one-shot session driven by `input`.
+    /// `json_output` selects machine-readable JSONL (stream-json) output.
+    #[allow(clippy::too_many_arguments)]
     pub fn non_interactive(
         agent_engine: AgentEngine,
         mode: Option<AgentMode>,
         input: String,
+        json_output: bool,
         trust_all_tools: bool,
         agent: Option<String>,
         model: Option<String>,
@@ -119,7 +123,7 @@ impl LaunchOptions {
         Self {
             agent_engine,
             mode,
-            interactivity: Interactivity::NonInteractive { input },
+            interactivity: Interactivity::NonInteractive { input, json_output },
             trust_all_tools,
             agent,
             model,
