@@ -8,7 +8,7 @@
  * those outcomes and ensure a held command runs when the turn ends.
  */
 
-import { describe, it, expect, mock, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, mock, beforeAll } from 'bun:test';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createAppStore, MessageRole } from './app-store';
@@ -16,35 +16,16 @@ import { Kiro } from '../kiro';
 import { CommandHistory } from '../utils/command-history';
 import { getKasCommands } from '../kas-commands';
 
-mock.module('../kiro', () => ({
-  Kiro: mock(() => ({
-    sendMessageStream: mock(),
-    sendMessage: mock(),
-    steerMessage: mock(),
-    clearSteering: mock(),
-    cancel: mock(),
-    close: mock(),
-    sendChatSlashCommandTelemetry: mock(),
-    // Dispatch records a command-usage metric; the drain tests run real
-    // commands through the dispatcher, so this must be stubbed or it throws.
-    recordSlashCommandInvocation: mock(),
-  })),
-}));
-
 beforeAll(() => {
   CommandHistory.getInstance().switchToFile(
     join(tmpdir(), `mid-turn-slash-commands-${process.pid}.history`)
   );
 });
 
-afterAll(() => {
-  mock.restore();
-});
-
 /** A TUI-mode store mid-turn, with the commands these tests dispatch. */
 function createBusyStore() {
-  const mockKiro = new Kiro();
-  const store = createAppStore({ kiro: mockKiro });
+  const kiro = new Kiro();
+  const store = createAppStore({ kiro });
   store.setState({
     isInitialized: true,
     sessionId: 'test-session',
@@ -279,7 +260,9 @@ describe('mid-turn slash commands (TUI)', () => {
 
     it('keeps the swap prefix when an agent selection queues mid-turn', async () => {
       const store = createBusyStore();
-      const executeCommand = mock(() => Promise.resolve({ success: true }));
+      const executeCommand = mock(() =>
+        Promise.resolve({ success: true, message: '' })
+      );
       (store.getState().kiro as any).executeCommand = executeCommand;
       store.setState({
         activeCommand: {
@@ -385,16 +368,18 @@ describe('mid-turn slash commands (TUI)', () => {
       });
       const executeCommand = mock(async () => {
         await contextPending;
-        return { success: true };
+        return { success: true, message: '' };
       });
       const dispatch = mock(() => Promise.resolve());
+      const backendContextCommand = {
+        name: '/context',
+        description: 'Context',
+        source: 'backend' as const,
+      };
       (store.getState().kiro as any).executeCommand = executeCommand;
       store.setState({
         activeCommand: {
-          command: {
-            name: '/context',
-            description: 'Context',
-          },
+          command: backendContextCommand,
           options: [],
         },
         dispatchSlashCommand: dispatch as never,
@@ -433,7 +418,9 @@ describe('mid-turn slash commands (TUI)', () => {
     it('does not hit the backend when a turn-affecting command queues', async () => {
       // The RPC happens on drain, not on submit.
       const store = createBusyStore();
-      const mockExecute = mock(() => Promise.resolve({ success: true }));
+      const mockExecute = mock(() =>
+        Promise.resolve({ success: true, message: '' })
+      );
       (store.getState().kiro as any).executeCommand = mockExecute;
 
       await store.getState().handleUserInput('/model');

@@ -1,33 +1,19 @@
-import { describe, it, expect, mock, afterAll } from 'bun:test';
+import { describe, it, expect, mock } from 'bun:test';
 import { createAppStore } from './app-store';
 import { Kiro } from '../kiro';
 
-// mock.module is process-global and survives this file — snapshot the real
-// modules and re-register them afterAll so mocks cannot leak into other files.
-import { restoreRealModulesAfterAll } from '../test-utils/restore-modules.js';
-
-restoreRealModulesAfterAll(import.meta.dir, ['../kiro']);
-
-mock.module('../kiro', () => ({
-  Kiro: mock(() => ({
-    sendMessageStream: mock(),
-    sendMessage: mock(),
-    steerMessage: mock(),
-    clearSteering: mock(),
-    cancel: mock(),
-    close: mock(),
-  })),
-}));
-
-afterAll(() => {
-  mock.restore();
-});
-
 function createTestStore() {
-  const mockKiro = new Kiro();
-  const store = createAppStore({ kiro: mockKiro });
+  const kiro = new Kiro();
+  const store = createAppStore({ kiro });
   store.setState({ isInitialized: true, sessionId: 'test-session' });
   return store;
+}
+
+function setStreamMessageImplementation(
+  store: ReturnType<typeof createTestStore>,
+  implementation: Kiro['streamMessage']
+): void {
+  store.getState().kiro.streamMessage = implementation;
 }
 
 describe('processQueue', () => {
@@ -37,9 +23,9 @@ describe('processQueue', () => {
     // (simulates real behavior where a turn takes time)
     const mockStreamMessage = mock(() => {
       store.setState({ isProcessing: true });
-      return new Promise(() => {}); // Never resolves — simulates an in-flight turn
+      return new Promise<void>(() => {}); // Never resolves — simulates an in-flight turn
     });
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -69,7 +55,7 @@ describe('processQueue', () => {
     const mockStreamMessage = mock(async (content: string) => {
       sentMessages.push(content);
     });
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -101,9 +87,9 @@ describe('processQueue', () => {
     const mockStreamMessage = mock((content: string) => {
       sentMessages.push(content);
       store.setState({ isProcessing: true });
-      return new Promise(() => {});
+      return new Promise<void>(() => {});
     });
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'steer',
@@ -131,7 +117,7 @@ describe('processQueue', () => {
   it('drains queue when no pending steer exists regardless of mode', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'steer', // Mode doesn't matter for draining
@@ -150,7 +136,7 @@ describe('processQueue', () => {
   it('no-op when isProcessing is true (double-send prevention)', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -168,7 +154,7 @@ describe('processQueue', () => {
   it('no-op when queuedMessages is empty', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -187,9 +173,9 @@ describe('processQueue', () => {
     // Mock streamMessage to keep isProcessing=true so queue doesn't fully drain
     const mockStreamMessage = mock(() => {
       store.setState({ isProcessing: true });
-      return new Promise(() => {}); // Never resolves
+      return new Promise<void>(() => {}); // Never resolves
     });
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -208,7 +194,7 @@ describe('processQueue', () => {
   it('sets editingQueueIndex to null when it was 0 (item being edited was dequeued)', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -227,7 +213,7 @@ describe('processQueue', () => {
   it('leaves editingQueueIndex as null when it was already null', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -246,9 +232,9 @@ describe('processQueue', () => {
     // Mock streamMessage to keep isProcessing=true so queue doesn't fully drain
     const mockStreamMessage = mock(() => {
       store.setState({ isProcessing: true });
-      return new Promise(() => {}); // Never resolves
+      return new Promise<void>(() => {}); // Never resolves
     });
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -270,7 +256,7 @@ describe('processQueue', () => {
   it('pauses while the /config panel is open and resumes when it closes', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     store.setState({
       activeInterruptMode: 'queue',
@@ -293,7 +279,7 @@ describe('processQueue', () => {
   it('waits for cancelInProgress before processing', async () => {
     const store = createTestStore();
     const mockStreamMessage = mock(() => Promise.resolve());
-    (store.getState().kiro as any).streamMessage = mockStreamMessage;
+    setStreamMessageImplementation(store, mockStreamMessage);
 
     let resolveCancelPromise: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
