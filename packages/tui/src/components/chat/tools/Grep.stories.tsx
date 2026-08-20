@@ -20,6 +20,7 @@ const meta = {
       'kas-text': { label: 'KAS plain-text result envelope' },
       static: { label: 'Past search displays summary only' },
       'output-tree': { label: 'Rollout output-tree presentation' },
+      'windows-path': { label: 'Windows result path displays its basename' },
       expanded: {
         label: 'Expanded result list',
         gapType: 'integration-only',
@@ -36,6 +37,7 @@ const meta = {
       'Grepping',
       'NoMatches',
       'SingleFileMatch',
+      'WindowsPath',
       'MultipleFileMatches',
       'WithMatchContent',
       'Truncated',
@@ -156,6 +158,43 @@ export const SingleFileMatch = {
       ],
     },
     ['single-file', 'match-lines'],
+    viewport
+  ),
+};
+
+export const WindowsPath = {
+  args: {
+    content: JSON.stringify({ pattern: 'release' }),
+    status: 'success',
+    isFinished: true,
+    result: {
+      status: 'success',
+      output: {
+        numMatches: 1,
+        numFiles: 1,
+        truncated: false,
+        results: [
+          {
+            file: 'C:\\workspace\\src\\App.tsx',
+            count: 1,
+            matches: ['12:const release = true;'],
+          },
+        ],
+      },
+    },
+  },
+  parameters: certifyVisualStory(
+    'App.tsx',
+    {
+      visible: [
+        'Grep "release"',
+        '1 match in 1 file',
+        'App.tsx (1)',
+        '12:const release = true;',
+      ],
+      hidden: ['C:\\workspace\\src\\App.tsx'],
+    },
+    ['single-file', 'match-lines', 'windows-path'],
     viewport
   ),
 };

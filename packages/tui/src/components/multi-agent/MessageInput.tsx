@@ -40,12 +40,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       <Box marginTop={1}>
         <Text>
           {message}
-          <Text color={getColor('primary')}>{glyphs.bar}</Text>
+          <Text>{getColor('primary')(glyphs.bar)}</Text>
         </Text>
       </Box>
       <Box marginTop={1}>
-        <Text color={getColor('secondary')}>
-          Press Enter to send, Esc to cancel
+        <Text>
+          {getColor('secondary')('Press Enter to send, Esc to cancel')}
         </Text>
       </Box>
     </Box>

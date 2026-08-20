@@ -42,8 +42,6 @@ const meta = {
       },
       'windows-file-target': {
         label: 'Windows file target displays only its basename',
-        gapType: 'product-limitation',
-        description: 'The target formatter splits only POSIX path separators.',
       },
       'output-filtered': {
         label: 'Summary hidden by display policy',
@@ -60,6 +58,7 @@ const meta = {
       'FoundReferences',
       'PatternSearch',
       'FileOperation',
+      'WindowsFileOperation',
       'TextSummary',
       'VerboseOverview',
       'MissingDefinition',
@@ -236,6 +235,37 @@ export const FileOperation = {
       ],
     },
     ['completed', 'file-target', 'symbols', 'text-summary'],
+    viewport
+  ),
+};
+
+export const WindowsFileOperation = {
+  args: {
+    noStatusBar: true,
+    isFinished: true,
+    content: JSON.stringify({
+      operation: 'get_document_symbols',
+      file_path: 'C:\\workspace\\src\\App.tsx',
+    }),
+    result: {
+      status: 'success',
+      output: { items: [{ Text: 'No symbols found' }] },
+    },
+  },
+  parameters: certifyVisualStory(
+    'No symbols found',
+    {
+      visible: ['Code App.tsx', 'Got symbols', 'No symbols found'],
+      hidden: ['Code C:\\workspace', 'file_path='],
+      ordered: ['Code App.tsx', 'Got symbols', 'No symbols found'],
+    },
+    [
+      'completed',
+      'file-target',
+      'windows-file-target',
+      'text-summary',
+      'no-result',
+    ],
     viewport
   ),
 };

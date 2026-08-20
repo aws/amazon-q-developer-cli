@@ -20,6 +20,9 @@ const meta = {
       'long-diff-collapsed': {
         label: 'Long diff preview with hidden-line count',
       },
+      'windows-path': {
+        label: 'Windows write summary displays the target basename',
+      },
       'diff-expanded': {
         label: 'Long diff expanded through the output shortcut',
         gapType: 'integration-only',
@@ -30,6 +33,7 @@ const meta = {
     storyOrder: [
       'Writing',
       'Wrote',
+      'WindowsPath',
       'Created',
       'Replaced',
       'Inserted',
@@ -141,6 +145,42 @@ export const Wrote = {
       ordered: ['removed 1 line', 'Hello " + name', 'Hello, " + name'],
     },
     ['replaced']
+  ),
+};
+
+export const WindowsPath = {
+  render: () => (
+    <Card active={true}>
+      <StatusBar status="success">
+        <Write
+          content={JSON.stringify({
+            command: 'strReplace',
+            path: 'C:\\workspace\\src\\App.tsx',
+            oldStr: 'const release = false;',
+            newStr: 'const release = true;',
+          })}
+          isFinished={true}
+        />
+      </StatusBar>
+    </Card>
+  ),
+  parameters: certification(
+    'in App.tsx',
+    {
+      visible: [
+        'Write C:\\workspace\\src\\App.tsx',
+        'added 1 line, removed 1 line in App.tsx',
+        'const release = false;',
+        'const release = true;',
+      ],
+      ordered: [
+        'Write C:\\workspace\\src\\App.tsx',
+        'in App.tsx',
+        'const release = false;',
+        'const release = true;',
+      ],
+    },
+    ['replaced', 'windows-path']
   ),
 };
 

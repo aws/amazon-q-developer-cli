@@ -22,15 +22,12 @@ const meta = {
       'timeout-error': { label: 'Command timeout error' },
       'timeout-detail': {
         label: 'Command timeout retains backend duration detail',
-        gapType: 'product-limitation',
-        description:
-          'The renderer replaces the backend timeout detail with a generic message.',
       },
       'nonzero-exit': {
         label: 'Non-zero exit status indicator',
-        gapType: 'visual-baseline-required',
+        gapType: 'product-limitation',
         description:
-          'The non-zero distinction is color-only, which text assertions cannot prove.',
+          'The self-owned StatusBar does not receive the derived non-zero error status.',
       },
       'static-summary': {
         label: 'Past command retains completed output',
@@ -200,7 +197,7 @@ export const Timeout = {
       visible: ['Bash sleep 60', 'Process timed out after 30 seconds'],
       hidden: ['undefined'],
     },
-    ['timeout-error'],
+    ['timeout-error', 'timeout-detail'],
     viewport
   ),
 };

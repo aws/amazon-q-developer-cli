@@ -3,6 +3,7 @@ import type React from 'react';
 export type StorybookKey =
   | 'enter'
   | 'escape'
+  | 'backspace'
   | 'tab'
   | 'up'
   | 'down'
@@ -12,6 +13,8 @@ export type StorybookKey =
   | 'shift+down'
   | 'shift+left'
   | 'shift+right'
+  | 'shift+tab'
+  | 'ctrl+p'
   | 'ctrl+x'
   | 'ctrl+g';
 
@@ -32,11 +35,31 @@ export interface StorybookViewport {
   rows: number;
 }
 
+export type StorybookExperience = 'tui' | 'lite';
+
+export type StorybookTerminalColor =
+  | 'default'
+  | `#${string}`
+  | `palette:${number}`;
+
+export interface StorybookTextStyleAssertion {
+  text: string;
+  occurrence?: number;
+  foreground?: StorybookTerminalColor;
+  background?: StorybookTerminalColor;
+  bold?: boolean;
+  dim?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  inverse?: boolean;
+}
+
 export interface StorybookAssertions {
   visible?: readonly string[];
   hidden?: readonly string[];
   ordered?: readonly string[];
   occurrences?: Readonly<Record<string, number>>;
+  styled?: readonly StorybookTextStyleAssertion[];
 }
 
 export interface StorybookCaptureDefinition {
@@ -67,6 +90,7 @@ export interface StorybookCertification {
 
 export interface StorybookParameters {
   layout?: 'fullscreen';
+  experience?: StorybookExperience;
   capturesKeyboard?: boolean;
   optionalProps?: readonly string[];
   storyOrder?: readonly string[];

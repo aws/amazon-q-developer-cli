@@ -21,6 +21,7 @@ export function certifyVisualStory(
         hidden: ['undefined', ...(assertions.hidden ?? [])],
         ordered: assertions.ordered,
         occurrences: assertions.occurrences,
+        styled: assertions.styled,
       },
       ...(viewport ? { viewport } : {}),
       ...(environment ? { environment } : {}),

@@ -353,6 +353,13 @@ function collectComponentReferences(
       if (!ts.isJsxNamespacedName(candidate.tagName)) {
         inspectExpression(candidate.tagName);
       }
+    } else if (
+      ts.isJsxAttribute(candidate) &&
+      candidate.initializer &&
+      ts.isJsxExpression(candidate.initializer) &&
+      candidate.initializer.expression
+    ) {
+      inspectExpression(candidate.initializer.expression);
     } else if (isCreateElementCall(candidate)) {
       inspectExpression(candidate.arguments[0]!);
     } else if (
@@ -413,7 +420,8 @@ function assertionCount(assertions: StorybookAssertions | undefined): number {
     (assertions?.visible?.length ?? 0) +
     (assertions?.hidden?.filter((value) => value !== 'undefined').length ?? 0) +
     (assertions?.ordered?.length ?? 0) +
-    Object.keys(assertions?.occurrences ?? {}).length
+    Object.keys(assertions?.occurrences ?? {}).length +
+    (assertions?.styled?.length ?? 0)
   );
 }
 

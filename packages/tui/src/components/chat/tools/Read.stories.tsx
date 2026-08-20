@@ -19,6 +19,9 @@ const meta = {
       'wrapped-source': { label: 'Long source line wraps at narrow width' },
       'multiple-files': { label: 'Multiple file targets' },
       'collapsed-files': { label: 'Collapsed long file target list' },
+      'windows-path': {
+        label: 'Windows multi-file targets display their basenames',
+      },
       directory: {
         label: 'Directory output uses parsed entry names',
         gapType: 'product-limitation',
@@ -74,6 +77,7 @@ const meta = {
       'LongSourceBody',
       'WrappedSourceBody',
       'MultipleFiles',
+      'WindowsPaths',
       'ManyFiles',
       'Directory',
       'MixedDirectoryAndSource',
@@ -259,6 +263,25 @@ export const MultipleFiles = {
       ordered: ['Read (3 files)', 'index.ts, app.ts, config.ts'],
     },
     ['multiple-files'],
+    viewport
+  ),
+};
+
+export const WindowsPaths = {
+  args: {
+    content: JSON.stringify({
+      paths: ['C:\\workspace\\src\\App.tsx', 'C:\\workspace\\src\\Store.ts'],
+    }),
+    isFinished: true,
+  },
+  parameters: certifyVisualStory(
+    '2 files',
+    {
+      visible: ['Read (2 files)', 'App.tsx, Store.ts'],
+      hidden: ['C:\\workspace\\src\\App.tsx', 'C:\\workspace\\src\\Store.ts'],
+      ordered: ['Read (2 files)', 'App.tsx, Store.ts'],
+    },
+    ['multiple-files', 'windows-path'],
     viewport
   ),
 };

@@ -6,8 +6,12 @@ const viewport = { columns: 110, rows: 18 };
 function actionStory(
   command: string,
   payload: Record<string, unknown>,
-  expectedTarget: string
+  expectedLabel: string,
+  expectedTarget?: string
 ) {
+  const visible = expectedTarget
+    ? [expectedLabel, expectedTarget]
+    : [expectedLabel];
   return {
     args: {
       name: 'session_management',
@@ -16,12 +20,13 @@ function actionStory(
       result: { status: 'success' as const, output: '' },
     },
     parameters: certifyVisualStory(
-      expectedTarget,
+      expectedTarget ?? expectedLabel,
       {
-        visible: [expectedTarget],
+        visible,
         hidden: ['undefined'],
+        ordered: visible,
       },
-      ['session-target'],
+      ['session-command-labels', ...(expectedTarget ? ['session-target'] : [])],
       viewport
     ),
   };
@@ -32,18 +37,10 @@ const meta = {
   parameters: {
     layout: 'fullscreen',
     visualStates: {
-      loading: {
-        label: 'Session action in-progress indicator',
-        gapType: 'visual-baseline-required',
-        description:
-          'Loading differs only through animated status styling, which text assertions cannot prove.',
-      },
+      loading: { label: 'Session action in-progress label' },
       'session-target': { label: 'Session task or target' },
       'session-command-labels': {
         label: 'Backend session commands use action-specific labels',
-        gapType: 'product-limitation',
-        description:
-          'The renderer reads action while the backend sends command, so valid payloads use generic labels.',
       },
       error: { label: 'Session action error' },
       'crew-active': { label: 'Agent crew orchestration in progress' },
@@ -77,11 +74,17 @@ const meta = {
     storyOrder: [
       'Spawning',
       'Spawned',
+      'ListedSessions',
       'CheckedSession',
       'InterruptedSession',
       'InjectedContext',
       'ManagedGroup',
       'RevivedSession',
+      'RegisteredStages',
+      'WaitedForGroup',
+      'CancelledGroup',
+      'CheckedGroupActivity',
+      'CancelledGroupStage',
       'Error',
       'CrewActive',
       'CrewComplete',
@@ -106,10 +109,11 @@ export const Spawning = {
   parameters: certifyVisualStory(
     'Audit the release workflow',
     {
-      visible: ['Audit the release workflow'],
+      visible: ['Spawning agent', 'Audit the release workflow'],
       hidden: ['undefined'],
+      ordered: ['Spawning agent', 'Audit the release workflow'],
     },
-    ['session-target'],
+    ['loading', 'session-target', 'session-command-labels'],
     viewport
   ),
 };
@@ -120,37 +124,84 @@ export const Spawned = actionStory(
     agent_name: 'release-reviewer',
     task: 'Audit the release workflow',
   },
+  'Spawned agent',
   'Audit the release workflow'
+);
+
+export const ListedSessions = actionStory(
+  'list_sessions',
+  { filter: 'active' },
+  'Listed sessions'
 );
 
 export const CheckedSession = actionStory(
   'get_session_status',
   { target: 'worker-1' },
+  'Checked session',
   'worker-1'
 );
 
 export const InterruptedSession = actionStory(
   'interrupt',
   { target: 'worker-2', message: 'Prioritize release validation' },
+  'Interrupted session',
   'worker-2'
 );
 
 export const InjectedContext = actionStory(
   'inject_context',
   { target: 'worker-3', context: 'Release branch is frozen' },
+  'Injected context',
   'worker-3'
 );
 
 export const ManagedGroup = actionStory(
   'manage_group',
   { action: 'add', group: 'reviewers', target: 'worker-3' },
+  'Managed group',
   'worker-3'
 );
 
 export const RevivedSession = actionStory(
   'revive_session',
   { target: 'worker-4', task: 'Retry Windows packaging' },
+  'Revived session',
   'worker-4'
+);
+
+export const RegisteredStages = actionStory(
+  'register_pending_stages',
+  { group: 'release', pending_stages: [] },
+  'Registered stages'
+);
+
+export const WaitedForGroup = actionStory(
+  'wait_for_group',
+  { group: 'release' },
+  'Waited for group'
+);
+
+export const CancelledGroup = actionStory(
+  'cancel_group',
+  { group: 'release' },
+  'Cancelled group'
+);
+
+export const CheckedGroupActivity = actionStory(
+  'group_last_activity',
+  { group: 'release' },
+  'Checked group activity'
+);
+
+export const CancelledGroupStage = actionStory(
+  'cancel_group_stage',
+  {
+    group: 'release',
+    name: 'windows-tests',
+    observed_last_activity_ms: 123,
+  },
+  'Cancelled group stage',
+  'windows-tests'
 );
 
 export const Error = {

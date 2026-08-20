@@ -56,6 +56,17 @@ import * as WorkflowToolStories from '../components/chat/tools/WorkflowTool.stor
 import * as WorkflowLifecycleRowStories from '../components/ui/WorkflowLifecycleRow.stories.js';
 import * as CrewMonitorStories from '../components/multi-agent/CrewMonitor.stories.js';
 import * as ToolUseMessageStories from '../components/ui/ToolUseMessage.stories.js';
+import * as MarkdownCompositionStories from '../components/compositions/Markdown.stories.js';
+import * as ConversationViewStories from '../components/ui/ConversationView.stories.js';
+import * as ShellOutputMessageStories from '../components/chat/message/ShellOutputMessage.stories.js';
+import * as ApprovalRequestStories from '../components/ui/ApprovalRequest.stories.js';
+import * as InteractionSurfaceStories from '../components/compositions/InteractionSurfaces.stories.js';
+import * as ArtifactSurfaceStories from '../components/compositions/ArtifactSurfaces.stories.js';
+import * as ApplicationShellStories from '../components/compositions/ApplicationShell.stories.js';
+import * as OperationalPanelStories from '../components/compositions/OperationalPanels.stories.js';
+import * as LiteExperienceStories from '../components/compositions/LiteExperience.stories.js';
+import * as SettingsPanelStories from '../components/compositions/SettingsPanels.stories.js';
+import * as ComponentStateStories from '../components/compositions/ComponentStates.stories.js';
 
 interface RawStory {
   args?: Record<string, unknown>;
@@ -219,6 +230,50 @@ function convertStoryModule(
 }
 
 export const stories = [
+  convertStoryModule(
+    MarkdownCompositionStories,
+    '../components/compositions/Markdown.stories.js'
+  ),
+  convertStoryModule(
+    ConversationViewStories,
+    '../components/ui/ConversationView.stories.js'
+  ),
+  convertStoryModule(
+    ShellOutputMessageStories,
+    '../components/chat/message/ShellOutputMessage.stories.js'
+  ),
+  convertStoryModule(
+    ApprovalRequestStories,
+    '../components/ui/ApprovalRequest.stories.js'
+  ),
+  convertStoryModule(
+    InteractionSurfaceStories,
+    '../components/compositions/InteractionSurfaces.stories.js'
+  ),
+  convertStoryModule(
+    ArtifactSurfaceStories,
+    '../components/compositions/ArtifactSurfaces.stories.js'
+  ),
+  convertStoryModule(
+    ApplicationShellStories,
+    '../components/compositions/ApplicationShell.stories.js'
+  ),
+  convertStoryModule(
+    OperationalPanelStories,
+    '../components/compositions/OperationalPanels.stories.js'
+  ),
+  convertStoryModule(
+    LiteExperienceStories,
+    '../components/compositions/LiteExperience.stories.js'
+  ),
+  convertStoryModule(
+    SettingsPanelStories,
+    '../components/compositions/SettingsPanels.stories.js'
+  ),
+  convertStoryModule(
+    ComponentStateStories,
+    '../components/compositions/ComponentStates.stories.js'
+  ),
   convertStoryModule(CardStories, '../components/ui/card/Card.stories.js'),
   convertStoryModule(
     WelcomeScreenStories,

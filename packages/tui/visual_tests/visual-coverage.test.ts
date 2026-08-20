@@ -253,6 +253,60 @@ describe('visual story coverage', () => {
     ).toEqual(['selected/first', 'selected/second']);
   });
 
+  test('follows components injected through JSX props', () => {
+    const root = sourceFixture({
+      'components/Root.tsx': `
+        import type { ComponentType } from 'react';
+        export function Root({ Surface }: { Surface: ComponentType }) {
+          return <Surface />;
+        }
+      `,
+      'components/Injected.tsx':
+        'export function Injected() { return <box>injected</box>; }',
+      'components/Root.stories.tsx': `
+        import { Root } from './Root.js';
+        import { Injected } from './Injected.js';
+        export default {};
+        export const Default = {
+          render: () => <Root Surface={Injected} />,
+        };
+      `,
+    });
+    const coverage = collectVisualCoverage(
+      root,
+      [
+        fixtureStory([
+          {
+            id: 'default',
+            name: 'Default',
+            props: {},
+            parameters: {
+              certification: {
+                suite: 'visual-stories',
+                readyText: 'injected',
+              },
+            },
+          },
+        ]),
+      ],
+      capturedExecution(['fixture-root/default'])
+    );
+
+    expect(coverage).toMatchObject({
+      totalComponents: 2,
+      coveredComponents: 2,
+      uncoveredComponents: 0,
+    });
+    expect(
+      coverage.components.find(
+        (component) => component.symbolName === 'Injected'
+      )
+    ).toMatchObject({
+      classification: 'covered',
+      evidence: ['fixture-root'],
+    });
+  });
+
   test('reports covered and missed inventory with registration gaps', () => {
     const root = sourceFixture({
       'components/Root.tsx':

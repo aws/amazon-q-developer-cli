@@ -30,8 +30,10 @@ import {
   validateCaptureId,
 } from './story-capture-contract.js';
 import { finalizeVisualEvidence } from './visual-evidence.js';
+import { storyFrameAssertionFailures } from './story-frame-assertions.js';
 import type {
   StorybookAssertions,
+  StorybookExperience,
   StorybookKey,
   StorybookPlayContext,
   StorybookVariant,
@@ -51,6 +53,7 @@ interface CapturedFrame {
   captureId: string;
   captureLabel: string;
   label: string;
+  experience: StorybookExperience;
   frame: SerializedTerminalFrame;
   status: 'passed' | 'failed';
   error?: string;
@@ -104,6 +107,8 @@ function keySequence(key: StorybookKey): string | number[] {
       return '\r';
     case 'escape':
       return [0x1b];
+    case 'backspace':
+      return [0x7f];
     case 'tab':
       return '\t';
     case 'up':
@@ -122,54 +127,15 @@ function keySequence(key: StorybookKey): string | number[] {
       return '\x1b[1;2D';
     case 'shift+right':
       return '\x1b[1;2C';
+    case 'shift+tab':
+      return '\x1b[Z';
+    case 'ctrl+p':
+      return [0x10];
     case 'ctrl+x':
       return [0x18];
     case 'ctrl+g':
       return [0x07];
   }
-}
-
-function assertionFailures(
-  text: readonly string[],
-  assertions: StorybookAssertions | undefined
-): string[] {
-  const screen = text.join('\n');
-  const failures: string[] = [];
-  for (const expected of assertions?.visible ?? []) {
-    if (!screen.includes(expected)) failures.push(`missing "${expected}"`);
-  }
-  for (const forbidden of assertions?.hidden ?? []) {
-    if (screen.includes(forbidden)) {
-      failures.push(`unexpected "${forbidden}"`);
-    }
-  }
-  let orderedOffset = 0;
-  for (const expected of assertions?.ordered ?? []) {
-    const index = screen.indexOf(expected, orderedOffset);
-    if (index === -1) {
-      failures.push(`missing ordered "${expected}"`);
-      break;
-    }
-    orderedOffset = index + expected.length;
-  }
-  for (const [expected, count] of Object.entries(
-    assertions?.occurrences ?? {}
-  )) {
-    let actual = 0;
-    let offset = 0;
-    while (expected.length > 0) {
-      const index = screen.indexOf(expected, offset);
-      if (index === -1) break;
-      actual += 1;
-      offset = index + expected.length;
-    }
-    if (actual !== count) {
-      failures.push(
-        `expected "${expected}" ${count} time${count === 1 ? '' : 's'}, found ${actual}`
-      );
-    }
-  }
-  return failures;
 }
 
 function readBaseline(directory: string | undefined): CaptureManifest | null {
@@ -272,9 +238,9 @@ function generateReport(
     ${storyFrames
       .map(
         ({ frame, index, comparisonState }) => `<li>
-      <button type="button" class="frame-link${index === 0 ? ' active' : ''}" data-frame="${index}" data-state="${comparisonState}" data-search="${escapeHtml(`${storyName} ${frame.variantName} ${frame.captureId} ${frame.captureLabel}`.toLowerCase())}" aria-controls="frame-${index + 1}"${index === 0 ? ' aria-current="page"' : ''}>
+      <button type="button" class="frame-link${index === 0 ? ' active' : ''}" data-frame="${index}" data-state="${comparisonState}" data-experience="${frame.experience}" data-search="${escapeHtml(`${storyName} ${frame.variantName} ${frame.captureId} ${frame.captureLabel} ${frame.experience}`.toLowerCase())}" aria-controls="frame-${index + 1}"${index === 0 ? ' aria-current="page"' : ''}>
         <span class="variant-name">${escapeHtml(frame.variantName)}</span>
-        <span class="capture-name">${escapeHtml(frame.captureId === 'default' ? 'static frame' : frame.captureLabel)}</span>
+        <span class="capture-name">${escapeHtml(frame.captureId === 'default' ? 'static frame' : frame.captureLabel)} · ${frame.experience}</span>
         <span class="state-mark ${comparisonState}">${comparisonState}</span>
       </button>
     </li>`
@@ -311,6 +277,7 @@ function generateReport(
     </div>
     <dl class="frame-facts">
       <div><dt>Viewport</dt><dd>${currentFrame.viewport.columns} × ${currentFrame.viewport.rows}</dd></div>
+      <div><dt>Experience</dt><dd>${frame.experience}</dd></div>
       <div><dt>Assertion</dt><dd class="${frame.status}">${frame.status}</dd></div>
       <div><dt>Comparison</dt><dd class="${comparisonState}">${comparisonText}</dd></div>
     </dl>
@@ -346,8 +313,10 @@ button,input{font:inherit}button:focus-visible,input:focus-visible,a:focus-visib
 .search-label{display:block;margin-bottom:var(--s2);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mute)}
 #story-search{width:100%;min-height:2.75rem;padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:4px;background:var(--paper);color:var(--ink)}
 #story-search:hover{border-color:var(--mute)}#story-search::placeholder{color:var(--mute);opacity:1}
-.filters{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:var(--s3);border:1px solid var(--line);background:var(--line)}
-.filter{min-height:2.75rem;border:0;background:var(--panel);color:var(--mute);font-size:.72rem;font-weight:700;cursor:pointer}.filter:hover{color:var(--ink);background:var(--paper)}.filter.active{color:var(--panel);background:var(--accent)}
+.filter-label{display:block;margin-top:var(--s3);font-size:.64rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mute)}
+.filters{display:grid;gap:1px;margin-top:var(--s1);border:1px solid var(--line);background:var(--line)}
+.status-filters,.experience-filters{grid-template-columns:repeat(3,1fr)}
+.filter{min-height:2.5rem;border:0;background:var(--panel);color:var(--mute);font-size:.68rem;font-weight:700;cursor:pointer}.filter:hover{color:var(--ink);background:var(--paper)}.filter.active{color:var(--panel);background:var(--accent)}
 .story-group{border-bottom:1px solid var(--line)}.story-group[hidden]{display:none}.story-group summary{display:flex;justify-content:space-between;align-items:center;min-height:2.75rem;padding:var(--s2) var(--s4);cursor:pointer;font-size:.78rem;font-weight:700}.story-group summary:hover{background:var(--paper)}
 .story-count{font:600 .68rem/1 ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;color:var(--mute)}
 .story-group ul{list-style:none;margin:0;padding:0}.story-group li[hidden]{display:none}.frame-link{position:relative;width:100%;min-height:3.25rem;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s1) var(--s2);padding:var(--s2) var(--s4) var(--s2) var(--s6);border:0;border-top:1px solid color-mix(in oklch,var(--line) 55%,var(--panel));text-align:left;background:var(--panel);color:var(--ink);cursor:pointer}
@@ -387,10 +356,17 @@ ${evidenceErrors}
     <div class="catalog-tools">
       <label class="search-label" for="story-search">Find a story or state</label>
       <input id="story-search" type="search" placeholder="Workflow, loading, error…">
-      <div class="filters" aria-label="Frame status filter">
-        <button type="button" class="filter active" data-filter="all">All</button>
-        <button type="button" class="filter" data-filter="attention">Attention</button>
-        <button type="button" class="filter" data-filter="passed">Passed</button>
+      <span class="filter-label">Status</span>
+      <div class="filters status-filters" aria-label="Frame status filter">
+        <button type="button" class="filter active" data-status-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="filter" data-status-filter="attention" aria-pressed="false">Attention</button>
+        <button type="button" class="filter" data-status-filter="passed" aria-pressed="false">Passed</button>
+      </div>
+      <span class="filter-label">Experience</span>
+      <div class="filters experience-filters" aria-label="Experience filter">
+        <button type="button" class="filter active" data-experience-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="filter" data-experience-filter="tui" aria-pressed="false">TUI</button>
+        <button type="button" class="filter" data-experience-filter="lite" aria-pressed="false">Lite</button>
       </div>
     </div>
     <div id="story-tree">${navigation}</div>
@@ -404,8 +380,10 @@ ${evidenceErrors}
   const search = document.querySelector('#story-search');
   const links = [...document.querySelectorAll('.frame-link')];
   const panels = [...document.querySelectorAll('[data-frame-panel]')];
-  const filters = [...document.querySelectorAll('.filter')];
-  let activeFilter = 'all';
+  const statusFilters = [...document.querySelectorAll('[data-status-filter]')];
+  const experienceFilters = [...document.querySelectorAll('[data-experience-filter]')];
+  let activeStatusFilter = 'all';
+  let activeExperienceFilter = 'all';
 
   function selectFrame(index, focus = false) {
     links.forEach((link) => {
@@ -427,10 +405,14 @@ ${evidenceErrors}
     links.forEach((link) => {
       const state = link.dataset.state;
       const stateMatches =
-        activeFilter === 'all' ||
-        (activeFilter === 'attention' && ['failed', 'changed', 'new'].includes(state)) ||
-        (activeFilter === 'passed' && ['passed', 'matched'].includes(state));
-      const visible = stateMatches && link.dataset.search.includes(query);
+        activeStatusFilter === 'all' ||
+        (activeStatusFilter === 'attention' && ['failed', 'changed', 'new'].includes(state)) ||
+        (activeStatusFilter === 'passed' && ['passed', 'matched'].includes(state));
+      const experienceMatches =
+        activeExperienceFilter === 'all' ||
+        link.dataset.experience === activeExperienceFilter;
+      const visible =
+        stateMatches && experienceMatches && link.dataset.search.includes(query);
       link.closest('li').hidden = !visible;
       if (visible) visibleCount += 1;
     });
@@ -462,10 +444,25 @@ ${evidenceErrors}
     });
   });
   search.addEventListener('input', applyFilters);
-  filters.forEach((filter) => {
+  statusFilters.forEach((filter) => {
     filter.addEventListener('click', () => {
-      activeFilter = filter.dataset.filter;
-      filters.forEach((candidate) => candidate.classList.toggle('active', candidate === filter));
+      activeStatusFilter = filter.dataset.statusFilter;
+      statusFilters.forEach((candidate) => {
+        const active = candidate === filter;
+        candidate.classList.toggle('active', active);
+        candidate.setAttribute('aria-pressed', String(active));
+      });
+      applyFilters();
+    });
+  });
+  experienceFilters.forEach((filter) => {
+    filter.addEventListener('click', () => {
+      activeExperienceFilter = filter.dataset.experienceFilter;
+      experienceFilters.forEach((candidate) => {
+        const active = candidate === filter;
+        candidate.classList.toggle('active', active);
+        candidate.setAttribute('aria-pressed', String(active));
+      });
       applyFilters();
     });
   });
@@ -549,6 +546,7 @@ async function captureVariant(
   frames: CapturedFrame[]
 ): Promise<void> {
   const certification = variant.parameters.certification;
+  const experience = variant.parameters.experience ?? 'tui';
   const viewport = certification?.viewport ?? DEFAULT_VIEWPORT;
   const settleMs = certification?.settleMs ?? DEFAULT_SETTLE_MS;
   const tuiRoot = path.resolve(import.meta.dir, '../..');
@@ -565,6 +563,8 @@ async function captureVariant(
       CI: 'true',
       FORCE_COLOR: '3',
       KIRO_AGENT_ENGINE: certification?.environment?.KIRO_AGENT_ENGINE ?? 'v2',
+      KIRO_TERMINAL_THEME:
+        certification?.environment?.KIRO_TERMINAL_THEME ?? 'dark',
       KIRO_HOME: kiroHome,
       KIRO_STORYBOOK_PAUSE_ANIMATIONS: '1',
       KIRO_STORYBOOK_STORY: storyId,
@@ -590,8 +590,8 @@ async function captureVariant(
     const text = terminalFrameText(frame);
     const failures = [
       ...rendererFailureMessages(text),
-      ...assertionFailures(
-        text,
+      ...storyFrameAssertionFailures(
+        frame,
         mergeStoryAssertions(certification?.assertions, assertions)
       ),
     ];
@@ -613,6 +613,7 @@ async function captureVariant(
       captureId,
       captureLabel: label,
       label: `${storyName} / ${label}`,
+      experience,
       frame: serializeTerminalFrame(frame),
       status: error ? 'failed' : 'passed',
       ...(error ? { error } : {}),
@@ -665,6 +666,7 @@ async function captureVariant(
       captureId,
       captureLabel: `${variant.name} - capture failure`,
       label: `${storyName} / ${variant.name} - capture failure`,
+      experience,
       frame,
       status: 'failed',
       error: [error, captureError && `Frame capture failed: ${captureError}`]
@@ -771,6 +773,7 @@ function recordVariantHarnessFailure(
     captureId,
     captureLabel: `${variant.name} - harness failure`,
     label: `${storyName} / ${variant.name} - harness failure`,
+    experience: variant.parameters.experience ?? 'tui',
     frame: serializeDiagnosticTextFrame(viewport, [message]),
     status: 'failed',
     error: `Visual story harness failed: ${message}`,

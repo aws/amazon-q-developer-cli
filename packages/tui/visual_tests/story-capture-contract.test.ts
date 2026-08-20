@@ -5,6 +5,8 @@ import {
   rendererFailureMessages,
   resolveCaptureDefinition,
 } from '../src/storybook/story-capture-contract.js';
+import { storyFrameAssertionFailures } from '../src/storybook/story-frame-assertions.js';
+import type { TerminalFrame } from '../src/test-utils/shared/terminal-frame.js';
 
 describe('visual story capture contract', () => {
   test('resolves stable ids, labels, and state assertions from metadata', () => {
@@ -54,12 +56,14 @@ describe('visual story capture contract', () => {
           hidden: ['undefined'],
           ordered: ['sent'],
           occurrences: { sent: 1 },
+          styled: [{ text: 'sent', foreground: '#00ff00' }],
         },
         {
           visible: ['Thinking...'],
           hidden: ['failed'],
           ordered: ['reply'],
           occurrences: { reply: 1 },
+          styled: [{ text: 'reply', bold: true }],
         }
       )
     ).toEqual({
@@ -67,6 +71,10 @@ describe('visual story capture contract', () => {
       hidden: ['undefined', 'failed'],
       ordered: ['sent', 'reply'],
       occurrences: { sent: 1, reply: 1 },
+      styled: [
+        { text: 'sent', foreground: '#00ff00' },
+        { text: 'reply', bold: true },
+      ],
     });
     expect(
       missingCaptureIds(
@@ -92,5 +100,53 @@ describe('visual story capture contract', () => {
       ])
     ).toEqual(['renderer failure marker "The above error occurred in the <"']);
     expect(rendererFailureMessages(['Error: permission denied'])).toEqual([]);
+  });
+
+  test('asserts targeted terminal styles without snapshotting the frame', () => {
+    const frame: TerminalFrame = {
+      schemaVersion: 1,
+      viewport: { columns: 2, rows: 1 },
+      buffer: 'normal',
+      cursor: { column: 0, row: 0 },
+      styles: [
+        {
+          foreground: { mode: 'rgb', value: 0x80ffb5 },
+          background: { mode: 'rgb', value: 0x2d3a30 },
+          bold: true,
+          dim: false,
+          italic: false,
+          underline: false,
+          blink: false,
+          inverse: false,
+          invisible: false,
+          strikethrough: false,
+          overline: false,
+        },
+      ],
+      rows: [
+        [
+          { text: '+', width: 1, styleIndex: 0 },
+          { text: 'x', width: 1, styleIndex: 0 },
+        ],
+      ],
+    };
+
+    expect(
+      storyFrameAssertionFailures(frame, {
+        styled: [
+          {
+            text: '+x',
+            foreground: '#80ffb5',
+            background: '#2d3a30',
+            bold: true,
+          },
+        ],
+      })
+    ).toEqual([]);
+    expect(
+      storyFrameAssertionFailures(frame, {
+        styled: [{ text: '+x', foreground: '#ff0000' }],
+      })
+    ).toEqual(['styled "+x" expected foreground #ff0000, found #80ffb5']);
   });
 });

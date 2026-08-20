@@ -61,15 +61,13 @@ const meta = {
       },
       'windows-location': {
         label: 'Windows path displays only its basename',
-        gapType: 'product-limitation',
-        description:
-          'The location formatter currently splits only POSIX path separators.',
       },
     },
     storyOrder: [
       'Using',
       'Completed',
       'SingleLocation',
+      'WindowsLocation',
       'MultipleLocations',
       'WithArguments',
       'ShortOutput',
@@ -133,6 +131,25 @@ export const SingleLocation = {
       ordered: ['grep_search', 'Button.tsx:42'],
     },
     ['location'],
+    viewport
+  ),
+};
+
+export const WindowsLocation = {
+  args: {
+    name: 'grep_search',
+    noStatusBar: true,
+    isFinished: true,
+    locations: [{ path: 'C:\\workspace\\src\\Button.tsx', line: 42 }],
+  },
+  parameters: certifyVisualStory(
+    'Button.tsx:42',
+    {
+      visible: ['grep_search', 'Button.tsx:42'],
+      hidden: ['C:\\workspace\\src\\Button.tsx'],
+      ordered: ['grep_search', 'Button.tsx:42'],
+    },
+    ['location', 'windows-location'],
     viewport
   ),
 };

@@ -9,20 +9,11 @@ const meta = {
     layout: 'fullscreen',
     visualStates: {
       single: { label: 'Single image target' },
-      loading: {
-        label: 'Image read in-progress indicator',
-        gapType: 'visual-baseline-required',
-        description:
-          'Loading differs only through animated status styling, which text assertions cannot prove.',
-      },
-      'completed-indicator': {
-        label: 'Image read completed indicator',
-        gapType: 'visual-baseline-required',
-        description:
-          'Completion differs only through status styling, which text assertions cannot prove.',
-      },
+      loading: { label: 'Image read in progress without completion marker' },
+      'completed-indicator': { label: 'Image read completed indicator' },
       multiple: { label: 'Multiple image targets' },
       standalone: { label: 'Image read embedded without status chrome' },
+      'windows-path': { label: 'Windows image path displays its basename' },
       error: {
         label: 'Image read error',
         gapType: 'integration-only',
@@ -32,6 +23,7 @@ const meta = {
     },
     storyOrder: [
       'SingleImage',
+      'WindowsImage',
       'SingleImageLoading',
       'MultipleImages',
       'Standalone',
@@ -52,10 +44,29 @@ export const SingleImage = {
   parameters: certifyVisualStory(
     'logo.png',
     {
-      visible: ['ImageRead logo.png'],
+      visible: ['● ImageRead logo.png'],
       hidden: ['output:', 'screenshot.jpg'],
     },
-    ['single'],
+    ['single', 'completed-indicator'],
+    viewport
+  ),
+};
+
+export const WindowsImage = {
+  args: {
+    content: JSON.stringify({
+      paths: ['C:\\workspace\\assets\\diagram.png'],
+    }),
+    isFinished: true,
+    status: 'success',
+  },
+  parameters: certifyVisualStory(
+    'diagram.png',
+    {
+      visible: ['ImageRead diagram.png'],
+      hidden: ['C:\\workspace\\assets\\diagram.png'],
+    },
+    ['single', 'windows-path'],
     viewport
   ),
 };
@@ -70,9 +81,9 @@ export const SingleImageLoading = {
     'logo.png',
     {
       visible: ['ImageRead logo.png'],
-      hidden: ['output:', 'screenshot.jpg'],
+      hidden: ['● ImageRead', 'output:', 'screenshot.jpg'],
     },
-    ['single'],
+    ['single', 'loading'],
     viewport
   ),
 };

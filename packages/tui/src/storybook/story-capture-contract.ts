@@ -15,6 +15,7 @@ export function mergeStoryAssertions(
       ...(invariant?.occurrences ?? {}),
       ...(capture?.occurrences ?? {}),
     },
+    styled: [...(invariant?.styled ?? []), ...(capture?.styled ?? [])],
   };
 }
 

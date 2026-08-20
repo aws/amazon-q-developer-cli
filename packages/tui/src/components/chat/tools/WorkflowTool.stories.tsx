@@ -69,10 +69,7 @@ const meta = {
         description: 'Approval state is outer ToolUseMessage composition.',
       },
       'inspect-error-identity': {
-        label: 'Inspection error retains workflow identity',
-        gapType: 'product-limitation',
-        description:
-          'Inspection failure and cancellation currently omit the workflow target.',
+        label: 'Failed or cancelled inspection retains workflow identity',
       },
     },
     storyOrder: [
@@ -205,9 +202,9 @@ export const InspectFailed = {
   },
   parameters: certification(
     'Workflow inspection failed',
-    ['Workflow inspection failed', 'Workflow was not found'],
+    ['Workflow inspection failed', '"wf-missing"', 'Workflow was not found'],
     ['Checked workflow status'],
-    ['inspect-failed']
+    ['inspect-failed', 'inspect-error-identity']
   ),
 };
 
@@ -222,7 +219,7 @@ export const InspectCancelled = {
   },
   parameters: certification(
     'Workflow inspection cancelled',
-    ['Workflow inspection cancelled'],
+    ['Workflow inspection cancelled', '"wf-release"'],
     ['Checked workflow status'],
     ['inspect-cancelled']
   ),

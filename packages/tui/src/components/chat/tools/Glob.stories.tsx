@@ -19,6 +19,7 @@ const meta = {
       'kas-text': { label: 'KAS plain-text result envelope' },
       static: { label: 'Past search uses a hidden-file suffix' },
       'output-tree': { label: 'Rollout output-tree presentation' },
+      'windows-path': { label: 'Windows result path displays its basename' },
       expanded: {
         label: 'Expanded file list',
         gapType: 'integration-only',
@@ -41,6 +42,7 @@ const meta = {
       'Globbing',
       'NoFiles',
       'OneFile',
+      'WindowsPath',
       'FewFiles',
       'ManyFiles',
       'Truncated',
@@ -130,6 +132,31 @@ export const OneFile = {
       hidden: ['ctrl+o'],
     },
     ['singular'],
+    viewport
+  ),
+};
+
+export const WindowsPath = {
+  args: {
+    content: JSON.stringify({ pattern: '**/*.tsx' }),
+    status: 'success',
+    isFinished: true,
+    result: {
+      status: 'success',
+      output: {
+        filePaths: ['C:\\workspace\\src\\App.tsx'],
+        totalFiles: 1,
+        truncated: false,
+      },
+    },
+  },
+  parameters: certifyVisualStory(
+    'App.tsx',
+    {
+      visible: ['Glob "**/*.tsx"', '1 file', 'App.tsx'],
+      hidden: ['C:\\workspace\\src\\App.tsx'],
+    },
+    ['singular', 'windows-path'],
     viewport
   ),
 };
