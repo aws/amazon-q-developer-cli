@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Shell tool now shows command output alongside error messages when a command fails"
+}

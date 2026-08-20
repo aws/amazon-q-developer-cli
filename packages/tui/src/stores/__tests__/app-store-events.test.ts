@@ -5,6 +5,7 @@ import { KAS_DEFAULT_AGENT_ID } from '../../constants/agents.js';
 import { AgentEventType, ContentType } from '../../types/agent-events';
 import { SessionLifecycleOwner } from '../../types/multi-session.js';
 import { CommandHistory } from '../../utils/command-history';
+import { MAX_RETAINED_TOOL_OUTPUT_LINES } from '../../utils/tool-result.js';
 
 // mock.module is process-global and survives this file — snapshot the real
 // modules and re-register them afterAll so mocks cannot leak into other files.
@@ -569,6 +570,173 @@ describe('Stream event handler — ToolCallFinished', () => {
     });
     await new Promise((r) => setTimeout(r, 50));
     expect(store.getState().liveOutputs.has('tc-clear')).toBe(false);
+  });
+
+  it('preserves streamed output when a failed finish omits output', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-failed-output',
+      name: 'shell',
+      args: { command: 'bun test' },
+    });
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 'tc-failed-output',
+      content: {
+        type: ContentType.Text,
+        text: 'first failure detail\nsecond failure detail\n',
+      },
+    });
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tc-failed-output',
+      result: { status: 'error', error: 'Process exited with code 1' },
+    });
+
+    const msg = store
+      .getState()
+      .messages.find((candidate) => candidate.id === 'tc-failed-output');
+    expect(msg?.role).toBe(MessageRole.ToolUse);
+    if (msg?.role === MessageRole.ToolUse) {
+      expect(msg.result).toEqual({
+        status: 'error',
+        error: 'Process exited with code 1',
+        output: {
+          items: [{ Text: 'first failure detail\nsecond failure detail' }],
+        },
+      });
+    }
+    expect(store.getState().liveOutputs.has('tc-failed-output')).toBe(false);
+  });
+
+  it('keeps backend error output when streamed output also exists', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-canonical-error-output',
+      name: 'shell',
+      args: { command: 'bun test' },
+    });
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 'tc-canonical-error-output',
+      content: {
+        type: ContentType.Text,
+        text: 'streamed output\n',
+      },
+    });
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tc-canonical-error-output',
+      result: {
+        status: 'error',
+        error: 'Process exited with code 1',
+        output: 'backend output',
+      },
+    });
+
+    const msg = store
+      .getState()
+      .messages.find(
+        (candidate) => candidate.id === 'tc-canonical-error-output'
+      );
+    expect(msg?.role).toBe(MessageRole.ToolUse);
+    if (msg?.role === MessageRole.ToolUse) {
+      expect(msg.result).toEqual({
+        status: 'error',
+        error: 'Process exited with code 1',
+        output: 'backend output',
+      });
+    }
+  });
+
+  it('does not retain streamed output for failed non-shell tools', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-failed-agent-crew',
+      name: 'agent_crew',
+      args: { task: 'inspect failures' },
+    });
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 'tc-failed-agent-crew',
+      content: {
+        type: ContentType.Text,
+        text: 'stage output\n',
+      },
+    });
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tc-failed-agent-crew',
+      result: {
+        status: 'error',
+        error: 'Stage failed',
+      },
+    });
+
+    const msg = store
+      .getState()
+      .messages.find((candidate) => candidate.id === 'tc-failed-agent-crew');
+    expect(msg?.role).toBe(MessageRole.ToolUse);
+    if (msg?.role === MessageRole.ToolUse) {
+      expect(msg.result).toEqual({
+        status: 'error',
+        error: 'Stage failed',
+      });
+    }
+  });
+
+  it('bounds retained failed output and keeps the newest lines', () => {
+    const store = makeStore();
+    const handler = store.getState().createStreamEventHandler();
+    const streamedLines = Array.from(
+      { length: MAX_RETAINED_TOOL_OUTPUT_LINES + 5 },
+      (_, index) => `line-${index + 1}`
+    );
+    handler({
+      type: AgentEventType.ToolCall,
+      id: 'tc-bounded-error-output',
+      name: 'shell',
+      args: { command: 'bun test' },
+    });
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 'tc-bounded-error-output',
+      content: {
+        type: ContentType.Text,
+        text: `${streamedLines.join('\n')}\n`,
+      },
+    });
+    handler({
+      type: AgentEventType.ToolCallFinished,
+      id: 'tc-bounded-error-output',
+      result: {
+        status: 'error',
+        error: 'Process exited with code 1',
+      },
+    });
+
+    const msg = store
+      .getState()
+      .messages.find((candidate) => candidate.id === 'tc-bounded-error-output');
+    expect(msg?.role).toBe(MessageRole.ToolUse);
+    if (msg?.role === MessageRole.ToolUse && msg.result?.status === 'error') {
+      const output = msg.result.output as {
+        items: Array<{ Text: string }>;
+      };
+      const retainedLines = output.items[0]!.Text.split('\n');
+      expect(retainedLines).toHaveLength(MAX_RETAINED_TOOL_OUTPUT_LINES);
+      expect(retainedLines[0]).toBe('...+6 earlier lines omitted');
+      expect(retainedLines[1]).toBe('line-7');
+      expect(retainedLines.at(-1)).toBe(
+        `line-${MAX_RETAINED_TOOL_OUTPUT_LINES + 5}`
+      );
+    }
   });
 });
 

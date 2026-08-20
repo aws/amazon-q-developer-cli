@@ -44,6 +44,7 @@ import type {
 import { selectVisibleSlashCommands } from './visible-slash-commands';
 import { normalizeAtPrompt } from '../utils/normalize-at-prompt';
 import { synthesizeToolUseContent } from './tool-use-synthesis';
+import { MAX_RETAINED_TOOL_OUTPUT_LINES } from '../utils/tool-result.js';
 import {
   isHistoryOnlyAssistantMessage,
   isHistoryOnlyAssistantMessagePrefix,
@@ -115,6 +116,7 @@ import type { ContextBreakdownData } from '../types/context';
 import type { UiMode } from '../types/ui-mode.js';
 import type { AppMode } from '../types/app-mode.js';
 import type { ActivityTrayTab } from '../types/activity-tray.js';
+import { resolveScrollbackToolRenderer } from '../types/tool-capabilities.js';
 import {
   createInitialKasSubagentRoutingState,
   createKasSubagentRoutingActions,
@@ -1080,32 +1082,55 @@ function basename(p: string): string {
   return i >= 0 ? p.slice(i + 1) : p;
 }
 
-/**
- * Build a `cancelled`-status tool result that carries any partial output the
- * tool streamed before the user interrupted. Shaped as the canonical ACP
- * `{items: [{Text}]}` envelope so {@link unwrapToolOutput} in the renderer
- * surfaces it without special-casing — same code path as a normal completed
- * tool, just with the yellow `✗ cancelled` chip stamped on the header.
- *
- * `chunks` is the value of `state.liveOutputs.get(toolCallId)` — an array of
- * arrays of lines accumulated by `flushToolOutputs`. Returns a bare
- * `{ status: 'cancelled' }` when there's no buffered output so callers
- * preserve the prior behavior for tools that hadn't streamed anything.
- */
+function buildRetainedTextOutput(
+  chunks: string[][] | undefined
+): { items: Array<{ Text: string }> } | undefined {
+  if (!chunks || chunks.length === 0) return undefined;
+  let totalLines = 0;
+  for (const chunk of chunks) totalLines += chunk.length;
+  const retainedCapacity =
+    totalLines > MAX_RETAINED_TOOL_OUTPUT_LINES
+      ? MAX_RETAINED_TOOL_OUTPUT_LINES - 1
+      : MAX_RETAINED_TOOL_OUTPUT_LINES;
+  const lines: string[] = [];
+  for (
+    let chunkIndex = chunks.length - 1;
+    chunkIndex >= 0 && lines.length < retainedCapacity;
+    chunkIndex--
+  ) {
+    const chunk = chunks[chunkIndex]!;
+    for (
+      let lineIndex = chunk.length - 1;
+      lineIndex >= 0 && lines.length < retainedCapacity;
+      lineIndex--
+    ) {
+      lines.push(chunk[lineIndex]!);
+    }
+  }
+  lines.reverse();
+  const omittedLines = totalLines - lines.length;
+  if (omittedLines > 0) {
+    lines.unshift(`...+${omittedLines} earlier lines omitted`);
+  }
+  const text = lines.join('\n');
+  return text ? { items: [{ Text: text }] } : undefined;
+}
+
 function buildCancelledResult(chunks: string[][] | undefined): {
   status: 'cancelled';
   output?: { items: Array<{ Text: string }> };
 } {
-  if (!chunks || chunks.length === 0) return { status: 'cancelled' };
-  const lines: string[] = [];
-  for (const chunk of chunks) {
-    for (const line of chunk) lines.push(line);
-  }
-  if (lines.length === 0) return { status: 'cancelled' };
-  return {
-    status: 'cancelled',
-    output: { items: [{ Text: lines.join('\n') }] },
-  };
+  const output = buildRetainedTextOutput(chunks);
+  return output ? { status: 'cancelled', output } : { status: 'cancelled' };
+}
+
+function attachLiveOutputToError(
+  result: ToolResult,
+  chunks: string[][] | undefined
+): ToolResult {
+  if (result.status !== 'error' || result.output !== undefined) return result;
+  const output = buildRetainedTextOutput(chunks);
+  return output ? { ...result, output } : result;
 }
 
 // ── Tool-call id disambiguation ──
@@ -4653,6 +4678,17 @@ export const createAppStore = (props: AppStoreProps) => {
               if (toolMsgIndex !== -1) {
                 const toolMsg = messages[toolMsgIndex];
                 if (toolMsg && toolMsg.role === MessageRole.ToolUse) {
+                  const result =
+                    resolveScrollbackToolRenderer(
+                      toolMsg.name,
+                      toolMsg.kind,
+                      toolMsg.origin
+                    ) === 'shell'
+                      ? attachLiveOutputToError(
+                          event.result,
+                          state.liveOutputs.get(event.id)
+                        )
+                      : event.result;
                   logger.debug('[tool-finished]', toolMsg.name, event.id);
                   // Detect "denied by user" on replay: the V2 backend collapses
                   // user-rejected and actually-failed tool calls into the same
@@ -4702,7 +4738,7 @@ export const createAppStore = (props: AppStoreProps) => {
                     status: wasDeniedByUser
                       ? ToolUseStatus.Rejected
                       : toolMsg.status,
-                    result: event.result,
+                    result,
                     ...(fromHistory ? {} : { finishTime: Date.now() }),
                     denial:
                       deriveToolDenial(event.meta?.kiro) ?? toolMsg.denial,

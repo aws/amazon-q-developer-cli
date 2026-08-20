@@ -1,5 +1,7 @@
 import type { ToolResult } from '../stores/app-store.js';
 
+export const MAX_RETAINED_TOOL_OUTPUT_LINES = 1000;
+
 /** Parse a JSON tool call content string and extract a specific field */
 export function parseToolArg(
   content: string | undefined,

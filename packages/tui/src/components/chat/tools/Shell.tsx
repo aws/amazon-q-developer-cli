@@ -4,7 +4,10 @@ import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
-import { unwrapResultOutput } from '../../../utils/tool-result.js';
+import {
+  MAX_RETAINED_TOOL_OUTPUT_LINES,
+  unwrapResultOutput,
+} from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
@@ -14,7 +17,6 @@ import { useAppStore, type ToolResult } from '../../../stores/app-store.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const PREVIEW_LINES = 5;
-const MAX_EXPANDED_LINES = 1000;
 // The `╰ output:` tree + green body is the in-cohort output-differentiation
 // feature; off-cohort keeps mainline's bare primary-colored lines (no header).
 const PORT_ACTIVE = () => process.env.KIRO_LITE_ROLLOUT_ENABLED === '1';
@@ -131,7 +133,11 @@ export const Shell = React.memo(function Shell({
     exitCode: number | null;
   } => {
     if (result) {
-      const { obj, text } = unwrapResultOutput(result);
+      const outputResult =
+        result.status === 'error' && result.output !== undefined
+          ? { status: 'success' as const, output: result.output }
+          : result;
+      const { obj, text } = unwrapResultOutput(outputResult);
 
       if (text) {
         const lines = normalizeLineEndings(text).split('\n');
@@ -238,6 +244,7 @@ export const Shell = React.memo(function Shell({
       expandHint,
       hiddenCount,
       getColor,
+      outputVisible,
     });
     if (noStatusBar) return legacy;
     return <StatusBar status={status}>{legacy}</StatusBar>;
@@ -282,6 +289,13 @@ export const Shell = React.memo(function Shell({
           shimmer={!isFinished}
         />
         <ToolMeta params={params} />
+        {hasOutput && outputVisible && (
+          <ToolOutput
+            chunks={outputChunks}
+            isStatic={isStatic}
+            previewPosition="start"
+          />
+        )}
         <ToolOutput lines={errorMessage.split('\n')} isError />
       </Box>
     );
@@ -329,6 +343,7 @@ function renderLegacyShell({
   expandHint,
   hiddenCount,
   getColor,
+  outputVisible,
 }: {
   name: string;
   displayCommand?: string;
@@ -345,6 +360,7 @@ function renderLegacyShell({
   expandHint: string;
   hiddenCount: number;
   getColor: (name: string) => (s: string) => string;
+  outputVisible: boolean;
 }) {
   const head = (
     <>
@@ -356,9 +372,30 @@ function renderLegacyShell({
     return <Box flexDirection="column">{head}</Box>;
   }
   if (errorMessage) {
+    const errorOutputLines = expanded
+      ? firstLines(outputChunks, MAX_RETAINED_TOOL_OUTPUT_LINES)
+      : firstLines(outputChunks, PREVIEW_LINES);
+    const truncated = expanded && totalLines > MAX_RETAINED_TOOL_OUTPUT_LINES;
     return (
       <Box flexDirection="column">
         {head}
+        {hasOutput && outputVisible && (
+          <Box marginLeft={2} flexDirection="column">
+            {errorOutputLines.map((line, i) => (
+              <Text key={i}>{getColor('primary')(line)}</Text>
+            ))}
+            {truncated && (
+              <Text>
+                {getColor('secondary')(
+                  `[truncated, showing ${MAX_RETAINED_TOOL_OUTPUT_LINES} of ${totalLines} lines]`
+                )}
+              </Text>
+            )}
+            {!expanded && expandHint && (
+              <Text>{getColor('secondary')(expandHint)}</Text>
+            )}
+          </Box>
+        )}
         <Box marginLeft={2}>
           <Text>{getColor('error')(errorMessage)}</Text>
         </Box>
@@ -366,8 +403,11 @@ function renderLegacyShell({
     );
   }
   if (expanded) {
-    const expandedLines = firstLines(outputChunks, MAX_EXPANDED_LINES);
-    const truncated = totalLines > MAX_EXPANDED_LINES;
+    const expandedLines = firstLines(
+      outputChunks,
+      MAX_RETAINED_TOOL_OUTPUT_LINES
+    );
+    const truncated = totalLines > MAX_RETAINED_TOOL_OUTPUT_LINES;
     return (
       <Box flexDirection="column">
         {head}
@@ -378,7 +418,7 @@ function renderLegacyShell({
           {truncated && (
             <Text>
               {getColor('secondary')(
-                `[truncated, showing ${MAX_EXPANDED_LINES} of ${totalLines} lines]`
+                `[truncated, showing ${MAX_RETAINED_TOOL_OUTPUT_LINES} of ${totalLines} lines]`
               )}
             </Text>
           )}

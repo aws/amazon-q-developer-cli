@@ -740,6 +740,93 @@ test('static errors remain visible when persistOutput is off', async () => {
   }
 });
 
+test('failed shell results retain output before the error', async () => {
+  const failedShell = message(
+    'execute_bash',
+    { command: 'bun test lifecycle' },
+    undefined,
+    {
+      status: ToolUseStatus.Approved,
+      result: {
+        status: 'error',
+        error: 'FAILED_SHELL_ERROR',
+        output: { items: [{ Text: 'FAILED_SHELL_OUTPUT' }] },
+      },
+    }
+  );
+  const assertFailureOutput = async () =>
+    check(await render(failedShell), {
+      has: ['FAILED_SHELL_OUTPUT', 'FAILED_SHELL_ERROR'],
+      order: ['FAILED_SHELL_OUTPUT', 'FAILED_SHELL_ERROR'],
+    });
+
+  cohort(true);
+  await assertFailureOutput();
+  await offCohort(assertFailureOutput);
+});
+
+test('static failed shell output obeys persistOutput while retaining the error', async () => {
+  cohort(true);
+  config({ persistOutput: false });
+  try {
+    const failedShell = message(
+      'execute_bash',
+      { command: 'bun test lifecycle' },
+      undefined,
+      {
+        isStatic: true,
+        status: ToolUseStatus.Approved,
+        result: {
+          status: 'error',
+          error: 'STATIC_FAILED_SHELL_ERROR',
+          output: 'STATIC_FAILED_SHELL_OUTPUT',
+        },
+      }
+    );
+    check(await render(failedShell), {
+      has: ['STATIC_FAILED_SHELL_ERROR'],
+      lacks: ['STATIC_FAILED_SHELL_OUTPUT'],
+    });
+  } finally {
+    setVerboseConfig({ display: { persistOutput: true } }, 'tui');
+  }
+});
+
+test('legacy failed shell output reports truncation and expands', async () => {
+  cohort(false);
+  const output = Array.from(
+    { length: 7 },
+    (_, index) => `FAILED_OUTPUT_LINE_${index + 1}`
+  ).join('\n');
+  const failedShell = message(
+    'execute_bash',
+    { command: 'bun test lifecycle' },
+    undefined,
+    {
+      status: ToolUseStatus.Approved,
+      result: {
+        status: 'error',
+        error: 'FAILED_SHELL_ERROR',
+        output,
+      },
+    }
+  );
+
+  check(await render(failedShell), {
+    has: [
+      'FAILED_OUTPUT_LINE_1',
+      'FAILED_OUTPUT_LINE_5',
+      '...+2 lines (ctrl+o to toggle)',
+      'FAILED_SHELL_ERROR',
+    ],
+    lacks: ['FAILED_OUTPUT_LINE_6'],
+  });
+  check(await render(failedShell, true), {
+    has: ['FAILED_OUTPUT_LINE_1', 'FAILED_OUTPUT_LINE_7', 'FAILED_SHELL_ERROR'],
+    lacks: ['...+2 lines (ctrl+o to toggle)'],
+  });
+});
+
 describe('off the rollout cohort', () => {
   beforeEach(() => cohort(false));
   afterEach(() => cohort(true));
