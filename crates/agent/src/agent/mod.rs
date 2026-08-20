@@ -675,6 +675,19 @@ impl AgentHandle {
         Ok(())
     }
 
+    /// Query whether this agent currently has trust-all enabled.
+    pub async fn get_trust_all_tools(&self) -> Result<bool, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::GetTrustAllTools)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::TrustAllTools(trusted) => Ok(trusted),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
+
     /// Invalidate cached tool specs so they are rebuilt before the next use.
     pub async fn invalidate_cached_tool_specs(&self) -> Result<(), AgentError> {
         self.sender
@@ -2002,6 +2015,7 @@ impl Agent {
                 self.settings.trust_all_tools = trust;
                 Ok(AgentResponse::Success)
             },
+            AgentRequest::GetTrustAllTools => Ok(AgentResponse::TrustAllTools(self.settings.trust_all_tools)),
             AgentRequest::InvalidateCachedToolSpecs => {
                 self.cached_tool_specs = None;
                 Ok(AgentResponse::Success)

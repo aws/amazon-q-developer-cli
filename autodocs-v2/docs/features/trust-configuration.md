@@ -214,7 +214,9 @@ Blocked patterns are checked first. Invalid regex in `blocked` denies all URLs (
 
 ## Subagent Trust
 
-Subagents do not inherit trust from the parent agent. Configure trust separately:
+Session-wide trust-all transfers to subagents: when the spawning session has trust-all enabled — via `/tools trust-all`, the "Allow all for this session" approval option, or the `--trust-all-tools` startup flag — subagents it spawns run with all tools trusted. The parent's live state is read at spawn time, so `/tools reset` stops future subagents from inheriting (subagents already running keep the trust they started with).
+
+Everything narrower stays per-agent: per-tool session trust (`/tools trust write`) and the parent's `allowedTools` do not transfer. Configure those in each subagent's own configuration:
 
 ### Trust Subagent Spawning
 
@@ -360,7 +362,7 @@ Or use the pattern `fs_*` if you want all fs tools (includes writes).
 
 ### Can I trust tools for subagents from the parent?
 
-No. Each subagent uses its own agent configuration. Add `allowedTools` to the subagent's config file, or run with `--trust-all-tools` to trust everything.
+Session-wide trust-all transfers: enable `/tools trust-all` in the parent session (or launch with `--trust-all-tools`) and subagents it spawns run fully trusted. Per-tool trust does not transfer — for narrower grants, add `allowedTools` to the subagent's own config file.
 
 ## Troubleshooting
 

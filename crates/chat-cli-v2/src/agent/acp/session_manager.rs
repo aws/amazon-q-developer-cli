@@ -1419,7 +1419,15 @@ impl SessionManager {
                     )
                     .parent_session_id(config.parent_session_id.clone())
                     .code_intelligence(code_intel)
-                    .trust_all_tools(self.trust_all_tools)
+                    // Subagents take trust solely from the spawn-time query of the
+                    // parent's agent (which already absorbed the startup flag), so a
+                    // /tools reset on the parent is honored. Top-level sessions take
+                    // the startup flag directly.
+                    .trust_all_tools(if config.parent_session_id.is_some() {
+                        config.trust_all_tools
+                    } else {
+                        self.trust_all_tools
+                    })
                     .trust_tools(self.trust_tools.clone())
                     .web_tools_enabled(self.web_tools_enabled)
                     .mcp_enabled(self.mcp_enabled)
@@ -2364,6 +2372,10 @@ impl SessionManager {
         let session_name_clone = session_name.clone();
         let group_name_clone = group_name_for_task;
         let parent_sid = parent_session_id.clone();
+        // Handle to the spawning session: its agent is queried for trust at spawn time
+        // (not pipeline-registration time), so a `/tools reset` issued while stages
+        // waited on dependencies takes effect here.
+        let parent_handle = self.sessions.get(parent_session_id).cloned();
         let embedded_msg = format!(
             "CRITICAL: You MUST call the `summary` tool before ending your turn. Do NOT end with a plain text response — always close out by calling the summary tool with your findings.\n\n\
              You are '{}' — an orchestrated session.\nYour task: {}\n{}\n\
@@ -2373,6 +2385,18 @@ impl SessionManager {
             role.map(|r| format!("Your role: {}", r)).unwrap_or_default(),
         );
         tokio::spawn(async move {
+            // The parent's agent is the single source of truth for trust-all: the
+            // startup --trust-all-tools flag is folded into its settings at session
+            // creation, and /tools trust-all, /tools reset, and the "allow all"
+            // approval option mutate them directly. Any failure to read the live
+            // value degrades fail-closed (the subagent prompts for approval).
+            let trust_all = match &parent_handle {
+                Some(handle) => match handle.get_agent_handle().await {
+                    Some(agent) => agent.get_trust_all_tools().await.unwrap_or(false),
+                    None => false,
+                },
+                None => false,
+            };
             let config = Self::orchestrated_session_config(
                 new_sid.to_string(),
                 std::env::current_dir().unwrap_or_default(),
@@ -2380,7 +2404,8 @@ impl SessionManager {
                 agent_str,
                 model_id,
                 embedded_msg,
-            );
+            )
+            .trust_all_tools(trust_all);
             match session_tx.start_session(&new_sid, config, None).await {
                 Ok(result) => {
                     let _ = result.ready_rx.await;

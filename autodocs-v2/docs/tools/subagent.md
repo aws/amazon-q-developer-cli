@@ -140,7 +140,9 @@ The config key `agent_crew` is also accepted as an alias for `crew`.
 
 ### Do subagents inherit trust from the parent agent?
 
-No. Subagents use their own agent configuration's `allowedTools` for tool permissions. The parent agent's trust settings do not transfer. To auto-approve tools for subagents:
+Session-wide trust-all is inherited: if the spawning session has trust-all enabled (`/tools trust-all`, the "Allow all for this session" approval option, or the `--trust-all-tools` flag), its subagents spawn with all tools trusted. The parent's state is read at spawn time, so `/tools reset` stops future spawns from inheriting.
+
+Narrower trust is not inherited: subagents use their own agent configuration's `allowedTools` for tool permissions, and the parent's per-tool trusts (`/tools trust X`) do not transfer. To auto-approve specific tools for subagents:
 - Add tools to the subagent's agent config `allowedTools`
 - Or add the agent to `trustedAgents` in the parent's crew settings (this trusts the agent spawn, not its tools)
 
@@ -186,7 +188,7 @@ Check that all stages listed in its `depends_on` have completed. Use `ctrl+g` to
 
 Subagents prompt for tool approval based on their own agent config. To avoid prompts:
 - Add tools to the subagent's `allowedTools` in its agent configuration
-- Or run the parent with `--trust-all-tools` (trusts all tools for all agents)
+- Or enable trust-all in the parent session (`/tools trust-all` or `--trust-all-tools`) — subagents inherit it at spawn time
 
 ### MCP tools not available in subagent
 

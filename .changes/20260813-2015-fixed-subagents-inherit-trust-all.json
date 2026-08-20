@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Subagents now inherit `/tools trust-all` from the spawning session instead of prompting for approvals"
+}

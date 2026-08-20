@@ -721,6 +721,11 @@ impl AcpSessionConfig {
         self
     }
 
+    pub fn trust_all_tools(mut self, trust: bool) -> Self {
+        self.trust_all_tools = trust;
+        self
+    }
+
     pub fn subagent_info(mut self, info: Option<SubagentInfo>) -> Self {
         self.subagent_info = info;
         self

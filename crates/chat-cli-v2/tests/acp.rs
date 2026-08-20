@@ -5326,6 +5326,665 @@ async fn goal_complete_suppresses_followup_rate_limit_notification() {
     );
 }
 
+/// Regression: `/tools trust-all` is runtime state on the session's agent actor, but
+/// subagent spawns used to read only the session manager's startup CLI flag — so
+/// subagents spawned after `/tools trust-all` still raised approval requests, stalling
+/// autonomous flows (e.g. /goal) until the user approved.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn subagent_inherits_runtime_trust_all() {
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+    use common::PermissionResponse;
+
+    // No --trust-all-tools at startup: trust is enabled at runtime only.
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("subagent_inherits_runtime_trust_all")
+        .build_with_session()
+        .await;
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "tools", "args": { "value": "trust-all" } }),
+        )
+        .await
+        .expect("execute_command for /tools trust-all failed");
+    assert!(result.success, "/tools trust-all should succeed: {}", result.message);
+
+    // Safety valve: if the fix regresses, the subagent's write tool raises an approval;
+    // answering it lets the test fail on the assertion below instead of hanging.
+    client
+        .queue_permission_response(PermissionResponse::Select(
+            agent::protocol::PermissionOptionId::AllowOnce.to_string(),
+        ))
+        .await;
+
+    // Parent turn 1: call the crew tool to spawn one stage (blocking mode).
+    let crew_input = serde_json::json!({
+        "task": "write a file",
+        "stages": [{ "name": "worker", "role": "kiro_default", "prompt_template": "{task}" }]
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: Some(crew_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+
+    // Parent turn 2 (after the crew tool returns): end the turn.
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Worker finished.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "spawn a worker").await;
+
+    // Discover the spawned subagent's session id from the crew monitor update.
+    let list_update_method = methods::SUBAGENT_LIST_UPDATE
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    assert!(
+        client
+            .wait_for_timeout(
+                |captured| {
+                    captured.ext_notifications.iter().any(|n| {
+                        n.method.as_ref() == list_update_method
+                            && serde_json::from_str::<serde_json::Value>(n.params.get())
+                                .ok()
+                                .and_then(|p| p.get("subagents").and_then(|s| s.as_array()).map(|a| !a.is_empty()))
+                                .unwrap_or(false)
+                    })
+                },
+                Duration::from_secs(30),
+            )
+            .await,
+        "subagent list update with a spawned worker never arrived"
+    );
+    let subagent_session_id = {
+        let captured = client.captured().await;
+        captured
+            .ext_notifications
+            .iter()
+            .filter(|n| n.method.as_ref() == list_update_method)
+            .filter_map(|n| serde_json::from_str::<serde_json::Value>(n.params.get()).ok())
+            .find_map(|p| {
+                p.get("subagents")?
+                    .as_array()?
+                    .first()?
+                    .get("sessionId")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .expect("subagent session id missing from list update")
+    };
+
+    // Subagent turn 1: a write tool call — requires approval unless trust was inherited.
+    let out_path = cwd.join("subagent-out.txt");
+    let write_input = serde_json::json!({
+        "command": "create",
+        "path": out_path.to_string_lossy(),
+        "content": "hello from the worker"
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: Some(write_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+
+    // Subagent turn 2: report back via the summary tool so the crew stage completes.
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: Some(r#"{"taskDescription":"write a file","taskResult":"file written"}"#.to_string()),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+
+    // Subagent turn 3: trailing end-turn after the summary tool result, so the
+    // subagent loop finishes cleanly.
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Done.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+
+    let response = tokio::time::timeout(Duration::from_secs(90), prompt_recv)
+        .await
+        .expect("prompt timed out — the subagent likely stalled waiting for an approval")
+        .expect("prompt channel dropped");
+    assert!(response.is_ok(), "prompt should succeed, got: {:?}", response.err());
+
+    // The core regression assertion: with runtime trust-all inherited, the subagent's
+    // write tool must not raise any permission request.
+    let captured = client.captured().await;
+    assert!(
+        captured.permission_requests.is_empty(),
+        "subagent raised permission requests despite runtime trust-all: {:?}",
+        captured
+            .permission_requests
+            .iter()
+            .map(|r| r.session_id.to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Regression for the staleness half of trust inheritance: trust is consulted live at
+/// spawn time, so a `/tools reset` issued after trust-all takes effect for subagents
+/// spawned afterwards — they must prompt for approval again.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn subagent_trust_revoked_by_tools_reset() {
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+    use common::PermissionResponse;
+
+    let (mut harness, client, session_id, cwd) = AcpTestHarnessBuilder::new("subagent_trust_revoked_by_tools_reset")
+        .build_with_session()
+        .await;
+
+    // Enable, then immediately revoke, runtime trust-all.
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "tools", "args": { "value": "trust-all" } }),
+        )
+        .await
+        .expect("execute_command for /tools trust-all failed");
+    assert!(result.success, "/tools trust-all should succeed: {}", result.message);
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "tools", "args": { "value": "reset" } }),
+        )
+        .await
+        .expect("execute_command for /tools reset failed");
+    assert!(result.success, "/tools reset should succeed: {}", result.message);
+
+    // The subagent's write tool must prompt; answer it so the flow completes and the
+    // test can assert on the captured request rather than hanging.
+    client
+        .queue_permission_response(PermissionResponse::Select(
+            agent::protocol::PermissionOptionId::AllowOnce.to_string(),
+        ))
+        .await;
+    // The parent's crew tool call also needs approval once trust is reset.
+    client
+        .queue_permission_response(PermissionResponse::Select(
+            agent::protocol::PermissionOptionId::AllowOnce.to_string(),
+        ))
+        .await;
+
+    let crew_input = serde_json::json!({
+        "task": "write a file",
+        "stages": [{ "name": "worker", "role": "kiro_default", "prompt_template": "{task}" }]
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-reset-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-reset-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: Some(crew_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-reset-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Worker finished.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "spawn a worker").await;
+
+    let list_update_method = methods::SUBAGENT_LIST_UPDATE
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    assert!(
+        client
+            .wait_for_timeout(
+                |captured| {
+                    captured.ext_notifications.iter().any(|n| {
+                        n.method.as_ref() == list_update_method
+                            && serde_json::from_str::<serde_json::Value>(n.params.get())
+                                .ok()
+                                .and_then(|p| p.get("subagents").and_then(|s| s.as_array()).map(|a| !a.is_empty()))
+                                .unwrap_or(false)
+                    })
+                },
+                Duration::from_secs(30),
+            )
+            .await,
+        "subagent list update with a spawned worker never arrived"
+    );
+    let subagent_session_id = {
+        let captured = client.captured().await;
+        captured
+            .ext_notifications
+            .iter()
+            .filter(|n| n.method.as_ref() == list_update_method)
+            .filter_map(|n| serde_json::from_str::<serde_json::Value>(n.params.get()).ok())
+            .find_map(|p| {
+                p.get("subagents")?
+                    .as_array()?
+                    .first()?
+                    .get("sessionId")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .expect("subagent session id missing from list update")
+    };
+
+    let out_path = cwd.join("subagent-reset-out.txt");
+    let write_input = serde_json::json!({
+        "command": "create",
+        "path": out_path.to_string_lossy(),
+        "content": "hello from the worker"
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: Some(write_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: Some(r#"{"taskDescription":"write a file","taskResult":"file written"}"#.to_string()),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-reset-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Done.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+
+    let response = tokio::time::timeout(Duration::from_secs(90), prompt_recv)
+        .await
+        .expect("prompt timed out")
+        .expect("prompt channel dropped");
+    assert!(response.is_ok(), "prompt should succeed, got: {:?}", response.err());
+
+    // After reset, the subagent's write tool must have raised a permission request.
+    let captured = client.captured().await;
+    assert!(
+        captured
+            .permission_requests
+            .iter()
+            .any(|r| r.session_id.to_string() == subagent_session_id),
+        "the subagent's write tool must prompt for approval after /tools reset; got requests from: {:?}",
+        captured
+            .permission_requests
+            .iter()
+            .map(|r| r.session_id.to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Regression: trust-all granted by the startup `--trust-all-tools` flag must also be
+/// revocable. The flag is folded into the session agent's settings at creation and
+/// spawns query that agent live, so after `/tools reset` a new subagent prompts again —
+/// the manager-level flag must not override the reset.
+#[tokio::test]
+#[timeout(120000)]
+#[serial]
+async fn subagent_trust_from_startup_flag_revoked_by_tools_reset() {
+    use chat_cli_v2::api_client::model::ChatResponseStream;
+    use chat_cli_v2::api_client::send_message_output::MockStreamItem;
+    use common::PermissionResponse;
+
+    let (mut harness, client, session_id, cwd) =
+        AcpTestHarnessBuilder::new("subagent_trust_from_startup_flag_revoked_by_tools_reset")
+            .with_acp_args(["--trust-all-tools"])
+            .build_with_session()
+            .await;
+
+    let result = client
+        .execute_command(
+            session_id.clone(),
+            serde_json::json!({ "command": "tools", "args": { "value": "reset" } }),
+        )
+        .await
+        .expect("execute_command for /tools reset failed");
+    assert!(result.success, "/tools reset should succeed: {}", result.message);
+
+    // After reset both the parent's crew tool call and the subagent's write tool
+    // prompt; answer both so the flow completes and the test can assert on the
+    // captured requests rather than hanging.
+    client
+        .queue_permission_response(PermissionResponse::Select(
+            agent::protocol::PermissionOptionId::AllowOnce.to_string(),
+        ))
+        .await;
+    client
+        .queue_permission_response(PermissionResponse::Select(
+            agent::protocol::PermissionOptionId::AllowOnce.to_string(),
+        ))
+        .await;
+
+    let crew_input = serde_json::json!({
+        "task": "write a file",
+        "stages": [{ "name": "worker", "role": "kiro_default", "prompt_template": "{task}" }]
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-flag-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-flag-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: Some(crew_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "crew-flag-1".to_string(),
+                    name: "subagent".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+    harness
+        .push_mock_response(
+            &session_id.to_string(),
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Worker finished.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&session_id.to_string(), None).await;
+
+    let prompt_recv = client.prompt_text_async(session_id.clone(), "spawn a worker").await;
+
+    let list_update_method = methods::SUBAGENT_LIST_UPDATE
+        .strip_prefix('_')
+        .expect("extension method should have an underscore prefix");
+    assert!(
+        client
+            .wait_for_timeout(
+                |captured| {
+                    captured.ext_notifications.iter().any(|n| {
+                        n.method.as_ref() == list_update_method
+                            && serde_json::from_str::<serde_json::Value>(n.params.get())
+                                .ok()
+                                .and_then(|p| p.get("subagents").and_then(|s| s.as_array()).map(|a| !a.is_empty()))
+                                .unwrap_or(false)
+                    })
+                },
+                Duration::from_secs(30),
+            )
+            .await,
+        "subagent list update with a spawned worker never arrived"
+    );
+    let subagent_session_id = {
+        let captured = client.captured().await;
+        captured
+            .ext_notifications
+            .iter()
+            .filter(|n| n.method.as_ref() == list_update_method)
+            .filter_map(|n| serde_json::from_str::<serde_json::Value>(n.params.get()).ok())
+            .find_map(|p| {
+                p.get("subagents")?
+                    .as_array()?
+                    .first()?
+                    .get("sessionId")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .expect("subagent session id missing from list update")
+    };
+
+    let out_path = cwd.join("subagent-flag-out.txt");
+    let write_input = serde_json::json!({
+        "command": "create",
+        "path": out_path.to_string_lossy(),
+        "content": "hello from the worker"
+    })
+    .to_string();
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: Some(write_input),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-write-1".to_string(),
+                    name: "write".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: Some(r#"{"taskDescription":"write a file","taskResult":"file written"}"#.to_string()),
+                    stop: None,
+                }),
+                MockStreamItem::Event(ChatResponseStream::ToolUseEvent {
+                    tool_use_id: "sub-flag-summary-1".to_string(),
+                    name: "summary".to_string(),
+                    input: None,
+                    stop: Some(true),
+                }),
+            ]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+    harness
+        .push_mock_response(
+            &subagent_session_id,
+            Some(vec![MockStreamItem::Event(
+                ChatResponseStream::AssistantResponseEvent {
+                    content: "Done.".to_string(),
+                },
+            )]),
+        )
+        .await;
+    harness.push_mock_response(&subagent_session_id, None).await;
+
+    let response = tokio::time::timeout(Duration::from_secs(90), prompt_recv)
+        .await
+        .expect("prompt timed out")
+        .expect("prompt channel dropped");
+    assert!(response.is_ok(), "prompt should succeed, got: {:?}", response.err());
+
+    // The startup flag must not survive the reset: the subagent's write tool has to
+    // have raised a permission request.
+    let captured = client.captured().await;
+    assert!(
+        captured
+            .permission_requests
+            .iter()
+            .any(|r| r.session_id.to_string() == subagent_session_id),
+        "the subagent's write tool must prompt for approval after /tools reset in a --trust-all-tools session; got requests from: {:?}",
+        captured
+            .permission_requests
+            .iter()
+            .map(|r| r.session_id.to_string())
+            .collect::<Vec<_>>()
+    );
+}
+
 /// Extract the `state` field of every goal-status notification captured so far.
 async fn captured_goal_states(client: &AcpTestClient) -> Vec<String> {
     let method = methods::GOAL_STATUS

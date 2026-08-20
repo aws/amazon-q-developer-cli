@@ -351,6 +351,8 @@ pub enum AgentRequest {
     ResetToolPermissions,
     /// Set trust_all_tools on this agent (used for "allow all for session")
     SetTrustAllTools(bool),
+    /// Get the current trust_all_tools setting (used to inherit trust at subagent spawn)
+    GetTrustAllTools,
     InvalidateCachedToolSpecs,
     /// Queue a steering message for injection at the next tool boundary.
     SteerMessage {
@@ -652,6 +654,7 @@ pub enum AgentResponse {
     Resources(Vec<String>),
     LastAssistantMessage(Option<String>),
     ToolTrustResult { changed: Vec<String>, invalid: Vec<String> },
+    TrustAllTools(bool),
     Unknown,
 }
 
