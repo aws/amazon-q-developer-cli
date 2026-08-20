@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "[V3] `grep_search` returning zero matches for any include pattern containing a path separator"
+}

@@ -1,0 +1,4 @@
+{
+  "type": "security",
+  "description": "[V3] Windows `cmd` command parsing now fails closed, so a quote-escaped second command cannot skip approval"
+}

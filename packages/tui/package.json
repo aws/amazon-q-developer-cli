@@ -39,8 +39,8 @@
     "@opentelemetry/sdk-metrics": "2.8.0",
     "@opentelemetry/resources": "2.8.0",
     "@opentelemetry/exporter-metrics-otlp-http": "0.217.0",
-    "@kiro/acp-type-covenant": "0.48.0",
-    "@kiro/client": "0.48.0",
+    "@kiro/acp-type-covenant": "0.49.5",
+    "@kiro/client": "0.49.5",
     "@types/diff": "^8.0.0",
     "ansi-escapes": "^7.3.0",
     "chalk": "^5.6.2",
@@ -72,7 +72,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.1",
     "vitest": "^3.2.1",
-    "@kiro/agent": "0.48.0"
+    "@kiro/agent": "0.49.5"
   },
   "module": "src/index.tsx",
   "private": true

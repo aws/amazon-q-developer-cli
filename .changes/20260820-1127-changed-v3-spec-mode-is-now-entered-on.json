@@ -1,0 +1,4 @@
+{
+  "type": "changed",
+  "description": "[V3] Spec mode is now entered only by explicit selection instead of being inferred from prompt phrasing"
+}
