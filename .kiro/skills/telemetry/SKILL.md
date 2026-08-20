@@ -271,6 +271,31 @@ When presenting, call out:
 - Use `ispresent(<metric>)` to filter to only the relevant metric's records.
 - Queries time out at 15 minutes by default (CloudWatch Logs Insights limit).
 
+## Non-Interactive Engine Migration Report
+
+Track the V1 → V2/V3 non-interactive migration health:
+
+```bash
+# Last 7 days (default)
+python3 .kiro/skills/telemetry/scripts/non-interactive-migration-report.py
+
+# Last 1 day
+python3 .kiro/skills/telemetry/scripts/non-interactive-migration-report.py --days 1
+```
+
+Output includes:
+- **Sessions Started** — count + unique users by engine (V1, V2, V3)
+- **User Turns** — count + unique users by engine
+- **Success Rate** — success/failure/crash breakdown with percentage by engine
+- **Top Failure Sources** — failures by version to identify outlier users/builds
+
+Key signals for the rollout:
+- V2 success rate should be >= V1 (89% baseline)
+- Watch for version-specific failure spikes (single users in automation loops can skew)
+- V2 `user_turns` will undercount until the telemetry flush fix lands (subprocess killed before OTel export)
+
+Uses the direct KUTS log group (`/kuts/kiro-cli/metrics`) for EMF records with full field access.
+
 ## Guardrails
 
 - Use ReadOnly credentials. Never write to this account.

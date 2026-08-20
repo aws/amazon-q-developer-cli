@@ -1539,7 +1539,23 @@ async fn launch_acp_non_interactive(
         })
         .await;
 
-    let _ = child.kill().await;
+    // V2 subprocess needs time to flush turn-level telemetry after detecting
+    // stdin EOF. V3/KAS emits turn telemetry from the host, so no wait needed.
+    if matches!(agent_engine, AgentEngine::V2) {
+        // Drop the local_set to tear down the spawned handle_io task, which holds
+        // the write end of the subprocess's stdin. This closes stdin, signaling EOF
+        // to the subprocess so it can begin graceful shutdown.
+        drop(local_set);
+        match tokio::time::timeout(Duration::from_secs(3), child.wait()).await {
+            Ok(_) => {},
+            Err(_) => {
+                tracing::debug!("non-interactive ACP subprocess did not exit within 3s, killing");
+                let _ = child.kill().await;
+            },
+        }
+    } else {
+        let _ = child.kill().await;
+    }
     let terminated_before_ready = startup.is_pending();
     if terminated_before_ready {
         startup.fail(os);
