@@ -60,6 +60,7 @@ function highestExitCode(results: ScenarioResult[]): number {
 
 interface CliOptions {
   backend: ScenarioBackendId;
+  backendExplicit: boolean;
   engine: Engine;
   fixturesDir: string;
   format: 'tap' | 'summary';
@@ -118,6 +119,7 @@ function parseCliArgs(): CliOptions {
     (values.backend as ScenarioBackendId) ??
     envBackend ??
     (legacyMode === 'deterministic' ? 'acp-mock' : 'live');
+  const backendExplicit = !!(values.backend || envBackend || legacyMode);
   const defaultEngine: Engine = 'kas';
   const engine: Engine = (values.engine as Engine) ?? envEngine ?? defaultEngine;
   const format: 'tap' | 'summary' =
@@ -159,6 +161,7 @@ function parseCliArgs(): CliOptions {
 
   return {
     backend,
+    backendExplicit,
     engine,
     fixturesDir:
       (values['fixtures-dir'] as string) ??
@@ -244,22 +247,26 @@ function emitTap(report: RunReport): void {
 function emitSummary(report: RunReport): void {
   const totalDuration = ((report.completedAt - report.startedAt) / 1000).toFixed(1);
 
+  // A run can span backends, so the header names the ones that actually ran
+  // rather than the lane's, which would mislabel every pinned scenario.
+  const used = [...new Set(report.results.map((r) => `${r.backendId}/${r.engine}`))].sort();
+
   console.log('');
-  console.log(
-    `Smoke Test Results (backend=${report.backendId}, engine=${report.engine})`
-  );
+  console.log(`Smoke Test Results (${used.join(', ') || 'no scenarios'})`);
   console.log('='.repeat(70));
   console.log('');
 
   // Results table
   const STATUS_WIDTH = 6;
   const ID_WIDTH = 32;
+  const BACKEND_WIDTH = 9;
   const DURATION_WIDTH = 8;
   const REASON_WIDTH = 18;
 
   const header = [
     'Status'.padEnd(STATUS_WIDTH),
     'Scenario'.padEnd(ID_WIDTH),
+    'Backend'.padEnd(BACKEND_WIDTH),
     'Duration'.padEnd(DURATION_WIDTH),
     'Reason'.padEnd(REASON_WIDTH),
   ].join(' | ');
@@ -270,9 +277,10 @@ function emitSummary(report: RunReport): void {
   for (const r of report.results) {
     const status = r.passed ? '\x1b[32mPASS\x1b[0m  ' : '\x1b[31mFAIL\x1b[0m  ';
     const id = r.scenario.id.padEnd(ID_WIDTH).slice(0, ID_WIDTH);
+    const backend = r.backendId.padEnd(BACKEND_WIDTH).slice(0, BACKEND_WIDTH);
     const dur = `${(r.duration / 1000).toFixed(1)}s`.padEnd(DURATION_WIDTH);
     const reason = r.exitReason.padEnd(REASON_WIDTH);
-    console.log(`${status}| ${id} | ${dur} | ${reason}`);
+    console.log(`${status}| ${id} | ${backend} | ${dur} | ${reason}`);
   }
 
   console.log('');
@@ -295,7 +303,9 @@ function emitSummary(report: RunReport): void {
     console.log('Failures:');
     console.log('');
     for (const r of report.results.filter((r) => !r.passed)) {
-      console.log(`  \x1b[31m✗\x1b[0m ${r.scenario.id} (${r.exitReason})`);
+      console.log(
+        `  \x1b[31m✗\x1b[0m ${r.scenario.id} (${r.exitReason}, backend=${r.backendId})`
+      );
       if (r.error) {
         console.log(`    error: ${r.error}`);
       }
@@ -363,13 +373,21 @@ Usage: run-smoke [options]
 
 Run smoke test scenarios against the Kiro CLI TUI.
 
+A scenario's directory under e2e_tests/smoke/scenarios/ says which backend runs
+it: "shared" is portable and runs under whichever backend the lane selects, and
+any other directory names the one backend its scenarios run under. With no
+--backend every scenario runs, each under the backend its location names; with
+--backend only that backend's scenarios run.
+
 Options:
   -b, --backend <live|acp-mock|krs-mock>
-                              Execution backend (default: live, env: SMOKE_BACKEND)
+                              Run only this backend's scenarios plus the shared
+                              ones (env: SMOKE_BACKEND)
                               live     real services
                               acp-mock replay a recorded ACP-wire fixture
                               krs-mock real KAS against the fake Kiro Runtime
-                                       Service (needs: cargo build -p mock-krs-server)
+                                       Service; only scenarios carrying turns
+                                       (needs: cargo build -p mock-krs-server)
   -e, --engine <v2|kas>       Agent engine for the selected backend (default: kas, env: SMOKE_ENGINE)
   -m, --mode <live|determ.>   Legacy alias: live -> backend=live, determ. -> backend=acp-mock
       --fixtures-dir <path>   ACP mock fixture directory (env: SMOKE_FIXTURES_DIR)
@@ -415,15 +433,17 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  const backend =
-    cli.backend === 'acp-mock'
+  const createBackend = (id: ScenarioBackendId) =>
+    id === 'acp-mock'
       ? createAcpMockBackend(cli.engine)
-      : cli.backend === 'krs-mock'
-        ? createKrsMockBackend(cli.engine)
+      : id === 'krs-mock'
+        ? createKrsMockBackend('kas')
         : createLiveBackend(cli.engine);
 
   const runOpts: RunOptions = {
-    backend,
+    backend: createBackend(cli.backend),
+    resolveBackend: createBackend,
+    laneOnly: cli.backendExplicit,
     fixturesDir: cli.fixturesDir,
     scenarios: cli.scenarios.length > 0 ? cli.scenarios : undefined,
     categories: cli.categories.length > 0 ? cli.categories : undefined,

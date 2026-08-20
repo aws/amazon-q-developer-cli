@@ -1,17 +1,23 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { E2ETestCase } from '../../E2ETestCase';
-import { type KrsPlan, resolveKrsPlan } from '../krs-plan';
 import type {
   Engine,
   RunOptions,
   Scenario,
   ScenarioBackend,
   TestHarness,
+  VerifyResult,
 } from '../types';
 import { LiveHarness } from './live';
 
@@ -24,11 +30,8 @@ import { LiveHarness } from './live';
  * script. That is what makes a KAS version bump verifiable — the artifact under
  * test is the published one, and the only thing held still is the model.
  *
- * The turns come from `resolveKrsPlan`, which reads them from
- * `fixtures/krs/<scenario-id>.json`. A scenario states that it belongs to this
- * backend by having such a file; this backend reads no scenario fields itself,
- * and nothing is inferred from the scenario's steps. A scenario with no turns
- * fails at launch rather than part-way through a run.
+ * The turns come from the scenario itself, and nothing is inferred from its
+ * steps: a scenario that cannot state what the model says cannot run here.
  */
 
 const REPO_ROOT = join(import.meta.dir, '../../../../..');
@@ -107,15 +110,15 @@ export class MockKrsProcess {
   }
 
   /** Enqueues a scenario's turns, exactly as written. */
-  async loadPlan(plan: KrsPlan): Promise<KrsLoadReport> {
+  async loadTurns(scenario: Scenario): Promise<KrsLoadReport> {
     const response = await fetch(`${this.endpoint}/__control/turns`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ turns: plan.turns }),
+      body: JSON.stringify({ turns: scenario.turns }),
     });
     if (!response.ok) {
       throw new Error(
-        `fake KRS rejected the turns in ${plan.sidecarPath}: ${response.status} ${await response.text()}`
+        `fake KRS rejected the turns of "${scenario.id}": ${response.status} ${await response.text()}`
       );
     }
     return (await response.json()) as KrsLoadReport;
@@ -128,6 +131,12 @@ export class MockKrsProcess {
     return body.requests;
   }
 
+  /** Which turns are still queued, and which were consumed. */
+  async state(): Promise<unknown> {
+    const response = await fetch(`${this.endpoint}/__control/state`);
+    return await response.json();
+  }
+
   stop(): void {
     this.proc.kill();
   }
@@ -137,12 +146,57 @@ export interface KrsLoadReport {
   queued: number;
 }
 
+interface KrsState {
+  queuedTurns?: string[];
+  calls?: number;
+  unmatchedCalls?: number;
+  controlPlaneCalls?: string[];
+  unknownTargets?: string[];
+}
+
+/**
+ * Names of turns written to answer an unpredictable number of calls, which are
+ * meant to outlive the run and so are not evidence of an unreached exchange.
+ */
+function stickyTurnNames(turns: readonly unknown[]): Set<string> {
+  const names = new Set<string>();
+  for (const turn of turns) {
+    if (!turn || typeof turn !== 'object') continue;
+    const { name, times } = turn as { name?: unknown; times?: unknown };
+    if (times === 0 && typeof name === 'string') names.add(name);
+  }
+  return names;
+}
+
+/**
+ * Where the exchange is written: the run's output directory when it has one,
+ * since that is what CI collects, and beside the TUI log otherwise.
+ */
+export function exchangePath(
+  scenario: Scenario,
+  opts: RunOptions,
+  tuiLogPath: string
+): string {
+  const fileName = `krs-exchange-${scenario.id}.json`;
+  if (opts.outputDir) {
+    mkdirSync(opts.outputDir, { recursive: true });
+    return join(opts.outputDir, fileName);
+  }
+  return join(dirname(tuiLogPath), fileName);
+}
+
 /** Delegates to the live harness, and stops the fake KRS on cleanup. */
 class KrsMockHarness implements TestHarness {
+  private readonly stickyTurnNames: Set<string>;
+
   constructor(
     private readonly inner: LiveHarness,
-    private readonly server: MockKrsProcess
-  ) {}
+    private readonly server: MockKrsProcess,
+    private readonly exchangePath: string,
+    turns: readonly unknown[]
+  ) {
+    this.stickyTurnNames = stickyTurnNames(turns);
+  }
 
   sendKeys(input: string | number[]): Promise<void> {
     return this.inner.sendKeys(input);
@@ -192,12 +246,74 @@ class KrsMockHarness implements TestHarness {
     return this.inner.expectExit(timeout);
   }
 
+  async selfChecks(): Promise<VerifyResult[]> {
+    const state = (await this.server.state()) as KrsState;
+    const results: VerifyResult[] = [];
+
+    // A turn nothing asked for means the scenario never reached the exchange it
+    // scripted, which asserting the screen alone cannot catch.
+    const leftover = (state.queuedTurns ?? []).filter(
+      (name) => !this.stickyTurnNames.has(name)
+    );
+    results.push({
+      predicate: 'krs.turnsConsumed',
+      passed: leftover.length === 0,
+      ...(leftover.length > 0
+        ? { actual: `turns never requested: ${leftover.join(', ')}` }
+        : {}),
+    });
+
+    results.push({
+      predicate: 'krs.everyCallScripted',
+      passed: (state.unmatchedCalls ?? 0) === 0,
+      ...(state.unmatchedCalls
+        ? { actual: `${state.unmatchedCalls} call(s) had no matching turn` }
+        : {}),
+    });
+
+    // KAS reaches more than KRS, and what it reaches changes between versions.
+    // Not an assertion: it calls things it tolerates a refusal for (InvokeMCP,
+    // GetFeatureConfiguration) and completes the turn anyway, so failing on them
+    // would fail a working run. Recorded and printed instead, so when an
+    // uncovered call *does* break a turn the operation is named right here rather
+    // than inferred from a screen that never changed.
+    const unknown = [...new Set(state.unknownTargets ?? [])];
+    if (unknown.length > 0) {
+      console.log(
+        `KRS: KAS called operation(s) this fixture does not implement: ${unknown.join(', ')}`
+      );
+    }
+
+    return results;
+  }
+
   async cleanup(): Promise<void> {
+    // Written before the server dies: without it a failure says only that the
+    // screen never changed, which cannot distinguish an unmatched turn from a
+    // call KAS never made.
+    await this.writeExchange();
     try {
       await this.inner.cleanup();
     } finally {
       // Always release the port, even if the TUI teardown throws.
       this.server.stop();
+    }
+  }
+
+  private async writeExchange(): Promise<void> {
+    try {
+      const [state, requests] = await Promise.all([
+        this.server.state(),
+        this.server.requests(),
+      ]);
+      writeFileSync(
+        this.exchangePath,
+        JSON.stringify({ state, requests }, null, 2)
+      );
+      console.log(`KRS exchange: ${this.exchangePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`KRS exchange unavailable: ${message}`);
     }
   }
 }
@@ -206,19 +322,26 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
   if (engine !== 'kas') {
     // Only the KAS engine talks to KRS; v2 has its own client and its own
     // endpoint override.
-    throw new Error(`backend "krs-mock" only supports engine "kas", got "${engine}"`);
+    throw new Error(
+      `backend "krs-mock" only supports engine "kas", got "${engine}"`
+    );
   }
 
   return {
     id: 'krs-mock',
     engine,
     async launch(scenario: Scenario, opts: RunOptions): Promise<TestHarness> {
-      // Resolved up front, so this backend never reads scenario fields itself.
-      const plan = resolveKrsPlan(scenario);
+      // Checked before anything is spawned: a scenario with nothing scripted
+      // would otherwise fail on its first prompt, several steps from the cause.
+      if (!scenario.turns || scenario.turns.length === 0) {
+        throw new Error(
+          `scenario "${scenario.id}" has no KRS turns, so it cannot run against the fake KRS`
+        );
+      }
 
       const server = await MockKrsProcess.start();
       try {
-        await server.loadPlan(plan);
+        await server.loadTurns(scenario);
 
         const testCase = await E2ETestCase.builder()
           .withTestName(`scenario-${scenario.id}-krs-mock-${Date.now()}`)
@@ -229,12 +352,25 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
             KIRO_AGENT_ENGINE: 'kas',
             // Appended by kas.ts as KAS's `--endpoint`.
             KIRO_KAS_ENDPOINT: server.endpoint,
+            // Appended by kas.ts as KAS's `--control-plane-endpoint`. KAS gates
+            // every prompt on a model registry it fetches from the control
+            // plane, which `--endpoint` does not cover; without this the call
+            // escapes to the real service and fails closed on the fake key
+            // below. Pointing it here also means any control-plane operation the
+            // fixture has not implemented is refused by this server, under its
+            // own name, instead of timing out against production.
+            KIRO_KAS_CONTROL_PLANE_ENDPOINT: server.endpoint,
             // Read by KAS ahead of every auth mode, so no login is needed.
             KIRO_API_KEY: server.apiKey,
           })
           .launch();
 
-        return new KrsMockHarness(new LiveHarness(testCase), server);
+        return new KrsMockHarness(
+          new LiveHarness(testCase),
+          server,
+          exchangePath(scenario, opts, testCase.getTuiLogPath()),
+          scenario.turns
+        );
       } catch (error) {
         server.stop();
         throw error;

@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 /**
- * sync-scenarios.ts — Compare scenarios.json against the docs slash-commands
- * reference page and detect missing scenarios. If new ones are found, update
- * scenarios.json and optionally create a PR.
+ * sync-scenarios.ts — Compare the shared scenario manifest against the docs
+ * slash-commands reference page and detect missing scenarios. If new ones are
+ * found, update the manifest and optionally create a PR.
  *
  * Usage:
  *   bun run e2e_tests/smoke/sync-scenarios.ts                    # dry-run
@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 
-const SCENARIOS_PATH = path.join(__dirname, 'scenarios.json');
+const SCENARIOS_PATH = path.join(__dirname, 'scenarios', 'shared', 'scenarios.json');
 const DEFAULT_DOCS_PATH = path.join(
   process.env.HOME ?? '~',
   'workplace/kiro-docs/contents/docs/cli/reference/slash-commands/index.mdx'
@@ -128,7 +128,7 @@ for (const s of newScenarios) {
 }
 
 if (!apply) {
-  console.log('\nRun with --apply to update scenarios.json');
+  console.log('\nRun with --apply to update the manifest');
   process.exit(0);
 }
 

@@ -1,20 +1,22 @@
 #!/usr/bin/env bun
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { loadScenarios } from '../scenario-runner/runner';
+
 type Engine = 'v2' | 'kas';
-type ScenarioBackendId = 'live' | 'acp-mock';
+type ScenarioBackendId = 'live' | 'acp-mock' | 'krs-mock';
 type ScenarioPriority = 'p0' | 'p1' | 'p2';
 
 interface Scenario {
   id: string;
   category: string;
   engine?: readonly Engine[];
-  backend?: readonly ScenarioBackendId[];
+  sourceBackend?: ScenarioBackendId;
   priority?: ScenarioPriority;
   tags?: readonly string[];
+  turns?: readonly unknown[];
 }
 
 export interface ScenarioCategoryFilters {
@@ -23,16 +25,6 @@ export interface ScenarioCategoryFilters {
   priorities?: ScenarioPriority[];
   categories?: string[];
   tags?: string[];
-}
-
-function loadScenarios(scenariosPath: string): Scenario[] {
-  const raw = JSON.parse(fs.readFileSync(scenariosPath, 'utf8')) as {
-    scenarios?: Scenario[];
-  };
-  if (!Array.isArray(raw.scenarios)) {
-    throw new Error(`Invalid scenarios file: ${scenariosPath}`);
-  }
-  return raw.scenarios;
 }
 
 function matchesFilters(
@@ -50,9 +42,16 @@ function matchesFilters(
 
   if (
     filters.backend &&
-    Array.isArray(scenario.backend) &&
-    scenario.backend.length > 0 &&
-    !scenario.backend.includes(filters.backend)
+    scenario.sourceBackend &&
+    scenario.sourceBackend !== filters.backend
+  ) {
+    return false;
+  }
+
+  // The krs-mock lane can only run a scenario that says what the model replies.
+  if (
+    filters.backend === 'krs-mock' &&
+    !(scenario.turns && scenario.turns.length > 0)
   ) {
     return false;
   }
@@ -117,7 +116,7 @@ function parseCli(): {
   const categories = (values.category as string[]) ?? [];
   const tags = (values.tag as string[]) ?? [];
 
-  if (backend && backend !== 'live' && backend !== 'acp-mock') {
+  if (backend && !['live', 'acp-mock', 'krs-mock'].includes(backend)) {
     throw new Error(`Unsupported backend: ${backend}`);
   }
 
@@ -130,8 +129,7 @@ function parseCli(): {
   }
 
   const scenariosPath = path.resolve(
-    values.scenarios ??
-      path.join(import.meta.dir, '../smoke/scenarios.json')
+    values.scenarios ?? path.join(import.meta.dir, '../smoke/scenarios')
   );
 
   return {

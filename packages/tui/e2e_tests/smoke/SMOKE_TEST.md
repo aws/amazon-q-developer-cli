@@ -1,7 +1,7 @@
 # Smoke Test — LLM-Driven Exploratory Testing
 
-Scenario-driven exploratory testing of the Kiro CLI TUI. The LLM reads
-`scenarios.json`, drives the TUI through Knight Rider, observes every frame,
+Scenario-driven exploratory testing of the Kiro CLI TUI. The LLM reads the
+scenario manifests, drives the TUI through Knight Rider, observes every frame,
 compares with previous runs, and flags subtle visual differences.
 
 ## When to Use
@@ -11,8 +11,29 @@ When asked to "run smoke tests", "run the scenarios", or "exploratory test".
 ## Prerequisites
 
 - Knight Rider running (use `~/workplace/kiro_reviewer/scripts/knight-rider.sh start`)
-- `scenarios.json` in this directory (the scenario manifest)
+- `scenarios/` in this directory (the scenario manifests)
 - Previous run reports in `~/workplace/kiro_reviewer/reports/smoke-*/` for comparison
+
+## Where scenarios live
+
+A scenario's directory says which backend runs it:
+
+| Directory | Runs under |
+|---|---|
+| `scenarios/shared/` | whichever backend the lane selects |
+| `scenarios/live/` | real services only |
+| `scenarios/acp-mock/` | a recorded ACP-wire fixture |
+| `scenarios/krs-mock/` | a real KAS answered by the fake Kiro Runtime Service |
+
+A `krs-mock` scenario carries the `turns` that answer its prompts. A shared
+scenario may carry them too, which is what makes it eligible for that lane; one
+without them is skipped there.
+
+```bash
+bun run-smoke.ts                      # every scenario, each under its own backend
+bun run-smoke.ts --backend acp-mock   # only the mocked ones, plus shared
+bun run-smoke.ts --backend krs-mock   # needs: cargo build -p mock-krs-server
+```
 
 ## Flow
 
@@ -54,9 +75,9 @@ frame() { curl -s -X POST $KR/frame -d "{\"label\":\"$1\"}"; }
 wait_text() { curl -s -X POST $KR/wait-for-text -d "{\"text\":\"$1\",\"timeout\":${2:-15000}}"; }
 ```
 
-### 3. For each scenario in `scenarios.json`
+### 3. For each scenario in `scenarios/`
 
-Read the scenario manifest. For each scenario:
+Read the scenario manifests. For each scenario:
 
 #### a. Execute steps
 

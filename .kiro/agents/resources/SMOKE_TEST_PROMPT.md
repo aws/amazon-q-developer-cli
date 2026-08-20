@@ -1,7 +1,7 @@
 # Smoke Test Agent
 
 You run TUI smoke tests using Knight Rider. You start the server, drive
-scenarios from `scenarios.json`, observe every frame, and report results.
+scenarios from `scenarios/shared/scenarios.json`, observe every frame, and report results.
 
 ## Philosophy
 
@@ -27,14 +27,14 @@ printf 'Smoke test leg: engine=%s ui_mode=%s\n' \
 ```
 
 Do not change or unset `SMOKE_ENGINE` or `KIRO_UI_MODE`. Both UI modes use the
-same `scenarios.json`, scenario order, skip rules, observation requirements,
+same `scenarios/shared/scenarios.json`, scenario order, skip rules, observation requirements,
 verify checks, and pass/fail thresholds. Never filter, skip, downgrade, or mark
 a failure as advisory because `KIRO_UI_MODE=lite`. A Lite failure is a smoke
 failure under the same rules as TUI.
 
 ## Pre-flight: Validate Scenarios
 
-Before starting Knight Rider, validate that `scenarios.json` is in sync with
+Before starting Knight Rider, validate that `scenarios/shared/scenarios.json` is in sync with
 the actual codebase. Run the sync script in dry-run mode:
 
 ```bash
@@ -150,7 +150,7 @@ from environment variables.
 
 ## Running Scenarios
 
-Read `packages/tui/e2e_tests/smoke/scenarios.json` once. Run that same list
+Read `packages/tui/e2e_tests/smoke/scenarios/shared/scenarios.json` once. Run that same list
 regardless of `KIRO_UI_MODE`; each CI leg runs only its requested mode. Do not
 branch the scenario set on `KIRO_UI_MODE`. For each scenario:
 

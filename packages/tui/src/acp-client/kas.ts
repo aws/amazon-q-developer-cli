@@ -208,6 +208,46 @@ function parseKiroAgentCapabilities(raw: unknown): KiroAgentCapabilities {
   };
 }
 
+/**
+ * A loopback HTTP(S) endpoint, or null.
+ *
+ * Guards the control-plane override, which redirects requests carrying a bearer
+ * token. Anything that is not a well-formed http(s) URL on this machine is
+ * refused and reported, rather than quietly pointing a real credential at
+ * whatever a stray environment variable happened to name.
+ */
+function loopbackEndpointOrNull(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    process.stderr.write(
+      `[acp-client] ignoring KIRO_KAS_CONTROL_PLANE_ENDPOINT: not a valid URL: ${value}\n`
+    );
+    return undefined;
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    process.stderr.write(
+      `[acp-client] ignoring KIRO_KAS_CONTROL_PLANE_ENDPOINT: expected http(s), got ${url.protocol}\n`
+    );
+    return undefined;
+  }
+
+  // `::1` arrives bracketed from the URL parser.
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (host !== 'localhost' && host !== '127.0.0.1' && host !== '::1') {
+    process.stderr.write(
+      `[acp-client] ignoring KIRO_KAS_CONTROL_PLANE_ENDPOINT: control-plane traffic carries a token, so only loopback is honoured (got ${url.hostname})\n`
+    );
+    return undefined;
+  }
+
+  return value;
+}
+
 function getKasVersion(kasServerPath: string): string {
   try {
     const { readFileSync } = require('node:fs');
@@ -668,6 +708,27 @@ export class KasAcpClient extends BaseAcpClient {
       );
     }
 
+    // The sibling hook for KAS's *other* egress. `--endpoint` covers only KRS
+    // model traffic; KAS resolves its model registry (ListAvailableModels) and
+    // the rest of its control-plane calls through a separate client at
+    // `https://management.<region>.kiro.dev`, which that flag does not touch. A
+    // fixture that redirects only the model endpoint therefore still reaches the
+    // real service, and fails closed on a fake credential several steps from the
+    // cause. Redirect both so an uncovered call lands on the fixture by name.
+    //
+    // Loopback only, unlike its sibling: control-plane calls carry the bearer
+    // token, so honouring an arbitrary host here would hand a real credential to
+    // whatever a stray environment variable named. The only legitimate consumer
+    // is a fake server on this machine.
+    const kasControlPlaneEndpointOverride = loopbackEndpointOrNull(
+      process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT
+    );
+    if (kasControlPlaneEndpointOverride) {
+      process.stderr.write(
+        `[acp-client] KIRO_KAS_CONTROL_PLANE_ENDPOINT set — KAS control plane endpoint overridden: ${kasControlPlaneEndpointOverride}\n`
+      );
+    }
+
     // Resolved before `super()` because the user-agent below is baked into
     // the subprocess env at spawn time, which precedes the `super()` call
     // that unblocks `this` access. Stored on the instance afterwards.
@@ -685,6 +746,9 @@ export class KasAcpClient extends BaseAcpClient {
         // chat-cli's SQLite store; KAS only ever sees access tokens.
         '--auth=acp-callback',
         ...(kasEndpointOverride ? [`--endpoint=${kasEndpointOverride}`] : []),
+        ...(kasControlPlaneEndpointOverride
+          ? [`--control-plane-endpoint=${kasControlPlaneEndpointOverride}`]
+          : []),
       ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],

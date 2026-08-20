@@ -254,43 +254,44 @@ with `--allow-unvalidated-requests` / `Config::validate_requests`.
 
 ## Turns for a smoke scenario
 
-A scenario in the TUI smoke suite is answered by turns written beside it, keyed by
-its id:
+A scenario in the TUI smoke suite carries the turns that answer it, and the
+directory it sits in says which backend runs it:
 
 ```
-smoke/scenarios.json                    the scenario "tool-use-shell"
-smoke/fixtures/krs/tool-use-shell.json  the turns it is answered with
+smoke/scenarios/shared/     portable: the lane's backend decides
+smoke/scenarios/krs-mock/   a real KAS answered by this server
 ```
 
-Having that file is how a scenario says it belongs to the `krs-mock` backend.
-Nothing is inferred from its steps, and the scenario carries no backend payload —
-the same convention the `acp-mock` backend uses for `fixtures/acp-wire`.
+A scenario without turns cannot run here, and one that has them can run here
+whichever directory it lives in.
 
 ```jsonc
-// smoke/fixtures/krs/tool-use-shell.json
-{ "turns": [
-  { "name": "ask-for-the-tool",
-    "match": { "userInputContains": "echo hello world" },
-    "respond": { "events": [
-      { "type": "toolUse", "toolUseId": "tu-1", "name": "shell",
-        "input": "{\"command\":\"echo hello world\"}", "stop": true },
-      { "type": "metadata", "stopReason": "TOOL_USE" } ]}},
-  { "name": "answer-after-the-tool",
-    "match": { "hasToolResults": true },
-    "respond": { "events": [
-      { "type": "text", "content": "The shell printed hello world." } ]}} ]}
+// smoke/scenarios/krs-mock/scenarios.json
+{ "id": "krs-tool-use-shell",
+  "steps": ["prompt:run echo hello world using the shell"],
+  "verify": ["screen.contains:requires approval"],
+  "turns": [
+    { "name": "ask-for-the-tool",
+      "match": { "userInputContains": "echo hello world" },
+      "respond": { "events": [
+        { "type": "toolUse", "toolUseId": "tu-1", "name": "shell",
+          "input": "{\"command\":\"echo hello world\"}", "stop": true },
+        { "type": "metadata", "stopReason": "TOOL_USE" } ]}},
+    { "name": "answer-after-the-tool",
+      "match": { "hasToolResults": true },
+      "respond": { "events": [
+        { "type": "text", "content": "The shell printed hello world." } ]}} ]}
 ```
 
-`resolveKrsPlan` in `packages/tui/e2e_tests/scenario-runner/krs-plan.ts` reads the
-file and the backend POSTs its turns to `/__control/turns`. A scenario run under
-`krs-mock` with no file fails at launch, naming the path to write.
+The backend POSTs those turns to `/__control/turns` before launching the TUI, and
+a scenario with none fails at launch rather than on its first prompt.
 
 **A tool call needs two turns.** KAS calls KRS again with the tool's result, and
 that second call needs its own turn — match it with `hasToolResults: true`. With
 only the first turn, the tool runs and then the continuation hits the
 unscripted-call error, which KAS reports as a transient model failure.
 
-The file's schema is `packages/tui/e2e_tests/smoke/krs-turns.schema.json`,
+The turns' schema is `packages/tui/e2e_tests/smoke/krs-turns.schema.json`,
 generated from `scenario::KrsScript` — regenerate it with
 `UPDATE_KRS_SCHEMA=1 cargo test -p mock-krs-server --test krs_turns_schema`.
 

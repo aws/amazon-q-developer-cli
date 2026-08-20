@@ -1,5 +1,8 @@
 {
-    "chat.defaultAgent": "kiro-dev",
-    "chat.enableKnowledge": true,
-    "chat.enableTodoList": true
+  "chat.defaultAgent": "kiro-dev",
+  "chat.enableKnowledge": true,
+  "chat.enableTodoList": true,
+  "toolSearch.enabled": true,
+  "toolSearch.minPct": 0,
+  "toolSearch.minTokens": 0
 }

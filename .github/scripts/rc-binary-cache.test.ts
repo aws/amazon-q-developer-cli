@@ -99,6 +99,7 @@ const CERTIFICATION_JOBS = [
   'acp-integration',
   'e2e',
   'smoke',
+  'smoke-krs-mock',
   'scenario-categories',
   'visual',
   'live-parity',
@@ -284,7 +285,7 @@ describe('RC binary cache identity', () => {
     const consumers = workflow
       .split('\n      - name: Download reusable bundle')
       .slice(1);
-    expect(consumers).toHaveLength(6);
+    expect(consumers).toHaveLength(7);
     expect(workflow).not.toContain('Restore binary mode');
     for (const consumer of consumers) {
       const verify = consumer.indexOf('\n      - name: Verify reusable binary');
@@ -310,7 +311,7 @@ describe('RC binary cache identity', () => {
     const untrusted = [...jobs].filter(([, job]) =>
       job.includes('ref: ${{ inputs.source_sha')
     );
-    expect(untrusted.map(([name]) => name)).toHaveLength(12);
+    expect(untrusted.map(([name]) => name)).toHaveLength(13);
     for (const [, job] of untrusted) {
       const checkout = job
         .split('- uses: actions/checkout@')
@@ -366,7 +367,7 @@ describe('RC binary cache identity', () => {
     expect(workflow).toContain('"$TRUSTED_SHA" != "$TRUSTED_BASE_SHA"');
 
     const trusted = steps(workflow, 'Checkout trusted CI support');
-    expect(trusted).toHaveLength(12);
+    expect(trusted).toHaveLength(13);
     for (const checkout of trusted) {
       expect(checkout).toContain("if: inputs.execution_mode == 'fork'");
       expect(checkout).toContain('repository: ${{ github.repository }}');
@@ -378,7 +379,7 @@ describe('RC binary cache identity', () => {
     const binaryCacheCheckouts = trusted.filter((checkout) =>
       checkout.includes('.github/scripts/rc-binary-cache.ts')
     );
-    expect(binaryCacheCheckouts).toHaveLength(8);
+    expect(binaryCacheCheckouts).toHaveLength(9);
     for (const checkout of binaryCacheCheckouts) {
       expect(checkout).toContain(ASSET_ENV_CONTRACT_PATH);
     }
@@ -393,7 +394,7 @@ describe('RC binary cache identity', () => {
     const workflow = readCertificationWorkflow();
     const bunVersion = steps(workflow, 'Read pinned Bun version');
 
-    expect(bunVersion).toHaveLength(12);
+    expect(bunVersion).toHaveLength(13);
     for (const step of bunVersion) {
       expect(step).toContain('shell: bash');
       expect(step).toContain('"$RC_CI_ROOT/scripts/const.py"');
@@ -470,6 +471,7 @@ describe('RC binary cache identity', () => {
       'acp-integration',
       'e2e',
       'smoke',
+      'smoke-krs-mock',
       'scenario-categories',
       'visual',
       'live-parity',

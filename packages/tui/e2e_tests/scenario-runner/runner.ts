@@ -8,6 +8,8 @@ import type {
   RunOptions,
   RunReport,
   Scenario,
+  ScenarioBackend,
+  ScenarioBackendId,
   ScenarioResult,
   StepTiming,
   TestHarness,
@@ -60,35 +62,128 @@ function captureFrame(harness: TestHarness, label: string): Frame {
   };
 }
 
-export function loadScenarios(scenariosPath?: string): Scenario[] {
-  const filePath =
-    scenariosPath ??
-    path.join(__dirname, '../smoke/scenarios.json');
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Scenarios file not found: ${filePath}`);
-  }
+const DEFAULT_SCENARIOS_ROOT = path.join(__dirname, '../smoke/scenarios');
 
+/** Scenarios here are portable: the lane's backend decides how they run. */
+const SHARED_DIR = 'shared';
+
+/** Every other directory names the one backend its scenarios run under. */
+const BACKEND_DIRS: Record<string, ScenarioBackendId> = {
+  live: 'live',
+  'acp-mock': 'acp-mock',
+  'krs-mock': 'krs-mock',
+};
+
+function readManifest(filePath: string): Scenario[] {
   const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  const scenarios: Scenario[] = raw.scenarios;
+  const scenarios: Scenario[] = raw?.scenarios;
   if (!Array.isArray(scenarios)) {
-    throw new Error('Invalid scenarios.json: expected "scenarios" array');
+    throw new Error(`Invalid scenario manifest ${filePath}: expected a "scenarios" array`);
   }
 
   for (const scenario of scenarios) {
     if (
-      !scenario.id ||
+      !scenario?.id ||
       !scenario.name ||
       !scenario.category ||
       !Array.isArray(scenario.steps) ||
       !Array.isArray(scenario.verify)
     ) {
       throw new Error(
-        `Invalid scenario "${scenario.id ?? '<unknown>'}": missing required fields (id, name, category, steps, verify)`
+        `Invalid scenario "${scenario?.id ?? '<unknown>'}" in ${filePath}: missing required fields (id, name, category, steps, verify)`
       );
     }
   }
 
   return scenarios;
+}
+
+function manifestPaths(dir: string): string[] {
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+    .map((entry) => path.join(dir, entry.name))
+    .sort();
+}
+
+/**
+ * Loads every scenario, tagging each with the backend its location implies.
+ *
+ * A path to a single file is read as one manifest whose scenarios are portable,
+ * which is what an ad-hoc or generated manifest wants.
+ */
+export function loadScenarios(scenariosPath?: string): Scenario[] {
+  const target = scenariosPath ?? DEFAULT_SCENARIOS_ROOT;
+  if (!fs.existsSync(target)) {
+    throw new Error(`Scenarios not found: ${target}`);
+  }
+  if (fs.statSync(target).isFile()) {
+    return readManifest(target);
+  }
+
+  const loaded: Scenario[] = [];
+  const seen = new Map<string, string>();
+
+  for (const entry of fs.readdirSync(target, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+
+    const backendId =
+      entry.name === SHARED_DIR ? undefined : BACKEND_DIRS[entry.name];
+    if (entry.name !== SHARED_DIR && !backendId) {
+      throw new Error(
+        `Unknown scenario directory "${entry.name}" in ${target}: expected ` +
+          `"${SHARED_DIR}" or one of ${Object.keys(BACKEND_DIRS)
+            .map((name) => `"${name}"`)
+            .join(', ')}`
+      );
+    }
+
+    for (const manifest of manifestPaths(path.join(target, entry.name))) {
+      for (const scenario of readManifest(manifest)) {
+        const previous = seen.get(scenario.id);
+        if (previous) {
+          throw new Error(
+            `Duplicate scenario id "${scenario.id}" in ${manifest} (already defined in ${previous})`
+          );
+        }
+        seen.set(scenario.id, manifest);
+        loaded.push(backendId ? { ...scenario, sourceBackend: backendId } : scenario);
+      }
+    }
+  }
+
+  return loaded;
+}
+
+/** The id of the backend a scenario runs under, needing no backend instance. */
+export function scenarioBackendId(
+  scenario: Scenario,
+  opts: RunOptions
+): ScenarioBackendId {
+  return scenario.sourceBackend ?? opts.backend.id;
+}
+
+/**
+ * The backend a scenario runs under: its directory's, or the lane's when the
+ * scenario is portable.
+ */
+export function resolveScenarioBackend(
+  scenario: Scenario,
+  opts: RunOptions
+): ScenarioBackend {
+  const id = scenarioBackendId(scenario, opts);
+  if (id === opts.backend.id) {
+    return opts.backend;
+  }
+
+  const backend = opts.resolveBackend?.(id);
+  if (!backend) {
+    throw new Error(
+      `scenario "${scenario.id}" requires backend "${id}", ` +
+        'which this runner was not given'
+    );
+  }
+  return backend;
 }
 
 export function filterScenarios(
@@ -97,13 +192,24 @@ export function filterScenarios(
 ): Scenario[] {
   let filtered = scenarios.filter((scenario) => {
     if (!scenario.engine || scenario.engine.length === 0) return true;
-    return scenario.engine.includes(opts.backend.engine);
+    return scenario.engine.includes(resolveScenarioBackend(scenario, opts).engine);
   });
 
+  // A scenario is only eligible for the krs-mock lane if it says what the model
+  // replies. Skipping the rest keeps the whole suite runnable on that lane.
   filtered = filtered.filter((scenario) => {
-    if (!scenario.backend || scenario.backend.length === 0) return true;
-    return scenario.backend.includes(opts.backend.id);
+    if (scenarioBackendId(scenario, opts) !== 'krs-mock') return true;
+    return !!scenario.turns && scenario.turns.length > 0;
   });
+
+  // Asking for one backend means only that backend runs, so a lane stays as
+  // deterministic (or as live) as it was asked to be. Without the request every
+  // scenario runs, each under the backend its location names.
+  if (opts.laneOnly) {
+    filtered = filtered.filter(
+      (scenario) => scenarioBackendId(scenario, opts) === opts.backend.id
+    );
+  }
 
   if (opts.scenarios && opts.scenarios.length > 0) {
     const ids = new Set(opts.scenarios);
@@ -143,14 +249,15 @@ export async function runScenario(
   let harness: TestHarness | null = null;
   const runtime = createScenarioRuntimeContext(scenario.id);
   let initialSessionId: string | undefined;
+  const backend = resolveScenarioBackend(scenario, opts);
 
   log(
     scenarioLog,
-    `starting (backend=${opts.backend.id}, engine=${opts.backend.engine}, timeout=${timeout}ms)`
+    `starting (backend=${backend.id}, engine=${backend.engine}, timeout=${timeout}ms)`
   );
 
   try {
-    harness = await opts.backend.launch(scenario, opts);
+    harness = await backend.launch(scenario, opts);
     await harness.waitForText('ask a question', DEFAULT_BOOT_TIMEOUT);
     initialSessionId = (await harness.getStore()).sessionId ?? undefined;
 
@@ -226,6 +333,13 @@ export async function runScenario(
       }
     }
 
+    for (const result of (await harness.selfChecks?.()) ?? []) {
+      verifyResults.push(result);
+      if (!result.passed) {
+        log(scenarioLog, `FAIL: ${result.predicate} — ${result.actual}`);
+      }
+    }
+
     if (captureFrames) {
       frames.push(captureFrame(harness, 'final'));
     }
@@ -235,8 +349,8 @@ export async function runScenario(
 
     return {
       scenario,
-      backendId: opts.backend.id,
-      engine: opts.backend.engine,
+      backendId: backend.id,
+      engine: backend.engine,
       passed,
       duration,
       exitReason: passed ? 'passed' : 'assertion-failed',
@@ -264,8 +378,8 @@ export async function runScenario(
 
     return {
       scenario,
-      backendId: opts.backend.id,
-      engine: opts.backend.engine,
+      backendId: backend.id,
+      engine: backend.engine,
       passed: false,
       duration: Date.now() - startTime,
       exitReason,
@@ -311,9 +425,23 @@ export async function runAll(opts: RunOptions): Promise<RunReport> {
   const passed = results.filter((result) => result.passed).length;
   const failed = results.filter((result) => !result.passed).length;
 
+  // Named from what ran, not from the lane: in unpinned mode the lane backend is
+  // only the fallback for shared scenarios, so using it would attribute a
+  // pinned scenario's failure to a backend it never touched.
+  const label = (values: string[], fallback: string) =>
+    [...new Set(values)].sort().join('+') || fallback;
+  const backendId = label(
+    results.map((result) => result.backendId),
+    opts.backend.id
+  );
+  const engine = label(
+    results.map((result) => result.engine),
+    opts.backend.engine
+  );
+
   const report: RunReport = {
-    backendId: opts.backend.id,
-    engine: opts.backend.engine,
+    backendId,
+    engine,
     startedAt,
     completedAt,
     total: allScenarios.length,
@@ -328,7 +456,7 @@ export async function runAll(opts: RunOptions): Promise<RunReport> {
     fs.mkdirSync(opts.outputDir, { recursive: true });
     const reportPath = path.join(
       opts.outputDir,
-      `scenario-report-${opts.backend.id}-${startedAt}.json`
+      `scenario-report-${backendId}-${startedAt}.json`
     );
     fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
     log('runner', `report written to ${reportPath}`);

@@ -187,6 +187,14 @@ pub struct ServerState {
     pub queued_turns: Vec<String>,
     pub calls: usize,
     pub unmatched_calls: usize,
+    /// Control-plane operations this server answered, in order. KAS gates a
+    /// prompt on these, so a harness that sees no model traffic can tell
+    /// "never got past the registry" from "never called at all".
+    pub control_plane_calls: Vec<String>,
+    /// Operations that arrived and are not modelled here, in order. Recorded so
+    /// a KAS version that starts calling something new names itself, instead of
+    /// looking like silence.
+    pub unknown_targets: Vec<String>,
 }
 
 struct QueuedTurn {
@@ -201,6 +209,8 @@ struct Inner {
     requests: Mutex<Vec<CapturedRequest>>,
     calls: AtomicUsize,
     unmatched: AtomicUsize,
+    control_plane_calls: Mutex<Vec<String>>,
+    unknown_targets: Mutex<Vec<String>>,
 }
 
 /// Everything the operation handler needs that is not in the modeled input:
@@ -235,6 +245,8 @@ impl MockKrsServer {
             requests: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
             unmatched: AtomicUsize::new(0),
+            control_plane_calls: Mutex::new(Vec::new()),
+            unknown_targets: Mutex::new(Vec::new()),
         });
 
         let listener = tokio::net::TcpListener::bind(config.bind)
@@ -437,6 +449,8 @@ async fn snapshot_state(inner: &Arc<Inner>) -> ServerState {
         queued_turns: inner.queue.lock().await.iter().map(|q| q.turn.label()).collect(),
         calls: inner.calls.load(Ordering::SeqCst),
         unmatched_calls: inner.unmatched.load(Ordering::SeqCst),
+        control_plane_calls: inner.control_plane_calls.lock().await.clone(),
+        unknown_targets: inner.unknown_targets.lock().await.clone(),
     }
 }
 
@@ -451,6 +465,26 @@ async fn snapshot_state(inner: &Arc<Inner>) -> ServerState {
 /// outside its modeled input.
 async fn serve_generated(State(state): State<AppState>, request: Request) -> Response {
     let (mut parts, body) = request.into_parts();
+
+    // KAS reaches two services, not one. Model traffic is KRS, but a prompt is
+    // gated on the *control plane*: KAS lists the available models before it
+    // will generate anything. Both are pointed here by the harness, so answer
+    // the control-plane operations we know and record the ones we don't.
+    if let Some(operation) = target_operation(&parts.headers) {
+        match operation.as_str() {
+            LIST_AVAILABLE_MODELS => {
+                let bearer = bearer_token(&parts.headers);
+                state.inner.control_plane_calls.lock().await.push(operation);
+                return control_plane_list_models(&state.inner.config, bearer.as_deref());
+            },
+            GENERATE_ASSISTANT_RESPONSE => {},
+            // Not modelled here. Recorded before the generated service answers
+            // it, so the captured exchange names the operation rather than
+            // showing an empty request log next to a mystery failure.
+            other => state.inner.unknown_targets.lock().await.push(other.to_string()),
+        }
+    }
+
     let raw_body = match axum::body::to_bytes(body, MAX_REQUEST_BYTES).await {
         Ok(bytes) => bytes,
         Err(error) => {
@@ -714,20 +748,25 @@ fn has_tool_results(input: &GenerateAssistantResponseInput) -> bool {
 
 /// KAS always sends a bearer token, so a missing one is a wiring bug worth
 /// failing on even when no specific key is configured.
-fn check_auth(config: &Config, context: &RequestContext) -> Result<(), GenerateAssistantResponseError> {
-    let token = match &context.bearer {
+///
+/// Shared by both services this fixture answers, so KRS and the control plane
+/// cannot disagree about what counts as authenticated.
+fn check_bearer(config: &Config, bearer: Option<&str>) -> Result<(), String> {
+    let token = match bearer {
         Some(token) if !token.trim().is_empty() => token,
-        _ => {
-            return Err(access_denied("mock KRS: request carried no Authorization bearer token"));
-        },
+        _ => return Err("mock KRS: request carried no Authorization bearer token".to_string()),
     };
 
     match &config.api_key {
-        Some(expected) if token != expected => Err(access_denied(
-            "mock KRS: bearer token does not match the configured api key",
-        )),
+        Some(expected) if token != expected => {
+            Err("mock KRS: bearer token does not match the configured api key".to_string())
+        },
         _ => Ok(()),
     }
+}
+
+fn check_auth(config: &Config, context: &RequestContext) -> Result<(), GenerateAssistantResponseError> {
+    check_bearer(config, context.bearer.as_deref()).map_err(|message| access_denied(&message))
 }
 
 /// Maps a scripted failure onto the modeled error it names. The SDK decides the
@@ -798,6 +837,79 @@ fn interesting_headers(headers: &HeaderMap) -> Vec<(String, String)> {
     }
     kept
 }
+
+/// The control-plane operation KAS calls before it will serve a prompt.
+const LIST_AVAILABLE_MODELS: &str = "ListAvailableModels";
+/// The one KRS operation the generated service implements.
+const GENERATE_ASSISTANT_RESPONSE: &str = "GenerateAssistantResponse";
+/// The model this fixture advertises. KAS only needs an id it can carry.
+const MOCK_MODEL_ID: &str = "mock-krs-model";
+
+/// The operation from an `x-amz-target` header (`Service.Operation`).
+///
+/// Matched on the suffix: the service prefix differs between KRS and the control
+/// plane, and pinning either would make this fixture fail for a reason that has
+/// nothing to do with the behaviour under test.
+fn target_operation(headers: &HeaderMap) -> Option<String> {
+    let target = headers.get("x-amz-target")?.to_str().ok()?;
+    let operation = target.rsplit('.').next()?.trim();
+    (!operation.is_empty()).then(|| operation.to_string())
+}
+
+/// The body of a `ListAvailableModels` answer.
+///
+/// Held to the two members KAS reads — a model carrying an id, and a default.
+/// Everything else it treats as optional, and every field added here is a field
+/// that can drift from the real service without anything noticing.
+fn list_available_models_body() -> Value {
+    json!({
+        "models": [{
+            "modelId": MOCK_MODEL_ID,
+            "modelName": "Mock KRS Model",
+            "description": "Served by mock-krs-server so a prompt can reach the fake KRS.",
+            "status": "Active",
+            "modelProvider": "DEFAULT",
+        }],
+        "defaultModel": { "modelId": MOCK_MODEL_ID },
+    })
+}
+
+/// `ListAvailableModels`, hand-written rather than generated.
+///
+/// The KRS side of this fixture is generated from the model, so a model change is
+/// a compile error here. The control plane has no server SDK in this workspace —
+/// only a TypeScript client — so this one is shaped by hand and a control-plane
+/// model change will surface as a failing lane instead. That asymmetry is the
+/// reason to keep the body minimal.
+fn control_plane_list_models(config: &Config, bearer: Option<&str>) -> Response {
+    if let Err(message) = check_bearer(config, bearer) {
+        return aws_json_error(StatusCode::BAD_REQUEST, "AccessDeniedException", &message);
+    }
+    aws_json_ok(&list_available_models_body())
+}
+
+/// An AWS JSON 1.0 success body, the framing the control-plane client expects.
+fn aws_json_ok(body: &Value) -> Response {
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, AWS_JSON_CONTENT_TYPE)],
+        body.to_string(),
+    )
+        .into_response()
+}
+
+/// An AWS JSON 1.0 error body. `__type` is what the client maps onto a modeled
+/// error, so a rejection reads as that error rather than as a transport failure.
+fn aws_json_error(status: StatusCode, kind: &str, message: &str) -> Response {
+    (
+        status,
+        [(axum::http::header::CONTENT_TYPE, AWS_JSON_CONTENT_TYPE)],
+        json!({ "__type": kind, "message": message }).to_string(),
+    )
+        .into_response()
+}
+
+const AWS_JSON_CONTENT_TYPE: &str = "application/x-amz-json-1.0";
 
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
     header_str(headers, "authorization").map(|value| value.strip_prefix("Bearer ").map(str::to_string).unwrap_or(value))
@@ -938,6 +1050,69 @@ mod tests {
             rejection,
             Err(GenerateAssistantResponseError::AccessDeniedException(_))
         ));
+    }
+
+    /// The prefix is the part that differs between the two services KAS reaches,
+    /// so the operation must be read without it.
+    #[test]
+    fn target_operation_ignores_the_service_prefix() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-amz-target",
+            "KiroControlPlaneBearerService.ListAvailableModels".parse().unwrap(),
+        );
+        assert_eq!(target_operation(&headers).as_deref(), Some(LIST_AVAILABLE_MODELS));
+
+        headers.insert(
+            "x-amz-target",
+            "AmazonKiroRuntimeService.GenerateAssistantResponse".parse().unwrap(),
+        );
+        assert_eq!(target_operation(&headers).as_deref(), Some(GENERATE_ASSISTANT_RESPONSE));
+    }
+
+    #[test]
+    fn absent_or_empty_target_is_not_an_operation() {
+        assert_eq!(target_operation(&HeaderMap::new()), None);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-amz-target", "Service.".parse().unwrap());
+        assert_eq!(target_operation(&headers), None);
+    }
+
+    /// KAS drops a model without an id and reads `defaultModel.modelId`, so an
+    /// answer missing either leaves it with an empty registry and no way to say
+    /// why.
+    #[test]
+    fn listed_models_carry_an_id_and_a_default() {
+        let body = list_available_models_body();
+        let models = body["models"].as_array().expect("models is an array");
+        assert!(!models.is_empty(), "at least one model, or the registry is empty");
+        for model in models {
+            assert!(
+                model["modelId"].as_str().is_some_and(|id| !id.is_empty()),
+                "every model needs an id: {model}"
+            );
+        }
+        assert_eq!(body["defaultModel"]["modelId"], models[0]["modelId"]);
+    }
+
+    /// One rule, both services: a token good enough for KRS must be good enough
+    /// for the control plane, or the fixture fails for a reason of its own making.
+    #[test]
+    fn both_services_share_the_bearer_rules() {
+        let config = Config {
+            api_key: Some("expected".into()),
+            ..Config::default()
+        };
+
+        assert!(check_bearer(&config, Some("expected")).is_ok());
+        assert!(check_bearer(&config, Some("wrong")).is_err());
+        assert!(check_bearer(&config, None).is_err());
+        assert!(check_bearer(&config, Some("   ")).is_err());
+
+        // The KRS path is the same rules, mapped onto its modeled error.
+        assert!(check_auth(&config, &context(Some("expected"))).is_ok());
+        assert!(check_auth(&config, &context(Some("wrong"))).is_err());
     }
 
     #[test]

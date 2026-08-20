@@ -1,0 +1,54 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Scenarios here need real services: they exercise session persistence on disk, which no mock stands in for.",
+  "scenarios": [
+    {
+      "id": "slash-save",
+      "name": "/chat save",
+      "category": "slash-commands",
+      "description": "Save current session to a file",
+      "docRef": "/docs/cli/reference/slash-commands#save",
+      "steps": [
+        "type:/chat save {{tmpFile:session.json}}",
+        "enter"
+      ],
+      "verify": [
+        "screen.contains:Saved session to"
+      ],
+      "observe": "Confirmation that session was saved to the specified path",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "smoke"
+      ]
+    },
+    {
+      "id": "slash-load",
+      "name": "/chat load",
+      "category": "slash-commands",
+      "description": "Load a previously saved conversation",
+      "docRef": "/docs/cli/reference/slash-commands#load",
+      "steps": [
+        "type:/chat save {{tmpFile:session.json}}",
+        "enter",
+        "waitForText:Saved session to",
+        "type:/chat load {{tmpFile:session.json}}",
+        "enter"
+      ],
+      "verify": [
+        "store.sessionId.changed"
+      ],
+      "observe": "Session loaded from file, previous messages restored in conversation",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "smoke"
+      ]
+    }
+  ]
+}

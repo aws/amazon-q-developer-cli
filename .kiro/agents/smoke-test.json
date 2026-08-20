@@ -19,7 +19,7 @@
   ],
   "resources": [
     "file://.kiro/skills/knight-rider/SKILL.md",
-    "file://packages/tui/e2e_tests/smoke/scenarios.json",
+    "file://packages/tui/e2e_tests/smoke/scenarios/shared/scenarios.json",
     "file://packages/tui/e2e_tests/smoke/SMOKE_TEST.md"
   ],
   "toolsSettings": {

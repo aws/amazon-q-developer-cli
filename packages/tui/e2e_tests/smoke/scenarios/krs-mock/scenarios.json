@@ -1,0 +1,64 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Scenarios here run only against a real KAS answered by the fake Kiro Runtime Service. Each carries the turns that answer its prompts, so the model's side of the conversation is written down next to the behaviour it produces.",
+  "scenarios": [
+    {
+      "id": "krs-tool-use-shell",
+      "name": "Shell tool against the fake KRS",
+      "category": "tool-use",
+      "description": "A real KAS runs the shell tool and answers with scripted words",
+      "priority": "p1",
+      "steps": [
+        "prompt:run echo hello world using the shell",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:The shell printed hello world."
+      ],
+      "verify": [
+        "screen.contains:The shell printed hello world."
+      ],
+      "observe": "Approval dialog names the scripted command; approving runs it and the continuation turn supplies the final answer",
+      "tags": [
+        "smoke"
+      ],
+      "turns": [
+        {
+          "name": "ask-for-the-tool",
+          "match": {
+            "userInputContains": "echo hello world"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo hello world\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "answer-after-the-tool",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The shell printed hello world."
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

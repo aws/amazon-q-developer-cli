@@ -8,7 +8,7 @@ describe('listScenarioCategories', () => {
       id: 'help',
       category: 'slash-commands',
       engine: ['kas'] as const,
-      backend: ['acp-mock'] as const,
+      sourceBackend: 'acp-mock' as const,
     },
     {
       id: 'goal',
@@ -20,7 +20,7 @@ describe('listScenarioCategories', () => {
     {
       id: 'tool',
       category: 'tool-use',
-      backend: ['live'] as const,
+      sourceBackend: 'live' as const,
       tags: ['workflow'] as const,
       priority: 'p1' as const,
     },
@@ -58,5 +58,20 @@ describe('listScenarioCategories', () => {
         tags: ['workflow'],
       })
     ).toEqual(['tool-use']);
+  });
+
+  it('lists only scripted categories for the krs-mock lane', () => {
+    const scripted = [
+      ...scenarios,
+      {
+        id: 'scripted',
+        category: 'krs',
+        turns: [{ respond: { events: [] } }] as const,
+      },
+    ];
+
+    expect(listScenarioCategories(scripted, { backend: 'krs-mock' })).toEqual([
+      'krs',
+    ]);
   });
 });

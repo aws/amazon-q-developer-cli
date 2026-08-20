@@ -873,6 +873,12 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Build fake KRS server
+        # Only the Linux bundle feeds the krs-mock lane, and this crate is not
+        # covered by any Windows Rust build.
+        if: runner.os == 'Linux'
+        run: cargo build -p mock-krs-server --release
+
       - name: Build Twinki workspace dependency
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -888,6 +894,7 @@ jobs:
           path: |
             ${{ steps.binary-id.outputs.binary-path }}
             ${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json
+            target/release/mock-krs-server
             packages/tui/dist/tui.js
             packages/twinki/packages/twinki/dist/
           retention-days: 7
@@ -1366,6 +1373,107 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+  smoke-krs-mock:
+    name: Smoke Lane (krs-mock / ubuntu-latest)
+    permissions:
+      contents: read
+      id-token: write
+    needs: [resolve, build-assets]
+    if: needs.resolve.outputs.run_smoke == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
+
+      - name: Checkout trusted CI support
+        if: inputs.execution_mode == 'fork'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.sha }}
+          path: .trusted-ci
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/codeartifact-login
+            .github/scripts/rc-binary-cache.ts
+            .github/scripts/rc-binary-cache/
+            crates/asset-embedding-env.txt
+            scripts/const.py
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode != 'fork'
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Login to CodeArtifact
+        if: inputs.execution_mode == 'fork'
+        uses: ./.trusted-ci/.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download reusable bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verification-bundle-linux
+          path: .
+
+      - name: Verify reusable binary
+        shell: bash
+        run: |
+          bun "$RC_CI_ROOT/.github/scripts/rc-binary-cache.ts" verify-bundle \
+            --binary-path target/release/chat_cli \
+            --manifest-path target/release/chat_cli.rc-binary-manifest.json
+
+      - name: Run krs-mock lane
+        shell: bash
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
+          MOCK_KRS_BIN: ${{ github.workspace }}/target/release/mock-krs-server
+          SCENARIO_RUNNER_RETRIES: ${{ needs.resolve.outputs.scenario_runner_retries }}
+        run: |
+          # The bundle rides across jobs as an artifact, which does not restore
+          # file modes. chat_cli gets its execute bit back from verify-bundle;
+          # the fake KRS server has no manifest to hang that on, so do it here.
+          chmod +x "$MOCK_KRS_BIN"
+          mkdir -p verification-results/krs-mock
+          bun packages/tui/e2e_tests/smoke/run-smoke.ts \
+            --backend krs-mock \
+            --format tap \
+            --retries "$SCENARIO_RUNNER_RETRIES" \
+            --capture-frames \
+            --output-dir verification-results/krs-mock
+
+      - name: Upload krs-mock artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-smoke-krs-mock
+          path: |
+            verification-results/krs-mock/
+            packages/tui/e2e_tests/test-outputs/
+          retention-days: 7
+          if-no-files-found: warn
+
   scenario-categories:
     name: Scenario Lane (${{ matrix.os }} / ${{ matrix.category }})
     permissions:
@@ -1714,6 +1822,7 @@ jobs:
         acp-integration,
         e2e,
         smoke,
+        smoke-krs-mock,
         scenario-categories,
         visual,
         live-parity,
@@ -1728,6 +1837,7 @@ jobs:
         needs.acp-integration.result != 'skipped' ||
         needs.e2e.result != 'skipped' ||
         needs.smoke.result != 'skipped' ||
+        needs.smoke-krs-mock.result != 'skipped' ||
         needs.scenario-categories.result != 'skipped' ||
         needs.visual.result != 'skipped' ||
         needs.live-parity.result != 'skipped'
@@ -1918,6 +2028,7 @@ jobs:
           needs.acp-integration.result == 'failure' ||
           needs.e2e.result == 'failure' ||
           needs.smoke.result == 'failure' ||
+          needs.smoke-krs-mock.result == 'failure' ||
           needs.scenario-categories.result == 'failure' ||
           needs.visual.result == 'failure' ||
           needs.live-parity.result == 'failure'

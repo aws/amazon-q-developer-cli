@@ -645,6 +645,70 @@ describe('KasAcpClient', () => {
     }
   });
 
+  it('omits --control-plane-endpoint when the env var is unset', () => {
+    delete process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT;
+    const _client = new KasAcpClient();
+    const [_cmd, args] = mockSpawn.mock.calls[0]!;
+    expect(
+      args.some((a: string) => a.startsWith('--control-plane-endpoint='))
+    ).toBe(false);
+  });
+
+  it('passes --control-plane-endpoint when KIRO_KAS_CONTROL_PLANE_ENDPOINT is set', () => {
+    process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = 'http://127.0.0.1:19998';
+    try {
+      const _client = new KasAcpClient();
+      const [_cmd, args] = mockSpawn.mock.calls[0]!;
+      expect(args).toContain('--control-plane-endpoint=http://127.0.0.1:19998');
+    } finally {
+      delete process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT;
+    }
+  });
+
+  it('redirects both KAS endpoints independently', () => {
+    process.env.KIRO_KAS_ENDPOINT = 'http://127.0.0.1:19999';
+    process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = 'http://127.0.0.1:19999';
+    try {
+      const _client = new KasAcpClient();
+      const [_cmd, args] = mockSpawn.mock.calls[0]!;
+      expect(args).toContain('--endpoint=http://127.0.0.1:19999');
+      expect(args).toContain('--control-plane-endpoint=http://127.0.0.1:19999');
+    } finally {
+      delete process.env.KIRO_KAS_ENDPOINT;
+      delete process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT;
+    }
+  });
+
+  // Control-plane calls carry the bearer token, so a value naming any other host
+  // would hand a real credential to it.
+  it.each([
+    ['a remote host', 'https://evil.example.com'],
+    ['a non-http scheme', 'file:///tmp/x'],
+    ['not a URL at all', 'not-a-url'],
+  ])('ignores a control-plane override that is %s', (_label, value) => {
+    process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = value;
+    try {
+      const _client = new KasAcpClient();
+      const [_cmd, args] = mockSpawn.mock.calls[0]!;
+      expect(
+        args.some((a: string) => a.startsWith('--control-plane-endpoint='))
+      ).toBe(false);
+    } finally {
+      delete process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT;
+    }
+  });
+
+  it('honours localhost for the control-plane override', () => {
+    process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT = 'http://localhost:19998';
+    try {
+      const _client = new KasAcpClient();
+      const [_cmd, args] = mockSpawn.mock.calls[0]!;
+      expect(args).toContain('--control-plane-endpoint=http://localhost:19998');
+    } finally {
+      delete process.env.KIRO_KAS_CONTROL_PLANE_ENDPOINT;
+    }
+  });
+
   it('factory forwards the required app-store routing actions for KAS', () => {
     const client = createAcpClient('/unused', [], {
       agentEngine: 'kas',

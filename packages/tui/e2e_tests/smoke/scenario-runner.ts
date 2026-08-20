@@ -1,4 +1,10 @@
-export { filterScenarios, loadScenarios, runAll, runScenario } from '../scenario-runner/runner';
+export {
+  filterScenarios,
+  loadScenarios,
+  resolveScenarioBackend,
+  runAll,
+  runScenario,
+} from '../scenario-runner/runner';
 export type {
   Engine,
   ExitReason,

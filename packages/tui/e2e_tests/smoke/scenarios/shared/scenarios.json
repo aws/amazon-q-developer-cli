@@ -1,5 +1,5 @@
 {
-  "$schema": "./scenarios.schema.json",
+  "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
   "generatedFrom": "https://kiro.dev/docs/cli/reference/slash-commands",
   "notes": "Each scenario has an 'observe' field describing what the LLM should look for when reviewing the frame.",
@@ -88,7 +88,7 @@
       "verify": [
         "screen.contains:/<COMMAND>"
       ],
-      "observe": "Help panel opens with all commands listed, subcommands shown with ⌙ prefix, search filter at top, ESC to close hint at bottom, scrollable with ↓ more indicator",
+      "observe": "Help panel opens with all commands listed, subcommands shown with \u2319 prefix, search filter at top, ESC to close hint at bottom, scrollable with \u2193 more indicator",
       "engine": [
         "v2",
         "kas"
@@ -134,7 +134,7 @@
       "verify": [
         "screen.contains:Select model:"
       ],
-      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (❯ marker), search filter at top, ESC to cancel",
+      "observe": "Model picker shows all available models with credit multipliers and descriptions, auto is selected by default (\u276f marker), search filter at top, ESC to cancel",
       "engine": [
         "v2",
         "kas"
@@ -416,7 +416,7 @@
       "verify": [
         "screen.contains:configured"
       ],
-      "observe": "MCP panel shows configured servers with Name, Status (● running), Details (tool count). Search filter at top.",
+      "observe": "MCP panel shows configured servers with Name, Status (\u25cf running), Details (tool count). Search filter at top.",
       "engine": [
         "v2",
         "kas"
@@ -548,7 +548,7 @@
       "verify": [
         "screen.contains:Workspace"
       ],
-      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (● running, ○ not_installed, ○ available)",
+      "observe": "Shows workspace path, detected languages, markers, LSP server list with install status (\u25cf running, \u25cb not_installed, \u25cb available)",
       "engine": [
         "v2",
         "kas"
@@ -594,59 +594,6 @@
         "process.exited"
       ],
       "observe": "TUI exits cleanly, no error output. Run this last or restart Knight Rider after.",
-      "engine": [
-        "v2",
-        "kas"
-      ],
-      "tags": [
-        "smoke"
-      ]
-    },
-    {
-      "id": "slash-save",
-      "name": "/chat save",
-      "category": "slash-commands",
-      "description": "Save current session to a file",
-      "docRef": "/docs/cli/reference/slash-commands#save",
-      "steps": [
-        "type:/chat save {{tmpFile:session.json}}",
-        "enter"
-      ],
-      "verify": [
-        "screen.contains:Saved session to"
-      ],
-      "observe": "Confirmation that session was saved to the specified path",
-      "backend": [
-        "live"
-      ],
-      "engine": [
-        "v2",
-        "kas"
-      ],
-      "tags": [
-        "smoke"
-      ]
-    },
-    {
-      "id": "slash-load",
-      "name": "/chat load",
-      "category": "slash-commands",
-      "description": "Load a previously saved conversation",
-      "docRef": "/docs/cli/reference/slash-commands#load",
-      "steps": [
-        "type:/chat save {{tmpFile:session.json}}",
-        "enter",
-        "waitForText:Saved session to",
-        "type:/chat load {{tmpFile:session.json}}",
-        "enter"
-      ],
-      "verify": [
-        "store.sessionId.changed"
-      ],
-      "observe": "Session loaded from file, previous messages restored in conversation",
-      "backend": [
-        "live"
-      ],
       "engine": [
         "v2",
         "kas"
@@ -735,7 +682,7 @@
       "verify": [
         "screen.contains:Read"
       ],
-      "observe": "Read tool indicator appears (◔ Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom",
+      "observe": "Read tool indicator appears (\u25d4 Read), auto-approves for read operations, directory listing renders in response, credits shown at bottom",
       "engine": [
         "v2",
         "kas"
@@ -956,7 +903,7 @@
     },
     {
       "id": "permissions-trust-flow",
-      "name": "Trust → use → untrust → re-approve flow",
+      "name": "Trust \u2192 use \u2192 untrust \u2192 re-approve flow",
       "category": "permissions",
       "description": "Full trust lifecycle for a tool",
       "docRef": "/docs/cli/chat/permissions",

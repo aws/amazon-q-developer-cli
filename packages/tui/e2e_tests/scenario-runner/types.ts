@@ -14,12 +14,22 @@ export interface Scenario {
   observe?: string;
   acpMock?: Record<string, unknown>;
   engine?: Engine[];
-  backend?: ScenarioBackendId[];
   timeout?: number;
   tags?: string[];
   priority?: 'p0' | 'p1' | 'p2';
   /** Extra env for the spawned TUI (e.g. rollout gates for dark-shipped commands). */
   env?: Record<string, string>;
+  /**
+   * Scripted KRS turns answering this scenario's prompts, validated by
+   * krs-turns.schema.json. Their absence is what makes a scenario unrunnable
+   * against the fake Kiro Runtime Service.
+   */
+  turns?: unknown[];
+  /**
+   * Set by the loader from the directory the scenario was read from. Absent for
+   * a portable scenario, which runs under whichever backend the lane selects.
+   */
+  sourceBackend?: ScenarioBackendId;
 }
 
 export type ExitReason =
@@ -64,6 +74,11 @@ export interface TestHarness {
   waitForText(text: string, timeout?: number): Promise<void>;
   waitForIdle(timeout?: number): Promise<void>;
   expectExit(timeout?: number): Promise<number>;
+  /**
+   * Checks the backend can make about the run that the screen cannot show, run
+   * after the scenario's own predicates.
+   */
+  selfChecks?(): Promise<VerifyResult[]>;
   cleanup(): Promise<void>;
 }
 
@@ -74,7 +89,12 @@ export interface ScenarioBackend {
 }
 
 export interface RunOptions {
+  /** The lane's backend: what a portable scenario runs under. */
   backend: ScenarioBackend;
+  /** Supplies a backend a scenario's directory asks for by name. */
+  resolveBackend?: (id: ScenarioBackendId) => ScenarioBackend;
+  /** Runs only the scenarios belonging to the lane's backend. */
+  laneOnly?: boolean;
   scenariosPath?: string;
   scenarios?: string[];
   categories?: string[];
@@ -102,8 +122,13 @@ export interface ScenarioResult {
 }
 
 export interface RunReport {
+  /**
+   * Every backend that ran, joined with `+`. A run is only single-valued when
+   * one lane was asked for, so consumers must not read this as one backend.
+   */
   backendId: string;
-  engine: Engine;
+  /** Every engine that ran, joined the same way. */
+  engine: string;
   startedAt: number;
   completedAt: number;
   total: number;

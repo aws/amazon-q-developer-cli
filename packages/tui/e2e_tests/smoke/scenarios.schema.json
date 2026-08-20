@@ -168,23 +168,6 @@
           ],
           "description": "Which agent engines this scenario runs on"
         },
-        "backend": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "live",
-              "acp-mock",
-              "krs-mock"
-            ]
-          },
-          "uniqueItems": true,
-          "default": [
-            "live",
-            "acp-mock"
-          ],
-          "description": "Which scenario backends can execute this scenario. `live` runs real services; `acp-mock` replays a recorded ACP-wire fixture from fixtures/acp-wire; `krs-mock` runs a real KAS against the fake Kiro Runtime Service, answering it with the turns in fixtures/krs/<id>.json."
-        },
         "timeout": {
           "type": "integer",
           "minimum": 1000,
@@ -215,6 +198,14 @@
             "type": "string"
           },
           "description": "Extra environment variables for the spawned TUI (e.g. rollout gates for dark-shipped commands)"
+        },
+        "turns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "krs-turns.schema.json#/$defs/Turn"
+          },
+          "description": "Scripted KRS turns, in queue order, that answer this scenario's prompts when it runs against the fake Kiro Runtime Service. A scenario without them cannot run on the krs-mock backend."
         }
       }
     },

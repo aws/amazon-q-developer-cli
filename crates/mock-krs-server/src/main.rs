@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
 
     println!("[mock-krs] listening on {}", server.endpoint());
     println!("[mock-krs] set KIRO_KAS_ENDPOINT={}", server.endpoint());
+    println!("[mock-krs] set KIRO_KAS_CONTROL_PLANE_ENDPOINT={}", server.endpoint());
     println!("[mock-krs] control API at {}/__control", server.endpoint());
 
     tokio::signal::ctrl_c().await?;
@@ -66,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 /// Logging is opt-in via `RUST_LOG`; the server's own stdout contract is the
-/// three lines above, and unconditional tracing output would muddy it.
+/// four lines above, and unconditional tracing output would muddy it.
 fn tracing_subscriber_init() {
     if std::env::var_os("RUST_LOG").is_some() {
         tracing::subscriber::set_global_default(tracing_subscriber::fmt().with_writer(std::io::stderr).finish()).ok();
