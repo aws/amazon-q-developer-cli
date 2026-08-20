@@ -1,0 +1,1312 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Built-in tool journeys against a real KAS answered by the fake KRS: approve/deny gates, auto-trusted reads and searches, write and edit diffs, non-zero exits, and a multi-tool chain. Each scenario carries the turns that answer its prompts.",
+  "scenarios": [
+    {
+      "id": "tool-shell-approve",
+      "name": "Approve a shell command and see it run",
+      "category": "tool-use",
+      "description": "Agent proposes a shell command, the approval gate appears, the user approves once, the command executes, and the agent's synthesis lands in the transcript \u2014 the everyday approve-and-run tool workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p0",
+      "steps": [
+        "prompt:print the tools sentinel",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-approve"
+      ],
+      "verify": [
+        "screen.contains:KIRO-TOOLS-OK-7391",
+        "screen.contains:The shell command ran successfully",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "The shell tool surfaces an approval gate; approving once runs the command, and the agent synthesizes a final answer. Execution is proven by the synthesis reply, which is scripted on a turn that only fires once a tool result returns. The KIRO-TOOLS-OK-7391 assertion is NOT output-discriminating: on the success path the shell card collapses to a single line showing only the command, so the sentinel matches the echoed command text rather than stdout, which never reaches the frame. Asserting stdout would need the error path, where the card auto-expands and the result payload renders -- see the non-zero-exit journey, which asserts an exit code the command text cannot supply.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-shell",
+          "match": {
+            "userInputContains": "print the tools sentinel"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo KIRO-TOOLS-OK-7391\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-shell",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The shell command ran successfully."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-shell-deny",
+      "name": "Deny a shell command and the agent adapts",
+      "category": "tool-use",
+      "description": "Agent proposes a shell command, the approval gate appears, the user denies it, the tool reaches a terminal Rejected state without executing, and the agent acknowledges and adapts \u2014 the deny-and-recover permission workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p0",
+      "steps": [
+        "prompt:attempt the blocked command",
+        "waitForText:requires approval",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForIdle",
+        "frame:after-deny"
+      ],
+      "verify": [
+        "screen.contains:Rejected",
+        "screen.contains:Understood, I did not run that command",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "The shell tool surfaces an approval gate; denying it drives the tool to a terminal Rejected state without running, and the agent acknowledges and continues.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-shell",
+          "match": {
+            "userInputContains": "attempt the blocked command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo should-not-run\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-deny",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Understood, I did not run that command."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-read-auto",
+      "name": "Auto-trusted read tool runs without a gate",
+      "category": "tool-use",
+      "description": "User asks the agent to read a file; the read tool auto-executes without an approval gate, the real file contents render in the read card, and the agent answers from them \u2014 the everyday read-and-answer workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p0",
+      "steps": [
+        "prompt:read the tui package manifest",
+        "waitForIdle",
+        "frame:after-read"
+      ],
+      "verify": [
+        "screen.contains:Read package.json",
+        "screen.contains:I read the manifest for the Kiro TUI package",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by",
+        "screen.notContains:is not available"
+      ],
+      "observe": "The read tool runs immediately with no approval gate; the real package.json contents render in the read card and the agent answers from them.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-read",
+          "match": {
+            "userInputContains": "read the tui package manifest"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "read_file",
+                "input": "{\"path\":\"package.json\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-read",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "I read the manifest for the Kiro TUI package."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-error-recovery",
+      "name": "Shell command fails and the agent recovers",
+      "category": "tool-use",
+      "description": "User runs a command that exits non-zero; the shell tool surfaces the non-zero exit code and the agent reports the failure and recovers without corrupting the session",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the flaky probe",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-error"
+      ],
+      "verify": [
+        "screen.contains:Exit Code: 7",
+        "screen.contains:exited with a non-zero status",
+        "screen.notContains:The probe succeeded",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The shell tool runs the failing command; its non-zero exit code renders in the shell card and the agent reports the failure and stays usable.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-failing-command",
+          "match": {
+            "userInputContains": "run the flaky probe"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"exit 7\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-error",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The command exited with a non-zero status, so the probe did not succeed."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The probe succeeded."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-then-followup",
+      "name": "Follow-up question after a tool completes",
+      "category": "tool-use",
+      "description": "User runs a shell command, then asks a follow-up in the same session after it completes; exercises post-tool follow-up continuity (the follow-up answer is scripted, so this covers turn routing after a tool, not semantic recall)",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the status probe",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "prompt:what label did the probe print?",
+        "waitForIdle",
+        "frame:after-followup"
+      ],
+      "verify": [
+        "screen.contains:PROBE-OK-88",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by",
+        "screen.contains:PROBE-DONE"
+      ],
+      "observe": "After the shell tool completes, the follow-up is answered from retained context without re-running the tool.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-shell",
+          "match": {
+            "userInputContains": "run the status probe"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PROBE-DONE\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-shell",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The status probe finished running."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "followup-recalls-result",
+          "match": {
+            "userInputContains": "what label did the probe print"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The probe reported the label PROBE-OK-88."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-write-approve",
+      "name": "Approve a file write and see the diff",
+      "category": "tool-use",
+      "description": "Agent proposes writing a file, the approval gate appears, the user approves once, the write executes, and the real diff (added lines) plus the agent's confirmation land in the transcript \u2014 the everyday approve-and-write workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p0",
+      "steps": [
+        "prompt:save the scenario note file",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-write"
+      ],
+      "verify": [
+        "screen.contains:Write",
+        "screen.contains:added 1 line",
+        "screen.contains:The note file was written successfully",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "The write tool surfaces an approval gate; approving once writes the file and the real diff (added 1 line) renders in the write card before the agent confirms.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-write",
+          "match": {
+            "userInputContains": "save the scenario note file"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "fs_write",
+                "input": "{\"path\":\"~/kiro-write-scenario.txt\",\"text\":\"kiro tools scenario note\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-write",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The note file was written successfully."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-multi-chain",
+      "name": "Agent chains several tools in one turn",
+      "category": "tool-use",
+      "description": "A single user request drives the agent through a sequence of auto-trusted tools \u2014 read a file, search the code, glob for files, list a directory \u2014 each rendering its own card before the agent synthesizes one answer, the way a user normally watches an agent work through a task",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:investigate the project files",
+        "waitForIdle",
+        "frame:after-chain"
+      ],
+      "verify": [
+        "screen.contains:Read package.json",
+        "screen.contains:Grep",
+        "screen.contains:Glob",
+        "screen.contains:Investigation complete",
+        "screen.notContains:is not available",
+        "screen.notContains:Invalid input",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "Each tool call renders as its own card (Read, Grep, Glob, Read for list_directory) in sequence, then the agent produces one synthesized answer after the whole chain returns.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "t1-read",
+          "match": {
+            "userInputContains": "investigate the project files"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "m1",
+                "name": "read_file",
+                "input": "{\"path\":\"package.json\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "t2-grep",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "m2",
+                "name": "grep_search",
+                "input": "{\"query\":\"kiro\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "t3-glob",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "m3",
+                "name": "file_search",
+                "input": "{\"query\":\"*.json\",\"explanation\":\"find json manifests\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "t4-list",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "m4",
+                "name": "list_directory",
+                "input": "{\"path\":\".\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "t5-synthesis",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Investigation complete: read the manifest, searched the code, and listed the directory."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-edit-str-replace",
+      "name": "Edit an existing file with str_replace",
+      "category": "tool-use",
+      "description": "Agent creates a file then edits it in place with str_replace; both writes are approved and the real before/after edit diff renders in the write card \u2014 the everyday read-and-edit workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:fix the scratch file",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-edit"
+      ],
+      "verify": [
+        "screen.contains:KIRO-AFTER-9",
+        "screen.contains:Edit applied to the scratch file",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "fs_write creates the file, then str_replace edits it in place; the write card shows a real unified edit diff (KIRO-BEFORE-9 removed, KIRO-AFTER-9 added) after approving both gates.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "create-file",
+          "match": {
+            "userInputContains": "fix the scratch file"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w1",
+                "name": "fs_write",
+                "input": "{\"path\":\"~/kiro-edit-scenario.txt\",\"text\":\"KIRO-BEFORE-9\\n\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "edit-file",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w2",
+                "name": "str_replace",
+                "input": "{\"path\":\"~/kiro-edit-scenario.txt\",\"oldStr\":\"KIRO-BEFORE-9\",\"newStr\":\"KIRO-AFTER-9\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Edit applied to the scratch file."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-append",
+      "name": "Append to a file with fs_append",
+      "category": "tool-use",
+      "description": "Agent creates a file then appends a line with fs_append; both writes are approved and the appended content renders in the write card diff",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p2",
+      "steps": [
+        "prompt:add a line to the scratch log",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-append"
+      ],
+      "verify": [
+        "screen.contains:KIRO-APPENDED-5",
+        "screen.contains:Appended a line to the scratch log",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "fs_write creates the file, then fs_append adds a line; the appended content (KIRO-APPENDED-5) renders in the write card diff after approving both gates.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "create-file",
+          "match": {
+            "userInputContains": "add a line to the scratch log"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w1",
+                "name": "fs_write",
+                "input": "{\"path\":\"~/kiro-append-scenario.txt\",\"text\":\"first line\\n\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "append-file",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w2",
+                "name": "fs_append",
+                "input": "{\"path\":\"~/kiro-append-scenario.txt\",\"text\":\"KIRO-APPENDED-5\\n\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Appended a line to the scratch log."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-knowledge",
+      "name": "Knowledge base tool runs without a gate",
+      "category": "tool-use",
+      "description": "User asks the agent to list knowledge bases; the knowledge tool auto-executes without an approval gate and the agent reports the result",
+      "docRef": "/docs/cli/chat",
+      "priority": "p2",
+      "steps": [
+        "prompt:show my knowledge bases",
+        "waitForIdle",
+        "frame:after-knowledge"
+      ],
+      "verify": [
+        "screen.contains:Knowledge",
+        "screen.contains:Listed the available knowledge bases",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by",
+        "screen.notContains:is not available"
+      ],
+      "observe": "The knowledge tool runs immediately with no approval gate and the agent reports the listed knowledge bases.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-knowledge",
+          "match": {
+            "userInputContains": "show my knowledge bases"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "k1",
+                "name": "knowledge",
+                "input": "{\"operation\":\"show\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Listed the available knowledge bases."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-todo",
+      "name": "Task list tool runs without a gate",
+      "category": "tool-use",
+      "description": "User asks the agent to review the task list; the todo tool auto-executes without an approval gate and the agent reports back",
+      "docRef": "/docs/cli/chat",
+      "priority": "p2",
+      "steps": [
+        "prompt:list the current tasks",
+        "waitForIdle",
+        "frame:after-todo"
+      ],
+      "verify": [
+        "screen.contains:Tasks listed",
+        "screen.contains:Reviewed the task list",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by",
+        "screen.notContains:is not available"
+      ],
+      "observe": "The task list tool runs immediately with no approval gate and the agent reports the task list.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-todo",
+          "match": {
+            "userInputContains": "list the current tasks"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "t1",
+                "name": "todo_list",
+                "input": "{\"command\":\"list\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Reviewed the task list."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-code",
+      "name": "Code intelligence tool runs without a gate",
+      "category": "tool-use",
+      "description": "User asks the agent to search the codebase for a symbol; the code intelligence tool auto-executes without an approval gate and the agent reports the search",
+      "docRef": "/docs/cli/chat",
+      "priority": "p2",
+      "steps": [
+        "prompt:search the code for a symbol",
+        "waitForIdle",
+        "frame:after-code"
+      ],
+      "verify": [
+        "screen.contains:Searched symbols",
+        "screen.contains:Searched the codebase for that symbol",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by",
+        "screen.notContains:is not available"
+      ],
+      "observe": "The code intelligence tool runs immediately with no approval gate and the agent reports the symbol search.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "ask-code",
+          "match": {
+            "userInputContains": "search the code for a symbol"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "c1",
+                "name": "code",
+                "input": "{\"operation\":\"search_symbols\",\"symbol_name\":\"KiroTestSymbol\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Searched the codebase for that symbol."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-read-then-edit",
+      "name": "Read a file then edit the same file",
+      "category": "tool-use",
+      "description": "The agent creates a config file, reads it back, then edits it in place with str_replace across one flow - the everyday review-then-fix workflow spanning read and write tools on the same file",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:review and fix the config file",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:Read File",
+        "enter",
+        "waitForText:Replace in File",
+        "enter",
+        "waitForIdle",
+        "frame:after-rte"
+      ],
+      "verify": [
+        "screen.contains:Read",
+        "screen.contains:PORT=PORTFIXED99",
+        "screen.contains:Reviewed the config and applied the fix",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "fs_write creates the file (approved), read_file reads it back (approved - reads outside the workspace gate), then str_replace edits it in place (approved); the edit diff shows PORT=STALE replaced with PORT=PORTFIXED99 and the agent reports the fix.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "create",
+          "match": {
+            "userInputContains": "review and fix the config file"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w1",
+                "name": "fs_write",
+                "input": "{\"path\":\"~/kiro-rte.txt\",\"text\":\"PORT=STALE\\n\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "read",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "r1",
+                "name": "read_file",
+                "input": "{\"path\":\"~/kiro-rte.txt\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "edit",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "e1",
+                "name": "str_replace",
+                "input": "{\"path\":\"~/kiro-rte.txt\",\"oldStr\":\"PORT=STALE\",\"newStr\":\"PORT=PORTFIXED99\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Reviewed the config and applied the fix."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -920,7 +920,7 @@
       "verify": [
         "screen.contains:print"
       ],
-      "observe": "Code block renders with syntax highlighting, proper indentation, language label visible. Markdown bold/italic renders correctly.",
+      "observe": "Code block renders with syntax highlighting and preserved indentation. The language drives highlighting only -- no language label is drawn above the block. Markdown bold/italic renders as styling, with the markers consumed.",
       "engine": [
         "v2",
         "kas"

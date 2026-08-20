@@ -20,6 +20,12 @@ export interface Scenario {
   /** Extra env for the spawned TUI (e.g. rollout gates for dark-shipped commands). */
   env?: Record<string, string>;
   /**
+   * Terminal size for this scenario, overriding the lane default. Layout-
+   * dependent assertions need it: the same table renders as a grid or as
+   * stacked rows purely as a function of width.
+   */
+  terminal?: { width: number; height: number };
+  /**
    * Scripted KRS turns answering this scenario's prompts, validated by
    * krs-turns.schema.json. Their absence is what makes a scenario unrunnable
    * against the fake Kiro Runtime Service.

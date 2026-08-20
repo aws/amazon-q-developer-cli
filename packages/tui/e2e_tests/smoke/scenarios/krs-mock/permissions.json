@@ -1,0 +1,836 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Approval-gate and trust journeys: allow once, trust an exact command, a command pattern or a whole tool, concurrent batches, trust cascade across a batch, and the boundary where trust must not leak.",
+  "scenarios": [
+    {
+      "id": "tool-trust-always",
+      "name": "Trust a tool then it runs without re-prompting",
+      "category": "permissions",
+      "description": "User approves a shell command by trusting the entire tool for the session; a later, different shell command then runs with no approval gate \u2014 the trust-once-run-freely permission workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the first audit command",
+        "waitForText:requires approval",
+        "arrowDown",
+        "enter",
+        "arrowDown",
+        "arrowDown",
+        "waitForText:Trust entire tool",
+        "enter",
+        "waitForIdle",
+        "prompt:run the second audit command",
+        "waitForIdle",
+        "frame:after-trust"
+      ],
+      "verify": [
+        "screen.contains:TRUST-SECOND-2",
+        "screen.contains:Second audit command done",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The first command's approval gate is resolved by selecting Trust entire tool (session scope); the second, different shell command then executes with no approval gate, showing session trust persists across calls.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "first-command",
+          "match": {
+            "userInputContains": "run the first audit command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "s1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo TRUST-FIRST-1\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-first",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "First audit command done."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "second-command",
+          "match": {
+            "userInputContains": "run the second audit command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "s2",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo TRUST-SECOND-2\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-second",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Second audit command done."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-trust-pattern",
+      "name": "Trust a command pattern then matching commands run freely",
+      "category": "permissions",
+      "description": "User approves a shell command by trusting its command pattern (echo *) for the session; a later, different command that matches the pattern then runs with no approval gate",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the alpha command",
+        "waitForText:requires approval",
+        "arrowDown",
+        "enter",
+        "arrowDown",
+        "waitForText:Trust \"echo *\"",
+        "enter",
+        "waitForIdle",
+        "prompt:run the beta command",
+        "waitForIdle",
+        "frame:after-pattern"
+      ],
+      "verify": [
+        "screen.contains:PERM-BETA",
+        "screen.contains:Beta command handled",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The first command's gate is resolved by choosing the command-pattern trust option (echo *, session scope); a second, different command that matches the pattern then executes with no approval gate.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "alpha",
+          "match": {
+            "userInputContains": "run the alpha command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "a1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-ALPHA\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-alpha",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Alpha command handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "beta",
+          "match": {
+            "userInputContains": "run the beta command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "b1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-BETA\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-beta",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Beta command handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "tool-trust-exact",
+      "name": "Trust an exact command then re-runs need no approval",
+      "category": "permissions",
+      "description": "User trusts an EXACT shell command for the session; re-running the identical command then needs no approval, but a DIFFERENT command still re-gates \u2014 proving exact-command trust is narrowly scoped",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:guard the first run",
+        "waitForText:requires approval",
+        "arrowDown",
+        "enter",
+        "waitForText:exact match",
+        "enter",
+        "waitForIdle",
+        "prompt:repeat the guarded run",
+        "waitForIdle",
+        "prompt:run a different command",
+        "waitForText:PERM-OTHER",
+        "frame:after-exact"
+      ],
+      "verify": [
+        "screen.contains:Repeat guarded run handled",
+        "screen.contains:PERM-OTHER",
+        "screen.contains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Trust exact command (session scope) is selected on the first gate; the identical command re-runs with no gate (trusted), while a different command still raises its own approval gate - the exact-scope trust does not cover it.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "first-run",
+          "match": {
+            "userInputContains": "guard the first run"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "g1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-GUARD\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-first",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "First guarded run handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "repeat-run",
+          "match": {
+            "userInputContains": "repeat the guarded run"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "g2",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-GUARD\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-repeat",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Repeat guarded run handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "different-run",
+          "match": {
+            "userInputContains": "run a different command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "g3",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-OTHER\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "permissions-batch-approve",
+      "name": "Approve each request in a concurrent batch",
+      "category": "permissions",
+      "description": "The agent issues two shell commands in one turn; both approval requests queue, and the user approves each one individually so both commands run \u2014 the concurrent-approval-queue workflow",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the review batch",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:REVIEW-TWO",
+        "enter",
+        "waitForIdle",
+        "frame:after-batch"
+      ],
+      "verify": [
+        "screen.contains:REVIEW-ONE",
+        "screen.contains:REVIEW-TWO",
+        "screen.contains:Both review commands handled",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Two shell commands in one turn produce two queued approval gates; approving each in turn (allow once) runs both, and the agent synthesizes once the batch completes.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "batch",
+          "match": {
+            "userInputContains": "run the review batch"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "r1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo REVIEW-ONE\"}",
+                "stop": true
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "r2",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo REVIEW-TWO\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Both review commands handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "permissions-trust-cascade",
+      "name": "Trust one request auto-approves the rest of the batch",
+      "category": "permissions",
+      "description": "The agent issues three shell commands in one turn; the user trusts the entire tool on the first approval gate, and the remaining same-tool requests in the batch are auto-approved without separate prompts \u2014 the trust-cascade batch-approval behavior",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the batch of audit commands",
+        "waitForText:requires approval",
+        "arrowDown",
+        "enter",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForIdle",
+        "frame:after-cascade"
+      ],
+      "verify": [
+        "screen.contains:BATCH-ONE",
+        "screen.contains:BATCH-TWO",
+        "screen.contains:BATCH-THREE",
+        "screen.contains:All batch commands handled",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Three shell commands in one turn queue as approval gates; selecting Trust entire tool on the first gate cascades to the other two pending same-tool requests, so all three run after a single trust action with no further gates.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "batch",
+          "match": {
+            "userInputContains": "run the batch of audit commands"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "b1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo BATCH-ONE\"}",
+                "stop": true
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "b2",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo BATCH-TWO\"}",
+                "stop": true
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "b3",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo BATCH-THREE\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "All batch commands handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "permissions-cascade-isolation",
+      "name": "Trusting one tool does not cascade to another tool",
+      "category": "permissions",
+      "description": "User trusts the entire shell tool for the session; a later fs_write still requires its own approval - proving tool-scoped trust does not leak across tools",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the shell probe",
+        "waitForText:requires approval",
+        "arrowDown",
+        "enter",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForIdle",
+        "prompt:save the results file",
+        "waitForText:kiro-cascade-iso",
+        "frame:after-isolation"
+      ],
+      "verify": [
+        "screen.contains:CASCADE-SHELL",
+        "screen.contains:kiro-cascade-iso",
+        "screen.contains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "observe": "Trust entire tool is selected on the shell gate and the shell command runs. A later fs_write in the same session still raises its own approval gate, showing trust is scoped to the shell tool only.",
+      "turns": [
+        {
+          "name": "shell-probe",
+          "match": {
+            "userInputContains": "run the shell probe"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "s1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo CASCADE-SHELL\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-shell",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Shell probe handled."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "write-file",
+          "match": {
+            "userInputContains": "save the results file"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "w1",
+                "name": "fs_write",
+                "input": "{\"path\":\"~/kiro-cascade-iso.txt\",\"text\":\"cascade wrote this\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "permissions-mixed-batch",
+      "name": "Approve one and deny another in the same batch",
+      "category": "permissions",
+      "description": "The agent issues two shell commands in one turn; both approval requests queue, and the user approves the first and denies the second - so one runs and the other reaches a terminal Rejected state",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the mixed batch",
+        "waitForText:requires approval",
+        "enter",
+        "waitForText:MIX-DROP",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForIdle",
+        "frame:after-mixed"
+      ],
+      "verify": [
+        "screen.contains:MIX-KEEP",
+        "screen.contains:Rejected",
+        "screen.contains:Mixed batch processed",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Two queued shell approvals; approving the first runs MIX-KEEP while denying the second drives MIX-DROP to a terminal Rejected state, and the agent synthesizes once both are resolved.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "mixed",
+          "match": {
+            "userInputContains": "run the mixed batch"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "m1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo MIX-KEEP\"}",
+                "stop": true
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "m2",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo MIX-DROP\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Mixed batch processed."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

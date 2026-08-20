@@ -70,7 +70,11 @@ export function createLiveBackend(engine: Engine = 'kas'): ScenarioBackend {
     async launch(scenario: Scenario, opts: RunOptions): Promise<TestHarness> {
       let builder = E2ETestCase.builder()
         .withTestName(`scenario-${scenario.id}-${engine}-${Date.now()}`)
-        .withTerminal(opts.terminal ?? { width: 120, height: 40 })
+        // A scenario's own size wins over the lane default: its assertions
+        // encode a layout that only holds at that width.
+        .withTerminal(
+          scenario.terminal ?? opts.terminal ?? { width: 120, height: 40 }
+        )
         .withTimeout(opts.timeout ?? scenario.timeout ?? 120_000);
 
       if (scenario.env) {

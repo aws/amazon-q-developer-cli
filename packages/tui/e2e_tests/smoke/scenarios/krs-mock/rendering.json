@@ -1,0 +1,257 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Rendering journeys. A scripted model is what makes these possible: the response bytes are fixed, so the rendered frame can be asserted exactly. Assertions favour negative checks -- markdown syntax that must NOT survive to the screen -- because a renderer leaking its own markup is the failure users actually see. Tokens asserted absent are chosen so they never exist even transiently mid-stream. Parsing semantics are already covered by unit tests under src/utils/__tests__; these cover the seam those cannot reach: a real ACP stream, real store batching, and a real 120-column terminal.",
+  "scenarios": [
+    {
+      "id": "rendering-markdown-blocks",
+      "name": "Every markdown block type reaches the screen",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "One response carrying a heading, inline emphasis, nested and ordered lists, a blockquote and a rule -- asserts the content renders and the markdown syntax does not survive",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:summarise the formatting rules", "waitForIdle"],
+      "verify": [
+        "screen.contains:HeadingAlpha",
+        "screen.notContains:# HeadingAlpha",
+        "screen.contains:BoldToken",
+        "screen.notContains:**BoldToken**",
+        "screen.contains:ItalicToken",
+        "screen.notContains:*ItalicToken*",
+        "screen.contains:CodeToken",
+        "screen.contains:- BulletOne",
+        "screen.contains:  - NestedBullet",
+        "screen.contains:1. OrderedOne",
+        "screen.contains:QuotedLine",
+        "screen.notContains:> QuotedLine"
+      ],
+      "observe": "Heading renders bold with no leading '#'. Emphasis markers are consumed, not printed. Bullets keep their '- ' prefix, the nested bullet is indented under its parent, and the ordered item keeps its number. The blockquote renders behind a vertical bar with its '>' consumed, and the rule renders as a divider. The stripped '#' and '>' markers are what distinguish real rendering from raw markdown passed straight through -- list prefixes alone cannot, since they are identical in source and output.",
+      "turns": [
+        {
+          "name": "blocks",
+          "match": { "userInputContains": "summarise the formatting rules" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "# HeadingAlpha\n\nInline **BoldToken** with *ItalicToken* and `CodeToken` together.\n\n- BulletOne\n  - NestedBullet\n1. OrderedOne\n\n> QuotedLine\n\n---\n\nClosing paragraph.\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-code-block",
+      "name": "Fenced code block renders without its fence",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "A fenced block arriving in one piece renders every code line and drops the fence markers",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:show me the greet helper", "waitForIdle"],
+      "verify": [
+        "screen.contains:def greet(name):",
+        "screen.contains:    prefix = \"hi \"",
+        "screen.contains:return prefix + name",
+        "screen.notContains:```",
+        "screen.notContains:python"
+      ],
+      "observe": "All three code lines render with relative indentation preserved. No fence markers appear, and no language label is drawn -- the language only drives highlighting, which is why 'python' must not appear anywhere on screen. Highlight colours themselves are not asserted: the screen snapshot carries no style attributes.",
+      "turns": [
+        {
+          "name": "code",
+          "match": { "userInputContains": "show me the greet helper" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Here is the helper:\n\n```python\ndef greet(name):\n    prefix = \"hi \"\n    return prefix + name\n```\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-stream-split-markers",
+      "name": "Inline markers split across stream chunks still resolve",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "Bold and inline-code markers are delivered straddling chunk boundaries, paced past the render batch window -- the settled frame must show resolved formatting, not raw markers",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:stream a formatted sentence", "waitForIdle"],
+      "verify": [
+        "screen.contains:BoldSplit",
+        "screen.notContains:**BoldSplit**",
+        "screen.contains:InlineSplit",
+        "screen.notContains:`InlineSplit`",
+        "screen.contains:StreamTail"
+      ],
+      "observe": "Each marker pair is split across two scripted events, so no single delta contains a complete pair. What is gated is final assembly: the settled frame shows styled text with no stray asterisks or backticks, meaning the incremental parser either handled the delta or fell back to a reparse. What is NOT gated is the transient display -- predicates run only after the turn goes idle, so a raw marker flashing mid-stream would not fail this scenario.",
+      "turns": [
+        {
+          "name": "split-markers",
+          "match": { "userInputContains": "stream a formatted sentence" },
+          "respond": {
+            "chunkDelayMs": 40,
+            "events": [
+              { "type": "text", "content": "Streaming check: **Bold" },
+              { "type": "text", "content": "Split** then `Inline" },
+              { "type": "text", "content": "Split` and StreamTail." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-long-response-wrap",
+      "name": "Long paragraph wraps without losing either end",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "A single logical line far wider than the terminal must wrap rather than truncate -- asserts a token from the head and a token from the tail both survive",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:explain the wrapping rules at length", "waitForIdle"],
+      "verify": [
+        "screen.contains:HeadMarker",
+        "screen.contains:MidMarker",
+        "screen.contains:TailMarker",
+        "screen.notContains:…"
+      ],
+      "observe": "The paragraph soft-wraps across several rows at the terminal width. Head, middle and tail tokens all survive and no ellipsis is inserted. At ~290 characters against a 120-column terminal, head and tail cannot both be present without the line having wrapped onto multiple rows, so this also proves wrapping rather than clipping.",
+      "turns": [
+        {
+          "name": "long-line",
+          "match": {
+            "userInputContains": "explain the wrapping rules at length"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "HeadMarker begins a deliberately long single logical line that the renderer has to soft wrap because it is far wider than the terminal, and it passes MidMarker on the way through with filler clauses so the wrap happens several times over before the sentence finally arrives at TailMarker.\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-table-grid",
+      "name": "Markdown table renders as an aligned grid",
+      "category": "rendering",
+      "priority": "p2",
+      "description": "A table renders with borders and padded cells. Pins ASCII mode so the border characters are deterministic, which also exercises the accessibility glyph path",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:compare the two languages in a table", "waitForIdle"],
+      "verify": [
+        "screen.contains:+--------+-------+",
+        "screen.contains:| Lang   | Typed |",
+        "screen.contains:| Rust   | yes",
+        "screen.contains:| Python | no",
+        "screen.notContains:| ---"
+      ],
+      "observe": "The table renders as a bordered grid with ASCII box characters, header cells padded to the widest value in each column ('Lang' padded to the width of 'Python'), and the markdown alignment row consumed rather than printed as a data row.",
+      "env": { "KIRO_ASCII_MODE": "1" },
+      "turns": [
+        {
+          "name": "table",
+          "match": {
+            "userInputContains": "compare the two languages in a table"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "| Lang | Typed |\n| --- | --- |\n| Rust | yes |\n| Python | no |\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-table-stacked-narrow",
+      "name": "Markdown table stacks into labelled rows when the terminal is narrow",
+      "category": "rendering",
+      "priority": "p2",
+      "description": "The same table content that renders as a grid at full width must fall back to stacked 'Header: value' rows in a narrow terminal, proving the responsive table path",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:compare the languages in a narrow view", "waitForIdle"],
+      "verify": [
+        "screen.contains:Lang: Rust",
+        "screen.contains:Owner: Foundation",
+        "screen.contains:Lang: Python",
+        "screen.notContains:| Lang"
+      ],
+      "observe": "At 48 columns a five-column grid cannot fit, so each row is emitted as labelled 'Header: value' lines with a blank line between rows and no borders at all. ASCII mode is pinned so that a regression back to grid rendering would print '| Lang' and trip the negative assertion -- in Unicode mode the cell separator is a box-drawing bar and that negative would be vacuous.",
+      "env": { "KIRO_ASCII_MODE": "1" },
+      "terminal": { "width": 48, "height": 40 },
+      "turns": [
+        {
+          "name": "stacked-table",
+          "match": {
+            "userInputContains": "compare the languages in a narrow view"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "| Lang | Typed | Year | Owner | Uses |\n| --- | --- | --- | --- | --- |\n| Rust | yes | 2015 | Foundation | systems |\n| Python | no | 1991 | PSF | scripts |\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-inline-link",
+      "name": "Inline link shows its label and destination",
+      "category": "rendering",
+      "priority": "p2",
+      "description": "A markdown link renders as a styled label followed by its URL, with the bracket syntax consumed",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:point me at the guide", "waitForIdle"],
+      "verify": [
+        "screen.contains:DocsLabel (https://example.dev/guide)",
+        "screen.notContains:](",
+        "screen.notContains:[DocsLabel]"
+      ],
+      "observe": "The label renders in the link colour and the destination follows in parentheses, so the URL stays visible in terminals without hyperlink support. Asserting the joined 'label (url)' string pins the order and the parentheses, which independent label and URL checks would not. The bracket-and-paren markdown syntax is consumed. Link colour and any OSC 8 hyperlink escape are not asserted -- neither survives into the screen snapshot.",
+      "turns": [
+        {
+          "name": "link",
+          "match": { "userInputContains": "point me at the guide" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "See [DocsLabel](https://example.dev/guide) for details.\n"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    }
+  ]
+}

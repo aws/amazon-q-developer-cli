@@ -776,8 +776,10 @@ export class E2ETestCase {
     label: string
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Windows named pipes take longer to establish on CI runners
-      const timeoutMs = process.platform === 'win32' ? 30000 : 15000;
+      // Windows named pipes take longer to establish on CI runners. On all
+      // platforms allow generous headroom so a slow TUI/agent start under load
+      // does not spuriously fail before the IPC socket connects.
+      const timeoutMs = process.platform === 'win32' ? 45000 : 30000;
 
       const cleanup = () => {
         clearTimeout(timer);

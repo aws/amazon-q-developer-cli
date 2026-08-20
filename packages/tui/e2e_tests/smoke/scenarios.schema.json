@@ -210,6 +210,22 @@
           },
           "description": "Extra environment variables for the spawned TUI (e.g. rollout gates for dark-shipped commands)"
         },
+        "terminal": {
+          "type": "object",
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 20
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 10
+            }
+          },
+          "required": ["width", "height"],
+          "additionalProperties": false,
+          "description": "Terminal size for this scenario, overriding the lane default of 120x40. Layout-dependent assertions need it: a markdown table renders as a bordered grid or as stacked rows purely as a function of width"
+        },
         "turns": {
           "type": "array",
           "minItems": 1,

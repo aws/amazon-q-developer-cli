@@ -1,0 +1,746 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Delegation journeys across both KAS subagent tools: orchestrate_subagent crews (parallel, dependent, failure) and single invoke_sub_agent delegations (approve, deny, coalesced parallel).",
+  "scenarios": [
+    {
+      "id": "subagent-delegate-blocking",
+      "name": "Delegate a task to a blocking subagent",
+      "category": "subagents",
+      "description": "User asks the agent to use a subagent for a task; the crew is orchestrated, the subagent runs to completion, and the main agent reports back \u2014 the basic delegate-and-wait workflow",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:use a subagent to summarize the README",
+        "waitForIdle",
+        "frame:after-subagent"
+      ],
+      "verify": [
+        "screen.contains:Orchestrate Sub-agent",
+        "screen.contains:Delegation complete",
+        "screen.notContains:Worker draft",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The orchestration card shows the crew running then completing; the roster lists the delegated agent reaching a terminal Completed state; the main agent synthesizes a final answer once the pipeline returns.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-orchestrates",
+          "match": {
+            "userInputContains": "use a subagent to summarize the README"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "orch-1",
+                "name": "orchestrate_subagent",
+                "input": "{\"task\":\"Summarize the README\",\"stages\":[{\"name\":\"summarize_readme\",\"role\":\"kiro_default\",\"prompt_template\":\"Read README.md and summarize it in one sentence.\"}],\"mode\":\"blocking\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Delegation complete: the README describes the Kiro CLI project."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-worker-and-background",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Worker draft: internal readme notes."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-parallel-research",
+      "name": "Orchestrate a multi-stage research pipeline",
+      "category": "subagents",
+      "description": "User asks the agent to research two areas with a two-stage crew; the agent orchestrates it and synthesizes both results into the main thread once the pipeline completes. End-state asserts the orchestrate card + synthesis (the collapsed card does not expose per-stage parallelism, which is exercised in the fixture but not asserted)",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:research the auth and storage modules in parallel using subagents",
+        "waitForIdle",
+        "frame:after-pipeline"
+      ],
+      "verify": [
+        "screen.contains:Orchestrate Sub-agent",
+        "screen.contains:Both research agents finished",
+        "screen.notContains:Module summary",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "A multi-stage crew orchestrates; each stage runs as its own agent and reaches a terminal state; the main agent produces one synthesized summary after the whole pipeline returns, and per-stage output does not leak into the main transcript mid-run.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-orchestrates-two-stages",
+          "match": {
+            "userInputContains": "research the auth and storage modules in parallel"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "orch-1",
+                "name": "orchestrate_subagent",
+                "input": "{\"task\":\"Research auth and storage in parallel\",\"stages\":[{\"name\":\"auth\",\"role\":\"kiro_default\",\"prompt_template\":\"Describe the auth module.\"},{\"name\":\"storage\",\"role\":\"kiro_default\",\"prompt_template\":\"Describe the storage module.\"}],\"mode\":\"blocking\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes-after-pipeline",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Both research agents finished: auth and storage are summarized above."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all-subagent-and-background",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Module summary complete."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-stage-failure",
+      "name": "Subagent stage fails and the main agent recovers",
+      "category": "subagents",
+      "description": "User delegates a task to a single subagent whose execution fails with a backend error; the error propagates and renders on the delegation card, the main agent reports the failure, and the session stays usable",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:use a subagent to run the migration check",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-failure"
+      ],
+      "verify": [
+        "screen.contains:Orchestrated",
+        "screen.contains:The model service returned a temporary error",
+        "screen.contains:Delegation failed",
+        "screen.notContains:Migration check passed",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "env": {
+        "KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION": "1"
+      },
+      "observe": "A single-stage crew is orchestrated; the stage fails (backend error) and reaches a terminal Failed state; the main agent reports the failure and the session stays usable.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-invokes",
+          "match": {
+            "userInputContains": "use a subagent to run the migration check"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "inv-1",
+                "name": "invoke_sub_agent",
+                "input": "{\"name\":\"test_subagent\",\"prompt\":\"Run the migration check and report the result.\",\"explanation\":\"migration check\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-execution-fails",
+          "match": {
+            "userInputContains": "Run the migration check and report the result"
+          },
+          "times": 0,
+          "respond": {
+            "httpError": {
+              "kind": "internalServer",
+              "message": "stage backend error"
+            }
+          }
+        },
+        {
+          "name": "main-reports-failure",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Delegation failed: the migration check did not complete."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Migration check passed cleanly."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-dependent-pipeline",
+      "name": "Orchestrate a dependent (DAG) subagent pipeline",
+      "category": "subagents",
+      "description": "User asks for a dependent (DAG) two-stage pipeline; the agent orchestrates it and synthesizes the result once it returns. End-state asserts the orchestrate card + completion synthesis (the collapsed card does not expose stage ordering, so ordering itself is exercised in the fixture but not asserted)",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:analyze the parser then document it with subagents",
+        "waitForIdle",
+        "frame:after-dag"
+      ],
+      "verify": [
+        "screen.contains:Orchestrate Sub-agent",
+        "screen.contains:then documentation was written",
+        "screen.notContains:Stage complete",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "A two-stage DAG orchestrates; the dependent stage runs after its prerequisite; the main agent produces one synthesized summary after the pipeline returns.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-orchestrates-dag",
+          "match": {
+            "userInputContains": "analyze the parser then document it with subagents"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "orch-1",
+                "name": "orchestrate_subagent",
+                "input": "{\"task\":\"Analyze then document the parser\",\"stages\":[{\"name\":\"analyze\",\"role\":\"kiro_default\",\"prompt_template\":\"Analyze the parser module.\"},{\"name\":\"document\",\"role\":\"kiro_default\",\"prompt_template\":\"Write docs from the analysis.\",\"depends_on\":[\"analyze\"]}],\"mode\":\"blocking\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Pipeline done: analysis finished first, then documentation was written from it."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Stage complete."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-then-followup",
+      "name": "Follow-up question after a subagent completes",
+      "category": "subagents",
+      "description": "User delegates a task to a subagent, then asks a follow-up in the same session after it completes; exercises cross-turn continuity after a delegation (the follow-up answer is scripted, so this covers turn routing, not semantic recall)",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:use a subagent to inspect the changelog",
+        "waitForIdle",
+        "prompt:what release marker did it find?",
+        "waitForIdle",
+        "frame:after-followup"
+      ],
+      "verify": [
+        "screen.contains:Orchestrate Sub-agent",
+        "screen.contains:RELEASE-42",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "After the crew completes, the follow-up is answered from retained context without re-running the subagent, showing orchestration results persist in the main thread.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-orchestrates",
+          "match": {
+            "userInputContains": "use a subagent to inspect the changelog"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "orch-1",
+                "name": "orchestrate_subagent",
+                "input": "{\"task\":\"Inspect the changelog\",\"stages\":[{\"name\":\"inspect\",\"role\":\"kiro_default\",\"prompt_template\":\"Inspect the changelog and note the release marker.\"}],\"mode\":\"blocking\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Changelog inspection complete."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "followup-recalls-subagent-result",
+          "match": {
+            "userInputContains": "what release marker did it find"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The changelog's release marker is RELEASE-42."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-worker-and-background",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Scanning changelog entries."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-invoke-single",
+      "name": "Delegate to a single subagent and approve it",
+      "category": "subagents",
+      "description": "User delegates one task to a single subagent (KAS invoke_sub_agent \u2014 the top-level delegation tool in cloud sandboxes, distinct from the multi-stage orchestrate crew); the subagent approval gate appears, the user approves, the delegation runs through the invoke pipeline adapter, and the main agent reports back \u2014 the single-delegation subagent workflow",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:delegate a single subagent to summarize the readme",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-invoke"
+      ],
+      "verify": [
+        "screen.contains:Orchestrated",
+        "screen.contains:Single delegation complete",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The single-delegation invoke_sub_agent call surfaces a subagent approval gate; approving it runs the delegation through the invoke pipeline adapter (rendered as a normalized Orchestrated card), and the main agent synthesizes after the subagent thread returns. Requires the cloud-parity adapter, enabled here via env. The synthesis turn matches on the subagent's own returned text rather than on hasToolResults, which the fake KRS implements as a bare emptiness check that ignores status -- an error result is still a result, so hasToolResults would fire on a failed delegation exactly as on a successful one. Matching the returned text instead means the synthesis reply cannot render unless the subagent actually ran and its output propagated back into the parent request; a delegation that failed to resolve leaves the turn unconsumed and fails the scenario.",
+      "env": {
+        "KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION": "1"
+      },
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-invokes-single",
+          "match": {
+            "userInputContains": "delegate a single subagent to summarize the readme"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "inv-1",
+                "name": "invoke_sub_agent",
+                "input": "{\"name\":\"test_subagent\",\"prompt\":\"Summarize the README in one line.\",\"explanation\":\"summarize the readme\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes",
+          "match": {
+            "bodyContains": "Sub-agent internal worker output."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Single delegation complete: the subagent thread returned to me."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-worker-and-background",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Sub-agent internal worker output."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-invoke-deny",
+      "name": "Deny a single subagent delegation",
+      "category": "subagents",
+      "description": "User delegates a task to a single subagent (invoke_sub_agent); the subagent approval gate appears, the user denies it, the delegation reaches a terminal Rejected state without running, and the main agent acknowledges and adapts \u2014 the deny-and-recover subagent workflow",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:delegate a single subagent for the risky task",
+        "waitForText:requires approval",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForIdle",
+        "frame:after-deny"
+      ],
+      "verify": [
+        "screen.contains:Rejected",
+        "screen.contains:Understood, I will not run that delegation",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The single-delegation invoke_sub_agent call surfaces a subagent approval gate; denying it drives the delegation to a terminal Rejected state without running, and the main agent acknowledges and continues. Requires the cloud-parity adapter, enabled here via env.",
+      "env": {
+        "KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION": "1"
+      },
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-invokes-single",
+          "match": {
+            "userInputContains": "delegate a single subagent for the risky task"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "inv-1",
+                "name": "invoke_sub_agent",
+                "input": "{\"name\":\"test_subagent\",\"prompt\":\"Run the risky task.\",\"explanation\":\"risky task\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-adapts-after-deny",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Understood, I will not run that delegation."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-worker-and-background",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Sub-agent internal worker output."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagent-invoke-coalesce",
+      "name": "Parallel single subagents coalesce into one card",
+      "category": "subagents",
+      "description": "User asks for two subagents in parallel; KAS emits two separate invoke_sub_agent calls, each gated for approval, and the invoke pipeline adapter coalesces them into ONE Orchestrating card with a two-stage roster (auth, storage) rather than two stacked single-agent cards \u2014 the parallel single-delegation workflow",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:delegate two subagents in parallel",
+        "waitForText:requires approval",
+        "enter",
+        "sleep:1500",
+        "enter",
+        "waitForIdle",
+        "frame:after-coalesce"
+      ],
+      "verify": [
+        "screen.contains:Orchestrated",
+        "screen.contains:(2 agents)",
+        "screen.contains:Both delegations returned to the main thread",
+        "screen.notContains:requires approval",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Two invoke_sub_agent calls each surface a subagent approval gate; once approved, the pipeline adapter coalesces them into a single Orchestrated (2 agents) card (not two stacked cards), and the main agent synthesizes one answer after both delegations return. Requires the cloud-parity adapter, enabled here via env. The synthesis turn matches on the subagent's own returned text rather than on hasToolResults, so the reply cannot render unless a delegation actually ran and returned; hasToolResults would fire on an error result too, since the fake KRS only checks that the result array is non-empty.",
+      "env": {
+        "KIRO_TEST_DISABLE_SUBAGENT_ORCHESTRATION": "1"
+      },
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "main-invokes-two",
+          "match": {
+            "userInputContains": "delegate two subagents in parallel"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "inv-a",
+                "name": "invoke_sub_agent",
+                "input": "{\"name\":\"test_subagent\",\"prompt\":\"Analyze the auth module.\",\"explanation\":\"analyze auth\"}",
+                "stop": true
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "inv-b",
+                "name": "invoke_sub_agent",
+                "input": "{\"name\":\"test_subagent\",\"prompt\":\"Analyze the storage module.\",\"explanation\":\"analyze storage\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "main-synthesizes",
+          "match": {
+            "bodyContains": "Sub-agent internal worker output."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Both delegations returned to the main thread."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "subagent-worker-and-background",
+          "times": 0,
+          "respond": {
+            "delayMs": 800,
+            "events": [
+              {
+                "type": "text",
+                "content": "Sub-agent internal worker output."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

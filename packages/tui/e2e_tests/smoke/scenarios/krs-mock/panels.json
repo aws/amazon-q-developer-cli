@@ -1,0 +1,53 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "panels scenarios; turns inline per scenario.",
+  "scenarios": [
+    {
+      "id": "tools-panel-view",
+      "name": "The /tools panel lists the tool groups",
+      "category": "panels",
+      "description": "User opens the /tools panel to review the tool permission configuration; the panel lists the builtin tool groups (read, shell, web, write) with a filter \u2014 the tool-trust management surface",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "type:/tools",
+        "enter",
+        "waitForText:builtin",
+        "frame:tools-panel"
+      ],
+      "verify": [
+        "screen.contains:builtin",
+        "screen.contains:type to filter",
+        "screen.contains:write",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "The /tools slash command opens the tools panel listing the builtin tool groups (read, shell, web, write) with a search filter and an esc-to-close hint.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "ok"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

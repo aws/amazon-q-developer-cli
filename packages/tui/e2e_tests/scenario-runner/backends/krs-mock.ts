@@ -345,10 +345,29 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
 
         const testCase = await E2ETestCase.builder()
           .withTestName(`scenario-${scenario.id}-krs-mock-${Date.now()}`)
-          .withTerminal(opts.terminal ?? { width: 120, height: 40 })
+          // A scenario's own size wins over the lane default: its assertions
+          // encode a layout that only holds at that width.
+          .withTerminal(
+            scenario.terminal ?? opts.terminal ?? { width: 120, height: 40 }
+          )
           .withTimeout(opts.timeout ?? scenario.timeout ?? 120_000)
           .withKasEngine()
+          // A resolvable user-level subagent, so a delegation scenario can
+          // target a real agent (KAS reads ~/.kiro/agents) instead of an empty
+          // registry. Additive: scenarios that name another agent are
+          // unaffected.
+          .withPrelaunchFile(
+            '.kiro/agents/test_subagent.json',
+            JSON.stringify({
+              name: 'test_subagent',
+              description: 'Resolvable test subagent for delegation scenarios.',
+              prompt: 'You are a test subagent. Complete the delegated task.',
+              tools: [],
+            })
+          )
           .withEnv({
+            // A scenario's own env first, so the wiring below always wins.
+            ...(scenario.env ?? {}),
             KIRO_AGENT_ENGINE: 'kas',
             // Appended by kas.ts as KAS's `--endpoint`.
             KIRO_KAS_ENDPOINT: server.endpoint,
