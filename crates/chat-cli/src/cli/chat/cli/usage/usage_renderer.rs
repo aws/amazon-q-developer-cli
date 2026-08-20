@@ -11,6 +11,22 @@ use crate::cli::chat::{
 use crate::constants::KIRO_APP_URL;
 use crate::theme::StyledText;
 
+fn format_limited_usage(used: f64, limit: f64) -> String {
+    format!(" ({:.2} of {limit:.0} covered in plan)\n", used.max(0.0))
+}
+
+fn rounded_usage_percentage(percentage: f64) -> f64 {
+    (percentage.max(0.0) * 10.0).round() / 10.0
+}
+
+fn format_usage_percentage(percentage: f64) -> String {
+    format!(" {:.1}%\n", percentage.max(0.0))
+}
+
+fn bar_fill_width(percentage: f64, bar_width: usize) -> usize {
+    (percentage.clamp(0.0, 100.0) / 100.0 * bar_width as f64) as usize
+}
+
 /// Render billing information section
 pub async fn render_billing_info(
     billing_data: &super::BillingUsageData,
@@ -129,23 +145,20 @@ async fn render_available_billing(
                 style::SetAttribute(style::Attribute::Bold),
                 style::Print(&breakdown.display_name),
                 style::SetAttribute(style::Attribute::Reset),
-                style::Print(format!(
-                    " ({:.2} of {:.0} covered in plan)\n",
-                    breakdown.used.clamp(0.0, breakdown.limit),
-                    breakdown.limit
-                )),
+                style::Print(format_limited_usage(breakdown.used, breakdown.limit)),
             )?;
 
             // Progress bar (only shown when the user has a real limit)
+            let percentage = rounded_usage_percentage(breakdown.percentage);
             let window_width = session.terminal_width();
             let bar_width = std::cmp::min(window_width, 80);
-            let filled_width = ((breakdown.percentage as f32 / 100.0 * bar_width as f32) as usize).clamp(0, bar_width);
+            let filled_width = bar_fill_width(percentage, bar_width);
             let empty_width = bar_width.saturating_sub(filled_width);
 
             // Determine bar color based on percentage
-            let bar_color = if breakdown.percentage >= 100 {
+            let bar_color = if percentage >= 100.0 {
                 StyledText::error_fg()
-            } else if breakdown.percentage > 90 {
+            } else if percentage > 90.0 {
                 StyledText::warning_fg()
             } else {
                 StyledText::brand_fg()
@@ -158,7 +171,7 @@ async fn render_available_billing(
                 StyledText::secondary_fg(),
                 style::Print("█".repeat(empty_width)),
                 StyledText::reset(),
-                style::Print(format!(" {}%\n", breakdown.percentage.clamp(0, 100))),
+                style::Print(format_usage_percentage(percentage)),
             )?;
         } else {
             // No limit (e.g. credit-pooling with no per-user cap): show consumption only,
@@ -258,4 +271,48 @@ async fn render_available_billing(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        bar_fill_width,
+        format_limited_usage,
+        format_usage_percentage,
+        rounded_usage_percentage,
+    };
+
+    #[test]
+    fn preserves_over_limit_usage() {
+        assert_eq!(
+            format_limited_usage(1117.31, 1000.0),
+            " (1117.31 of 1000 covered in plan)\n"
+        );
+        assert_eq!(format_usage_percentage(111.731), " 111.7%\n");
+    }
+
+    #[test]
+    fn clamps_negative_usage_to_zero() {
+        assert_eq!(format_limited_usage(-5.0, 1000.0), " (0.00 of 1000 covered in plan)\n");
+        assert_eq!(format_usage_percentage(-0.5), " 0.0%\n");
+    }
+
+    #[test]
+    fn rounds_percentage_once_for_display_and_progress_bar() {
+        let percentage = rounded_usage_percentage(99.95);
+        assert_eq!(percentage, 100.0);
+        assert_eq!(format_usage_percentage(percentage), " 100.0%\n");
+        assert_eq!(bar_fill_width(percentage, 80), 80);
+
+        assert_eq!(rounded_usage_percentage(89.97), 90.0);
+        assert_eq!(rounded_usage_percentage(90.04), 90.0);
+        assert_eq!(rounded_usage_percentage(-0.5), 0.0);
+    }
+
+    #[test]
+    fn bounds_progress_bar_fill_width() {
+        assert_eq!(bar_fill_width(111.731, 80), 80);
+        assert_eq!(bar_fill_width(45.0, 80), 36);
+        assert_eq!(bar_fill_width(-0.5, 80), 0);
+    }
 }

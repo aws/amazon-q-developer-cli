@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Classic CLI `/usage` now shows actual usage and percentage above plan limits"
+}

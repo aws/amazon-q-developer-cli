@@ -67,7 +67,7 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                     .to_string();
                 let used = item.current_usage_with_precision().unwrap_or(0.0);
                 let limit = item.usage_limit_with_precision().unwrap_or(0.0);
-                let percentage = if limit > 0.0 { (used / limit * 100.0) as i32 } else { 0 };
+                let percentage = if limit > 0.0 { used / limit * 100.0 } else { 0.0 };
                 let current_overages = item.current_overages_with_precision().unwrap_or(0.0);
                 let overage_rate = item.overage_rate().unwrap_or(0.0);
                 let overage_charges = item.overage_charges();

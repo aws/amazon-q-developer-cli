@@ -48,7 +48,7 @@ pub struct UsageBreakdownInfo {
     pub display_name: String,
     pub used: f64,
     pub limit: f64,
-    pub percentage: i32,
+    pub percentage: f64,
     /// Legacy post-paid overage fields; retained from the API but no longer rendered.
     #[allow(dead_code)]
     pub current_overages: f64,
