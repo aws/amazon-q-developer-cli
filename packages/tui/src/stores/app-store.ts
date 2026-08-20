@@ -3534,10 +3534,14 @@ export const createAppStore = (props: AppStoreProps) => {
     activeSurvey: null,
     surveyPrompt: null,
 
+    // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'sendMessage' has a complexity of 37. Maximum allowed is 30.; refactor before extending
+    // eslint-disable-next-line complexity
     sendMessage: async (
       content: string,
       images?: Array<{ base64: string; mimeType: string }>,
       displayContent?: string
+      // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 32 to the 30 allowed.; refactor before extending
+      // eslint-disable-next-line sonarjs/cognitive-complexity
     ) => {
       const {
         kiro,
@@ -4216,6 +4220,9 @@ export const createAppStore = (props: AppStoreProps) => {
 
       set({ streamingBuffer: { startBuffering, stopBuffering } });
 
+      // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 167. Maximum allowed is 30.; refactor before extending
+      // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 202 to the 30 allowed.; refactor before extending
+      // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
       const baseHandler = (event: AgentStreamEvent) => {
         // Once disposed (cancelled turn), drop everything. The handler
         // may still be briefly subscribed via `onUpdate` during the
@@ -4463,6 +4470,9 @@ export const createAppStore = (props: AppStoreProps) => {
               currentStreamRowIds.push(event.id);
             }
 
+            // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 61. Maximum allowed is 30.; refactor before extending
+            // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 43 to the 30 allowed.; refactor before extending
+            // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
             set((state) => {
               const existingIndex = state.messages.findIndex(
                 (msg) => msg.role === MessageRole.ToolUse && msg.id === event.id
@@ -9380,6 +9390,9 @@ export const createAppStore = (props: AppStoreProps) => {
     },
 
     // Main orchestrator
+    // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'handleUserInput' has a complexity of 52. Maximum allowed is 30.; refactor before extending
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 72 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
     handleUserInput: async (input: string, source = 'user') => {
       const trimmed = input.trim();
       const hasPendingImages = get().pendingImages.length > 0;

@@ -1847,6 +1847,8 @@ export class KasAcpClient extends BaseAcpClient {
     return this.kiroCapabilities.executionTargets?.includes(kind) ?? false;
   }
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'newSession' has a complexity of 40. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
   async newSession(): Promise<SessionResult> {
     this.assertActive('session creation');
     // Invalidate any in-flight self-heal from a previous load/create.
@@ -2059,6 +2061,8 @@ export class KasAcpClient extends BaseAcpClient {
     return { sessionId: sid, ...selections };
   }
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'loadSession' has a complexity of 33. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
   async loadSession(
     sessionId: string,
     options?: { source?: 'local' | 'remote' }
@@ -2387,6 +2391,8 @@ export class KasAcpClient extends BaseAcpClient {
     }
   }
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'executeCommand' has a complexity of 37. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
   async executeCommand(command: TuiCommand): Promise<CommandResult> {
     const name = command.command;
     switch (name) {

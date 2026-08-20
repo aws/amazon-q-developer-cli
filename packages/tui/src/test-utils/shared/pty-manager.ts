@@ -428,6 +428,8 @@ export class PtyManager {
   /**
    * Returns the terminal screen as HTML with inline styles for colors.
    */
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 43 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   getSnapshotHtml(): string {
     const buffer = this.terminal.buffer.active;
     const lines: string[] = [];

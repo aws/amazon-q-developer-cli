@@ -86,6 +86,8 @@ export const createThemeContext = (
   setBaseTheme: (theme: Theme | null) => void,
   wrapDisabled: boolean,
   liteMode: boolean = false
+  // LINT-DEBT(max-params): pre-existing at gate adoption; Arrow function has too many parameters (9). Maximum allowed is 6.; refactor before extending
+  // eslint-disable-next-line max-params
 ): ThemeContextValue => {
   // Merge user diff overrides into theme colors so getColor('diff.*') picks them up
   const effectiveColors =

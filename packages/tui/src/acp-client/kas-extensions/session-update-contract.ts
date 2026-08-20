@@ -116,6 +116,9 @@ function parsePipelineStage(value: unknown): KiroPipelineStage | null {
   };
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'parseKiroMeta' has a complexity of 53. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 68 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 function parseKiroMeta(value: unknown): KiroMeta | null {
   if (!isRecord(value)) return null;
   const result: KiroMeta = {};

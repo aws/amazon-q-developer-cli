@@ -79,6 +79,8 @@ export function isKeyRepeat(data: string): boolean {
  * @param data - Raw input sequence to parse
  * @returns Parsed sequence data or null if not a Kitty sequence
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 38 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function parseKittySequence(data: string): {
 	codepoint: number;
 	modifier: number;
@@ -461,6 +463,9 @@ const LEGACY_CTRL_SEQUENCES = {
  * }
  * ```
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'matchesKey' has a complexity of 178. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 152 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function matchesKey(data: string, keyId: KeyId): boolean {
 	const parsed = parseKeyId(keyId);
 	if (!parsed) return false;
@@ -815,6 +820,9 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
  * const keyId = parseKey('a');      // Returns 'a'
  * ```
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'parseKey' has a complexity of 120. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 157 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function parseKey(data: string): KeyId | undefined {
 	// Try Kitty protocol first
 	if (kittyProtocolActive) {

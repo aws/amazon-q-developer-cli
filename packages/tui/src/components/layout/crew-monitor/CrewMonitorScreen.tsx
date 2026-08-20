@@ -138,6 +138,8 @@ export const CrewMonitorContent: React.FC = () => {
 
   const stagesWithCounts = useMemo(
     () =>
+      // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 62 to the 30 allowed.; refactor before extending
+      // eslint-disable-next-line sonarjs/cognitive-complexity
       stages.map((s) => {
         const hasEvents = sessionsWithEvents.has(s.sessionId);
         const state =

@@ -1,6 +1,7 @@
 import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
+import sonarjs from 'eslint-plugin-sonarjs';
 
 export default tseslint.config(
   {
@@ -12,13 +13,23 @@ export default tseslint.config(
       'e2e_tests/test_fixtures/**',
     ],
   },
+  {
+    // A suppression that no longer suppresses anything must not keep counting
+    // against the debt baseline.
+    linterOptions: { reportUnusedDisableDirectives: 'error' },
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   {
     plugins: {
       'react-hooks': reactHooks,
+      sonarjs,
     },
     rules: {
+      'complexity': ['error', 30],
+      'max-depth': ['error', 5],
+      'max-params': ['error', 6],
+      'sonarjs/cognitive-complexity': ['error', 30],
       'no-console': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'off',

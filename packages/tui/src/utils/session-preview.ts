@@ -273,6 +273,8 @@ export class SessionPreviewProvider {
     }
   }
 
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 40 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   private extractKasPreviewData(
     logPath: string,
     meta: Record<string, unknown>
@@ -337,10 +339,14 @@ export class SessionPreviewProvider {
                       .join('\n')
                   : '';
             if (Array.isArray(payload.content)) {
+              // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+              // eslint-disable-next-line max-depth
               for (const block of payload.content as {
                 type?: string;
                 name?: string;
               }[]) {
+                // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (7). Maximum allowed is 5.; refactor before extending
+                // eslint-disable-next-line max-depth
                 if (block?.type === 'tool_use' && block.name)
                   tools.add(stripTerminalEscapes(block.name));
               }
@@ -393,6 +399,9 @@ export class SessionPreviewProvider {
     }
   }
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Method 'extractPreviewData' has a complexity of 39. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 42 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   private extractPreviewData(
     logPath: string,
     meta: Record<string, unknown>
@@ -457,6 +466,8 @@ export class SessionPreviewProvider {
             const text = extractTextContent(data.content);
             // Collect tool names from tool_use blocks.
             for (const block of data.content) {
+              // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+              // eslint-disable-next-line max-depth
               if (block?.kind === 'tool_use' && block.data?.name) {
                 tools.add(stripTerminalEscapes(block.data.name));
               }
@@ -470,6 +481,8 @@ export class SessionPreviewProvider {
           } else if (kind === 'ToolResults' && data.results) {
             for (const key of Object.keys(data.results)) {
               const result = data.results[key];
+              // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+              // eslint-disable-next-line max-depth
               if (result?.tool?.name) {
                 tools.add(stripTerminalEscapes(result.tool.name));
               }

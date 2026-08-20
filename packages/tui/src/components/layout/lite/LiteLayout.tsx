@@ -168,6 +168,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   ApprovalPrompt,
   StatusLine,
   ActivityTray,
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 85. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
 }) => {
   const store = useContext(AppStoreContext);
   const messages = useAppStore((s) => s.messages);
@@ -1060,6 +1062,7 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
     // `items` by reference, so the same mutated array would be blind to the
     // newly appended entries. Shallow copy of pointers is cheap.
     return items.slice();
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; settleGeneration invalidates the ref-backed static snapshot
     // eslint-disable-next-line react-hooks/exhaustive-deps -- settleGeneration invalidates the ref-backed static snapshot
   }, [
     messages,
@@ -1177,6 +1180,8 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const { activeSubagents, summarizingPhase } = useMemo<{
     activeSubagents: ActiveSubagentRow[];
     summarizingPhase: boolean;
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 45 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line sonarjs/cognitive-complexity
   }>(() => {
     if (!isProcessing) return { activeSubagents: [], summarizingPhase: false };
     // No pipeline this session — skip the walks (common short-turn case).
@@ -1387,6 +1392,9 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const PANEL_LINES = 16;
   // Floor offset for follow disengagement / re-engagement.
   const subagentMaxOffset = Math.max(0, subagentTotalLines - PANEL_LINES);
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 42. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 50 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     // Ctrl+X — kill ladder for the focused subagent: first press arms (yellow
     // chip + 2s window), second within the window kills. This useKeypress runs

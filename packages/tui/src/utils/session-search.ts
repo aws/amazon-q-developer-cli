@@ -370,6 +370,8 @@ export class SessionSearchIndex {
     return p;
   }
 
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 52 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   private async doBuild(): Promise<void> {
     try {
       this.status = { state: 'indexing', indexed: 0, total: 0 };
@@ -554,6 +556,8 @@ export class SessionSearchIndex {
   /** Transcript refs for the content index, spanning the V2 and KAS stores.
    *  Time-sliced: the stat/read walk over the whole store otherwise blocks
    *  the event loop for hundreds of ms on every dashboard open. */
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 34 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   private async collectRefs(): Promise<{
     refs: SessionRef[];
     complete: boolean;
@@ -693,6 +697,8 @@ export class SessionSearchIndex {
   }
 
   /** Index one V2 metadata record using transcript facts persisted in SQLite. */
+  // LINT-DEBT(max-params): pre-existing at gate adoption; Method 'indexSession' has too many parameters (7). Maximum allowed is 6.; refactor before extending
+  // eslint-disable-next-line max-params
   private indexSession(
     sessionId: string,
     heads: ReadonlyMap<string, string>,

@@ -77,6 +77,8 @@ interface CliOptions {
   help: boolean;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'parseCliArgs' has a complexity of 35. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 function parseCliArgs(): CliOptions {
   const { values } = parseArgs({
     options: {
@@ -186,6 +188,8 @@ function parseCliArgs(): CliOptions {
 // TAP output
 // ---------------------------------------------------------------------------
 
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 44 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function emitTap(report: RunReport): void {
   console.log('TAP version 14');
   console.log(`1..${report.results.length}`);
@@ -218,6 +222,8 @@ function emitTap(report: RunReport): void {
           console.log('  failures:');
           for (const f of failures) {
             console.log(`    - predicate: "${f.predicate}"`);
+            // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+            // eslint-disable-next-line max-depth
             if (f.actual) {
               console.log(`      actual: "${f.actual.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
             }
@@ -231,6 +237,8 @@ function emitTap(report: RunReport): void {
           for (const s of errSteps) {
             console.log(`    - step: "${s.step}"`);
             console.log(`      index: ${s.index}`);
+            // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+            // eslint-disable-next-line max-depth
             if (s.error) console.log(`      error: "${s.error.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`);
           }
         }

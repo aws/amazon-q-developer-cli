@@ -18,6 +18,8 @@ import { deriveShellTrustOptions } from '../../../utils/shell-trust-options.js';
 
 const TRUST_ENTRY_ID = 'allow_always';
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'ApprovalPanel' has a complexity of 34. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export const ApprovalPanel = React.memo(function ApprovalPanel({
   approval,
   width,

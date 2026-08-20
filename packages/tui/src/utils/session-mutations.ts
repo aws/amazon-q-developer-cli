@@ -97,6 +97,9 @@ function isV2Locked(root: string, sessionId: string): boolean {
  * Refuses: the active session, sessions with a live lock in either store,
  * and KAS-native sessions modified within the recency guard window.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'deleteSession' has a complexity of 33. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 46 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function deleteSession(
   sessionId: string,
   activeSessionId?: string | null,
@@ -469,6 +472,9 @@ function kasActivityMs(sessDirPath: string): number {
  * are exempt; the active session is exempt; V2 locked and KAS
  * recently-modified sessions are counted as skipped.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Async function 'gcScan' has a complexity of 40. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 77 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export async function gcScan(
   activeSessionId?: string | null,
   userTouchedIds: ReadonlySet<string> = new Set(),
@@ -665,6 +671,8 @@ export async function gcEmptySessions(
 
 type GcDeleteResult = 'deleted' | 'failed' | 'stale';
 
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 33 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 async function deleteGcCandidate(
   candidate: GcCandidate,
   activeSessionId: string | null | undefined,

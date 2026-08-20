@@ -92,6 +92,9 @@ export interface AppKeypressBindings {
  *   - `q` in crew-monitor / session-view → back to inline
  *   - Ctrl+G → toggle crew-monitor
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'dispatchAppKeypress' has a complexity of 68. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 66 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function dispatchAppKeypress(
   input: string,
   key: Key,

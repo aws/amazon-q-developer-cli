@@ -99,6 +99,8 @@ function startRemoteRecording(
   // Signal recording started immediately
   callbacks?.onStatus?.('recording');
 
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 49 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   (async () => {
     try {
       const response = await fetch(url, {
@@ -143,17 +145,23 @@ function startRemoteRecording(
 
             switch (event.type) {
               case 'activity':
+                // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+                // eslint-disable-next-line max-depth
                 if (event.level !== undefined) {
                   callbacks?.onLevel?.(event.level);
                 }
                 break;
               case 'done':
+                // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+                // eslint-disable-next-line max-depth
                 if (!settled) {
                   settled = true;
                   resolveText!(event.text?.trim() || null);
                 }
                 return;
               case 'error':
+                // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+                // eslint-disable-next-line max-depth
                 if (!settled) {
                   settled = true;
                   rejectText!(new Error(event.message ?? 'Remote voice error'));

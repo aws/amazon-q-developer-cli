@@ -42,6 +42,8 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'normalizeListingEntry' has a complexity of 36. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 function normalizeListingEntry(value: unknown): SessionListingInput | null {
   const input = record(value);
   if (!input || !isValidSessionId(input.sessionId)) return null;

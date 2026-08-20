@@ -152,6 +152,8 @@ export function solidBg(width: number, height: number, color: RGB): RGB[][] {
  * Create a radial glow background — dark center brightens outward from (cx, cy).
  * Useful for ghost/character glow effects.
  */
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'radialGlow' has too many parameters (7). Maximum allowed is 6.; refactor before extending
+// eslint-disable-next-line max-params
 export function radialGlow(
 	width: number,
 	height: number,

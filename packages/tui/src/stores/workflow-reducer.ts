@@ -681,6 +681,9 @@ function retainedSelectionIndex(
   return fallback < nodes.length ? fallback : undefined;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'reduceWorkflowEvent' has a complexity of 58. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 51 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function reduceWorkflowEvent(
   state: WorkflowCollectionState,
   event: WorkflowProgressEvent,

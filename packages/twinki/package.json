@@ -13,7 +13,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:perf": "vitest run --config vitest.perf.config.ts",
-    "lint": "tsc --noEmit"
+    "lint": "eslint . && tsc -p packages/twinki/tsconfig.json --noEmit && tsc -p packages/testing/tsconfig.json --noEmit && tsc -p packages/testing-library/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.19.2",
@@ -34,7 +34,9 @@
     "@types/react": "^19.0.0",
     "@types/react-reconciler": "^0.28.9",
     "@xterm/headless": "^5.3.0",
+    "eslint-plugin-sonarjs": "4.2.0",
     "typescript": "^5.3.0",
+    "typescript-eslint": "^8.57.1",
     "vitest": "^3.2.1",
     "@vitest/coverage-v8": "^3.2.1"
   }

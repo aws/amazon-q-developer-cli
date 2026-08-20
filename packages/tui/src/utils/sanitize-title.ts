@@ -19,6 +19,7 @@ const TERMINAL_ESCAPES_RE = new RegExp(
   'g'
 );
 
+// LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; matching C0 control characters is the purpose of this sanitizer regex
 // eslint-disable-next-line no-control-regex
 const C0_CONTROLS_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g;
 

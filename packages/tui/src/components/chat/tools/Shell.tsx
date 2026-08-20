@@ -131,6 +131,8 @@ export const Shell = React.memo(function Shell({
   const { outputChunks, exitCode } = useMemo((): {
     outputChunks: string[][];
     exitCode: number | null;
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 36 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line sonarjs/cognitive-complexity
   } => {
     if (result) {
       const outputResult =

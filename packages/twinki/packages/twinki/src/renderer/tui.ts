@@ -876,6 +876,9 @@ export class TUI extends Container {
     );
   }
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Method 'handleTextSelectionMouse' has a complexity of 33. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 35 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   private handleTextSelectionMouse(event: MouseEvent): void {
     if (event.button !== 'left') return;
 
@@ -970,6 +973,9 @@ export class TUI extends Container {
    *
    * @param data - Raw input data from terminal
    */
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Method 'handleInput' has a complexity of 36. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 53 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   private handleInput(data: string): void {
     // DSR cursor position response: \x1b[row;colR
     if (this.dsrPending) {
@@ -1744,6 +1750,8 @@ export class TUI extends Container {
    * per-line occurrences are capped, keeping the search linear in practice:
    * the true alignment is anchored by the first painted non-blank line.
    */
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 31 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   private findPresentedRun(
     flushed: string[],
     live: string[]
@@ -1893,6 +1901,8 @@ export class TUI extends Container {
    * Adds static lines to the accumulated static output.
    * These lines are rendered above live content and scroll into terminal scrollback.
    */
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 50 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   writeStaticLines(lines: string[]): void {
     if (lines.length > 0 && !this.altScreen) {
       // Apply the line-reset suffix ONCE, here, instead of on every frame.
@@ -2266,6 +2276,9 @@ export class TUI extends Container {
    * - Synchronized output to prevent tearing
    * - Line-based diffing for minimal terminal writes
    */
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Method '_doRenderInner' has a complexity of 117. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 173 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   private _doRenderInner(): void {
     this.lastRenderKind = 'partial';
     this.perfLastFrame.prefixCopied = 0;
@@ -2604,10 +2617,14 @@ export class TUI extends Container {
     const pending = this.pendingFlush;
     this.pendingFlush = null;
 
+    // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 56. Maximum allowed is 30.; refactor before extending
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 91 to the 30 allowed.; refactor before extending
+    /* eslint-disable complexity, sonarjs/cognitive-complexity */
     const viewportTailRender = (
       reason: string,
       mustPaintPhysRow?: number
     ): boolean => {
+    /* eslint-enable complexity, sonarjs/cognitive-complexity */
       // Walk back from the frame end until the tail fills the viewport, never
       // exceeding `height` physical rows: surplus rows scroll off into
       // scrollback and are appended again on the next redraw, duplicating the
@@ -2834,6 +2851,8 @@ export class TUI extends Container {
                 afterRunsGrownIdx.push(
                   slotsKnown && !pastDivergence ? slot : null
                 );
+                // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+                // eslint-disable-next-line max-depth
                 if (
                   !slotsKnown ||
                   slot >= newLines.length ||

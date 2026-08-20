@@ -461,6 +461,8 @@ function isCanonicalRunComplete(payload: Record<string, unknown>): boolean {
   );
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'isWorkflowEvent' has a complexity of 50. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 function isWorkflowEvent(value: unknown): value is WorkflowEvent {
   if (!isRecord(value)) return false;
   const payload = value;
@@ -581,6 +583,8 @@ export function parseWorkflowNotification(
  * `_meta.kiro.notification.kind`. The top-level kind and `wf-progress-*`
  * message-id paths keep existing workflow histories readable.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'parsePersistedWorkflowProgress' has a complexity of 51. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export function parsePersistedWorkflowProgress(
   update: unknown
 ): PersistedWorkflowProgressParseResult {

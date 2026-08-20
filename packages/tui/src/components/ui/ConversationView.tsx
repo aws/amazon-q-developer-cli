@@ -649,6 +649,9 @@ function appendMessagesToStatic(
   });
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'ConversationView' has a complexity of 64. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 42 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export const ConversationView = React.memo(function ConversationView({
   questionPanelVisible = false,
 }: {

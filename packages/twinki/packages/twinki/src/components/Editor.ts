@@ -218,6 +218,9 @@ export class Editor implements Component, Focusable {
 
 	invalidate(): void {}
 
+	// LINT-DEBT(complexity): pre-existing at gate adoption; Method 'render' has a complexity of 32. Maximum allowed is 30.; refactor before extending
+	// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 46 to the 30 allowed.; refactor before extending
+	// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 	render(width: number): string[] {
 		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
 		const px = Math.min(this.paddingX, maxPadding);
@@ -344,6 +347,9 @@ export class Editor implements Component, Focusable {
 		return result;
 	}
 
+	// LINT-DEBT(complexity): pre-existing at gate adoption; Method 'handleInput' has a complexity of 65. Maximum allowed is 30.; refactor before extending
+	// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 73 to the 30 allowed.; refactor before extending
+	// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 	handleInput(data: string): void {
 		const kb = getEditorKeybindings();
 
@@ -472,6 +478,8 @@ export class Editor implements Component, Focusable {
 
 	// --- Private: text layout ---
 
+	// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 33 to the 30 allowed.; refactor before extending
+	// eslint-disable-next-line sonarjs/cognitive-complexity
 	private layoutText(contentWidth: number): LayoutLine[] {
 		const layoutLines: LayoutLine[] = [];
 		if (this.state.lines.length === 0 || (this.state.lines.length === 1 && this.state.lines[0] === '')) {
@@ -497,6 +505,8 @@ export class Editor implements Component, Focusable {
 							adjustedPos = cp - chunk.startIndex;
 						} else {
 							hasCursor = cp >= chunk.startIndex && cp < chunk.endIndex;
+							// LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+							// eslint-disable-next-line max-depth
 							if (hasCursor) adjustedPos = Math.min(cp - chunk.startIndex, chunk.text.length);
 						}
 					}

@@ -4,7 +4,9 @@ coverage = true
 coverageReporter = ["text", "lcov"]
 coverageSkipTestFiles = true
 
-# Coverage exclusions — keep in sync with coverage-config.json (source of truth).
+# Patterns bun applies while instrumenting, which is upstream of and separate
+# from the exclusions the coverage gate scores with. The two need not match:
+# anything omitted here simply never reaches the lcov stream.
 # Excluded categories:
 # 1. Build artifacts, test infrastructure, deprecated code
 # 2. acp-client.ts — bun's query-string import isolation prevents coverage

@@ -92,6 +92,9 @@ export function selectLiteLiveHistory(
   };
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 40. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 33 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export const LiteLiveRegion: React.FC = () => {
   const isProcessing = useAppStore((s) => s.isProcessing);
   const messages = useAppStore((s) => s.messages);
@@ -306,6 +309,7 @@ export const LiteLiveRegion: React.FC = () => {
   // Key the saved filters by content so the array identity stays stable across
   // spinner ticks.
   const filtersKey = getVerboseFilters().join(',');
+  // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; filtersKey tracks filter contents without unstable array identity
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filtersOverride = useMemo(() => getVerboseFilters(), [filtersKey]);
   const liveBarsByToolId = useMemo(() => {

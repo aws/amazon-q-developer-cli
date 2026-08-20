@@ -137,6 +137,8 @@ export function constrainColumnWidths(
  *   (e.g. after rendering inline markdown and stripping ANSI).
  * @returns Array of wrapped lines (at least one element, possibly `['']`).
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 39 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function wrapCellText(
   text: string,
   maxWidth: number,

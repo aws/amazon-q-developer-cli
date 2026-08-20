@@ -37,6 +37,8 @@ const namedColorToHex: { [key in ChalkColorName]: string } = {
 export const getTerminalChalkColor = (
   color: TerminalColor,
   mode: 'fg' | 'bg' = 'fg'
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 35. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
 ): any => {
   const { truecolor, color256, named } = color;
   let chalkFunction: any;

@@ -779,6 +779,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
       repos: cliArgs.repo,
       kasSubagentRoutingStore: appStore.getState().kasSubagentRouting,
     })
+    // LINT-DEBT(complexity): pre-existing at gate adoption; Async arrow function has a complexity of 41. Maximum allowed is 30.; refactor before extending
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 52 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
     .then(async () => {
       appStore
         .getState()
@@ -1210,6 +1213,9 @@ const startInitialization = (resumePickerSessionId?: string) => {
 };
 
 // We wrap the entire startup in an async IIFE.
+// LINT-DEBT(complexity): pre-existing at gate adoption; Async arrow function has a complexity of 53. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 85 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 const startApp = async () => {
   // v3 + nightly: `--resume-picker` opens the full session dashboard instead
   // of the legacy inline picker. Route it through the same boot path as

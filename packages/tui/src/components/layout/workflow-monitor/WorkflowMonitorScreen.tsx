@@ -90,6 +90,9 @@ function messageDraftKey(target: WorkflowNodeSessionTarget): string {
   return `${target.workflowId}\u0000${target.sessionId}`;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'WorkflowMonitorScreen' has a complexity of 52. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 39 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   store = workflowStore,
   now = Date.now,
@@ -172,6 +175,7 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       setWorkflowSurfaceOpen('monitor', false);
     };
     // Only run on mount/unmount; live toggles go through the `m` handler.
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; mount lifecycle intentionally captures the initial mouse preference
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setInputState, setWorkflowSurfaceOpen]);
 
@@ -434,6 +438,9 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
       .catch((error: unknown) => showError(error, 'Could not stop workflow'));
   };
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 56. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 50 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     if (activeView === 'agents') {
       if (key.tab) setActiveView('workflows');

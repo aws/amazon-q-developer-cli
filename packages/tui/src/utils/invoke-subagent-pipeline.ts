@@ -252,6 +252,8 @@ export class InvokeSubagentPipelineAdapter {
    * crew activity once its stage is registered — hiding it from the
    * main transcript.
    */
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 38 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   normalize(
     event: AgentStreamEvent,
     meta: KiroMeta | undefined

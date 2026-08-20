@@ -33,6 +33,9 @@ export function createYogaNode(): YogaNode {
  * @param node - Yoga node to configure
  * @param props - Object containing layout properties
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'applyYogaProps' has a complexity of 32. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 32 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function applyYogaProps(node: YogaNode, props: ComponentProps): void {
 	// Dimensions
 	if (props.width !== undefined) {

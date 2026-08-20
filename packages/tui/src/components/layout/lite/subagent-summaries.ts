@@ -98,6 +98,9 @@ export function markSubagentSummariesEmitted(
   return previousSize;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'collectSubagentSummariesByParent' has a complexity of 45. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 65 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function collectSubagentSummariesByParent(
   messages: readonly MessageType[],
   sessions: ReadonlyMap<string, AgentSession>,
@@ -327,6 +330,8 @@ export type PendingSubagentSummaryEntry = {
   emittedCount: number;
 };
 
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'selectPendingSubagentSummaryEntries' has too many parameters (7). Maximum allowed is 6.; refactor before extending
+// eslint-disable-next-line max-params
 export function selectPendingSubagentSummaryEntries(
   messages: readonly MessageType[],
   summariesById: ReadonlyMap<string, readonly SubagentStageSummary[]>,

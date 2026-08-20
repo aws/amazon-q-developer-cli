@@ -28,6 +28,8 @@ describe('tool capability registry', () => {
     ).toEqual(Object.keys(TOOL_LABELS).sort());
   });
 
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 32 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   it('resolves every registered name through its declared capability', () => {
     for (const capability of Object.values(TOOL_CAPABILITIES)) {
       const diffByName =

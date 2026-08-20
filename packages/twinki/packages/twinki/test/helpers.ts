@@ -84,6 +84,8 @@ function escapeXml(s: string): string {
  * plain-text Frame type drops these). Views in any browser; `rsvg-convert`
  * or a browser turns it into PNG.
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 43 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function screenshotSvg(term: TestTerminal): string {
 	const buf = term.xtermBuffer();
 	const cols = term.columns;

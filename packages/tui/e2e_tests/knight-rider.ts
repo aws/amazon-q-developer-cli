@@ -417,6 +417,8 @@ function requirePty(): PtyManager {
 
 const server = Bun.serve({
   port: PORT,
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'fetch' has a complexity of 31. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
   async fetch(req, server) {
     const url = new URL(req.url);
 

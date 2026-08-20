@@ -1189,6 +1189,9 @@ const effectHandlers: Record<CommandEffectName, EffectHandler> = {
     ctx.setMode('session-dashboard');
   },
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Method 'showThemeMenu' has a complexity of 44. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 49 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   showThemeMenu: (_result, ctx, cmd, args) => {
     // Modern TUI: /theme is a legacy alias that opens main's ThemePanel
     // (the canonical entry is /settings → theme). Lite keeps its own rich

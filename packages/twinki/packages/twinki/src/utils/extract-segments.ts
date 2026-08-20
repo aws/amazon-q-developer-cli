@@ -45,6 +45,8 @@ const pooledStyleTracker = new AnsiCodeTracker();
  * // result.before = 'Hello', result.after = ' test'
  * ```
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 41 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function extractSegments(
 	line: string,
 	beforeEnd: number,

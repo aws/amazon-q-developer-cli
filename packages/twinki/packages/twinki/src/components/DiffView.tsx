@@ -149,6 +149,8 @@ interface DiffPair {
 	right: DiffLine;
 }
 
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 34 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function computePairs(oldText: string, newText: string, colors: DiffColors): DiffPair[] {
 	const changes = Diff.diffLines(oldText, newText, { newlineIsToken: false });
 	const pairs: DiffPair[] = [];
@@ -359,5 +361,5 @@ export const DiffView: React.FC<DiffViewProps> = ({
 			</Box>
 		);
 	// state reference changes only when pairs+colors are fully computed
-	}, [state, cols, layout]); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [state, cols, layout]);
 };

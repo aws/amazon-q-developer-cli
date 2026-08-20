@@ -46,6 +46,8 @@ function tmuxSupportsSynchronizedOutput(
   return major > 3 || (major === 3 && minor >= 7);
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'buildCapabilityCache' has a complexity of 33. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 function buildCapabilityCache(): Map<TerminalCapability, boolean> {
   const cache = new Map<TerminalCapability, boolean>();
 

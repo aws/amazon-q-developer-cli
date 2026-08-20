@@ -79,6 +79,8 @@ export interface ReadProps {
  * - Collapsible output with Ctrl+O expansion for large file lists
  * - Parses ops array from content JSON
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'Read' has a complexity of 33. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export const Read = React.memo(function Read({
   target,
   status,

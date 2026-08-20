@@ -144,6 +144,9 @@ function shellDenyExcludeFor(allowGlobs: string[]): string[] {
 }
 
 /** Convert a CLI `toolsSettings` block into V3 `permissions.rules`. */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'convertToolsSettings' has a complexity of 41. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 36 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function convertToolsSettings(
   toolsSettings: Record<string, any>,
   warnings: MigrationWarning[]

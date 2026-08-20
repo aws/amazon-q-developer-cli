@@ -479,6 +479,8 @@ export class WorkflowOwnerRegistry {
     return { owner: merged, removedSessionIds };
   }
 
+  // LINT-DEBT(max-params): pre-existing at gate adoption; Method 'updateMatchingOwner' has too many parameters (7). Maximum allowed is 6.; refactor before extending
+  // eslint-disable-next-line max-params
   private updateMatchingOwner(
     workflowId: string,
     nodeId: string,

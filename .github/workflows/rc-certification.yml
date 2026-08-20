@@ -458,6 +458,7 @@ jobs:
             .github/actions/codeartifact-login
             .github/scripts/run-with-retry.sh
             scripts/const.py
+            scripts/code-quality
 
       - name: Read pinned Bun version
         id: bun-ver
@@ -510,19 +511,8 @@ jobs:
           LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
           UNIT_TEST_COMMAND: |
             set -euo pipefail
-            bun test 2>&1 | tee "$RUNNER_TEMP/tui-coverage.txt"
-            FUNCS="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$2); print $2}')"
-            LINES="$(grep "All files" "$RUNNER_TEMP/tui-coverage.txt" | awk -F'|' '{gsub(/ /,"",$3); print $3}')"
-            echo "Coverage: functions ${FUNCS}%, lines ${LINES}%"
-            if [ "$(awk -v value="$FUNCS" 'BEGIN { print value < 80 }')" = "1" ]; then
-              echo "::error::Function coverage regression: ${FUNCS}% < 80%"
-              exit 1
-            fi
-            if [ "$(awk -v value="$LINES" 'BEGIN { print value < 80 }')" = "1" ]; then
-              echo "::error::Line coverage regression: ${LINES}% < 80%"
-              exit 1
-            fi
-            bun run test:vitest
+            bun test
+            npx vitest run --config vitest.config.ts --coverage --coverage.reportsDirectory=coverage/vitest
         run: |
           bash "$RC_CI_ROOT/.github/scripts/run-with-retry.sh" \
             --attempts "$LANE_ATTEMPTS" \
@@ -546,6 +536,25 @@ jobs:
             --status-file "$GITHUB_WORKSPACE/verification-results/retries/tui-twinki-linux.txt" \
             -- bun run test:run
         working-directory: packages/twinki
+
+      - name: Enforce coverage floors
+        # Internal pull_request runs already carry this floor on a required check;
+        # fork mode, the nightly schedule and manual dispatches are gated here.
+        if: matrix.check == 'test' && (inputs.execution_mode == 'fork' || github.event_name != 'pull_request')
+        shell: bash
+        run: |
+          # The checker comes from the trusted ref: under fork mode the working tree
+          # is the contributor's, so its own copy could be edited to pass its floors.
+          # The floors file stays the tree's, gated by the baseline-direction ratchet.
+          python3 "$RC_CI_ROOT/scripts/code-quality/check-coverage.py" \
+            --floors .coverage-floors.json \
+            --coverage-config packages/tui/coverage-config.json \
+            --package packages/tui \
+                --lcov packages/tui/coverage/lcov.info:bun \
+                --lcov packages/tui/coverage/vitest/lcov.info:tuiVitest \
+            --package packages/twinki \
+                --lcov packages/twinki/coverage/lcov.info:twinkiVitest \
+            --report-out "$RUNNER_TEMP/coverage-floor-report.md"
 
       - name: Upload TUI static retry status
         if: always()

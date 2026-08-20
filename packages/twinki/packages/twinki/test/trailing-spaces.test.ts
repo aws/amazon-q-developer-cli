@@ -58,7 +58,6 @@ class RawCaptureTerminal implements Terminal {
 
 /** Strip all ANSI escape sequences from a string */
 function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*[A-Za-z]|\x1b\[\?[0-9]+[hl]|\x1b\][^\x07]*\x07|\x1b\(B/g, '');
 }
 

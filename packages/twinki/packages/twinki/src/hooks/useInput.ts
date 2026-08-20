@@ -113,6 +113,8 @@ export function useInput(
 }
 
 /** Shared helper: parse raw terminal data into input string + Key object */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'parseInputData' has a complexity of 39. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export function parseInputData(data: string): { input: string; key: Key } {
 	const parsed = parseKey(data);
 	const keyId = parsed ?? '';

@@ -109,6 +109,8 @@ function rankMatch(filePath: string, query: string): number {
 // Async cancellable file search
 // ---------------------------------------------------------------------------
 
+// LINT-DEBT(max-params): pre-existing at gate adoption; Async function 'collectMatchingFiles' has too many parameters (10). Maximum allowed is 6.; refactor before extending
+// eslint-disable-next-line max-params
 async function collectMatchingFiles(
   dir: string,
   query: string,

@@ -1,0 +1,325 @@
+name: Code Quality
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: code-quality-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  # Fork PRs get a read-only GITHUB_TOKEN and no OIDC id-token, so
+  # CodeArtifact-dependent checks cannot run for them.
+  resolve:
+    name: Resolve fork status
+    runs-on: ubuntu-latest
+    outputs:
+      is-fork: ${{ steps.fork.outputs.is-fork }}
+    steps:
+      - name: Detect fork PR
+        id: fork
+        run: echo "is-fork=${{ github.event.pull_request.head.repo.fork || false }}" >> "$GITHUB_OUTPUT"
+
+  code-quality-checks:
+    name: Checks
+    needs: resolve
+    if: needs.resolve.outputs.is-fork != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: this job checks out and scores the PR's base commit.
+          fetch-depth: 0
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        run: |
+          v="$(grep '^BUN_VERSION' scripts/const.py | sed 's/.*\"\(.*\)\"/\1/')"
+          [[ -n "$v" ]] || { echo '::error::BUN_VERSION not found'; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build twinki
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Install Hypothesis (best effort)
+        continue-on-error: true
+        run: python3 -m pip install 'hypothesis>=6.135,<7'
+
+      - name: Mark setup complete
+        id: setup
+        run: echo "Setup completed successfully"
+
+      - name: Script_Test_Suite
+        id: script_test_suite
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        # unittest discover exits 0 when it finds no tests, so a renamed or
+        # emptied directory would silently disable this meta-check.
+        run: |
+          set -o pipefail
+          python3 -m unittest discover -s scripts/code-quality/tests 2>&1 \
+            | tee /tmp/script-test-suite.log
+          if ! grep -Eq '^Ran [1-9][0-9]* tests? in ' /tmp/script-test-suite.log; then
+            echo "::error::scripts/code-quality/tests executed zero passing tests"
+            exit 1
+          fi
+
+      - name: Lint_Check
+        id: lint
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          set +e
+          (cd packages/tui && bunx eslint .)
+          TUI_EXIT=$?
+          (cd packages/twinki && bunx eslint .)
+          TWINKI_EXIT=$?
+          (cd packages/terminal-harness && bunx eslint .)
+          TERMINAL_HARNESS_EXIT=$?
+          set -e
+
+          echo "packages/tui: exit ${TUI_EXIT}"
+          echo "packages/twinki: exit ${TWINKI_EXIT}"
+          echo "packages/terminal-harness: exit ${TERMINAL_HARNESS_EXIT}"
+
+          if (( TUI_EXIT != 0 || TWINKI_EXIT != 0 || TERMINAL_HARNESS_EXIT != 0 )); then
+            exit 1
+          fi
+
+      - name: Debt_Checker
+        id: debt
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          python3 scripts/code-quality/check-lint-debt.py \
+            --measurements-out /tmp/lint-debt-readings.json
+
+      - name: Duplication_Checker
+        id: duplication
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          python3 scripts/code-quality/check-duplication.py \
+            --measurements-out /tmp/duplication-readings.json
+
+      - name: Base_Coverage
+        id: base_coverage
+        # Informational: it only feeds the report's movement column, so a base
+        # revision that will not build must not decide this gate.
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        continue-on-error: true
+        # continue-on-error isolates this step's exit code but not its runtime,
+        # so it gets its own bound: roughly double the measured ~6 minutes.
+        timeout-minutes: 12
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -e
+          git worktree add /tmp/base-tree "$BASE_SHA"
+          # The CodeArtifact token is written into the head checkout's .npmrc, and
+          # a worktree is a separate directory, so the base install needs its own copy.
+          cp .npmrc /tmp/base-tree/.npmrc
+          cd /tmp/base-tree
+          bun install
+          (cd packages/twinki/packages/twinki && bun run build)
+
+          set +e
+          (cd packages/tui && bun test)
+          (cd packages/tui && npx vitest run --config vitest.config.ts --coverage --coverage.reportsDirectory=coverage/vitest)
+          (cd packages/twinki && npx vitest run --retry=2 --coverage --coverage.reportsDirectory=coverage)
+          set -e
+
+          # Scored with the head revision's checker, config and floors: the base
+          # revision may predate all three, and only its percentages are wanted.
+          python3 "${GITHUB_WORKSPACE}/scripts/code-quality/check-coverage.py" \
+            --floors "${GITHUB_WORKSPACE}/.coverage-floors.json" \
+            --coverage-config "${GITHUB_WORKSPACE}/packages/tui/coverage-config.json" \
+            --package packages/tui \
+                --lcov packages/tui/coverage/lcov.info:bun \
+                --lcov packages/tui/coverage/vitest/lcov.info:tuiVitest \
+            --package packages/twinki \
+                --lcov packages/twinki/coverage/lcov.info:twinkiVitest \
+            --measurement-out /tmp/base-measurement.json \
+            --report-out /tmp/base-report.md || true
+
+          # The copied .npmrc carries the CodeArtifact token; delete it and
+          # unregister the worktree rather than leave either behind.
+          cd "${GITHUB_WORKSPACE}"
+          rm -f /tmp/base-tree/.npmrc
+          git worktree remove --force /tmp/base-tree
+
+      - name: Coverage_Check
+        id: coverage
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          set +e
+          (cd packages/tui && bun test)
+          TUI_UNIT_EXIT=$?
+          (cd packages/tui && npx vitest run --config vitest.config.ts --coverage --coverage.reportsDirectory=coverage/vitest)
+          TUI_VITEST_EXIT=$?
+          # --retry=2 absorbs a known parallel-load flake in this suite; remove it
+          # once stable — a failed suite invalidates its lcov and reds this gate.
+
+          # No reporter override: the config's text table is the only place the
+          # statement and branch thresholds are visible, and both gate this suite.
+          (cd packages/twinki && npx vitest run --retry=2 --coverage --coverage.reportsDirectory=coverage)
+          TWINKI_EXIT=$?
+          set -e
+
+          echo "tui-unit: exit ${TUI_UNIT_EXIT}"
+          echo "tui-vitest: exit ${TUI_VITEST_EXIT}"
+          echo "twinki-vitest: exit ${TWINKI_EXIT}"
+
+          python3 scripts/code-quality/check-coverage.py \
+            --floors .coverage-floors.json \
+            --coverage-config packages/tui/coverage-config.json \
+            --package packages/tui \
+                --lcov packages/tui/coverage/lcov.info:bun \
+                --lcov packages/tui/coverage/vitest/lcov.info:tuiVitest \
+                --suite-result tui-unit=$TUI_UNIT_EXIT --suite-result tui-vitest=$TUI_VITEST_EXIT \
+            --package packages/twinki \
+                --lcov packages/twinki/coverage/lcov.info:twinkiVitest \
+                --suite-result twinki-vitest=$TWINKI_EXIT \
+            --gate-readings /tmp/lint-debt-readings.json \
+            --gate-readings /tmp/duplication-readings.json \
+            --compare-to /tmp/base-measurement.json \
+            --report-out coverage-report.md
+
+      - name: Post coverage report
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          tee /tmp/code-quality-coverage-comment.md < coverage-report.md
+
+          COMMENT_ID="$(
+            gh api --paginate \
+              "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- code-quality-coverage-report -->")) | .id' \
+              | sed -n '1p'
+          )"
+
+          if [[ -n "$COMMENT_ID" ]]; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+              --raw-field body="$(cat /tmp/code-quality-coverage-comment.md)" \
+              >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --raw-field body="$(cat /tmp/code-quality-coverage-comment.md)" \
+              >/dev/null
+          fi
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-coverage-report
+          path: coverage-report.md
+          if-no-files-found: warn
+
+      - name: Aggregate code-quality result
+        if: ${{ !cancelled() }}
+        env:
+          SCRIPT_TEST_SUITE_OUTCOME: ${{ steps.script_test_suite.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          DEBT_OUTCOME: ${{ steps.debt.outcome }}
+          DUPLICATION_OUTCOME: ${{ steps.duplication.outcome }}
+          COVERAGE_OUTCOME: ${{ steps.coverage.outcome }}
+        run: |
+          status=0
+          if [[ "$SCRIPT_TEST_SUITE_OUTCOME" != "success" ]]; then
+            echo "::error::Script_Test_Suite failed (outcome: ${SCRIPT_TEST_SUITE_OUTCOME})"
+            status=1
+          fi
+          if [[ "$LINT_OUTCOME" != "success" ]]; then
+            echo "::error::Lint_Check failed (outcome: ${LINT_OUTCOME})"
+            status=1
+          fi
+          if [[ "$DEBT_OUTCOME" != "success" ]]; then
+            echo "::error::Debt_Checker failed (outcome: ${DEBT_OUTCOME})"
+            status=1
+          fi
+          if [[ "$DUPLICATION_OUTCOME" != "success" ]]; then
+            echo "::error::Duplication_Checker failed (outcome: ${DUPLICATION_OUTCOME})"
+            status=1
+          fi
+          if [[ "$COVERAGE_OUTCOME" != "success" ]]; then
+            echo "::error::Coverage_Check failed (outcome: ${COVERAGE_OUTCOME})"
+            status=1
+          fi
+          exit "$status"
+
+  # Needs only git and python3 — no credentials — so it runs for fork PRs too;
+  # it is the only check protecting the committed limit files from loosening.
+  baseline-direction:
+    name: Baseline Direction
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The checker compares committed limits against the PR's base commit.
+          fetch-depth: 0
+
+      - name: Baseline_Direction
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+        run: |
+          set -euo pipefail
+          # Score with the base revision's checker where it exists: on a fork PR the
+          # working tree is the contributor's, so its own copy could be edited to
+          # approve the loosening it ships. Absent at base means first appearance,
+          # where the tree's copy is all there is.
+          trusted=scripts/code-quality
+          if git cat-file -e "${BASE_SHA}:scripts/code-quality/check-baseline-direction.py" 2>/dev/null; then
+            trusted="$(mktemp -d)"
+            for f in check-baseline-direction.py sa_lib.py; do
+              git show "${BASE_SHA}:scripts/code-quality/${f}" > "${trusted}/${f}"
+            done
+            echo "scoring with the base revision's checker"
+          else
+            echo "checker absent at base; scoring with the tree's copy"
+          fi
+          python3 "${trusted}/check-baseline-direction.py" --base-ref "${BASE_SHA}"
+
+  # Load-bearing: branch protection requires this exact job key. Fork PRs are
+  # gated on baseline direction only; the other checks need credentials forks lack.
+  code-quality:
+    name: code-quality
+    if: always()
+    needs: [resolve, code-quality-checks, baseline-direction]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check result
+        run: |
+          if [[ "${{ needs.baseline-direction.result }}" != "success" ]]; then
+            echo "::error::Baseline_Direction failed (result: ${{ needs.baseline-direction.result }})"
+            exit 1
+          fi
+          if [[ "${{ needs.resolve.outputs.is-fork }}" == "true" ]]; then
+            echo "Fork PR — CodeArtifact-dependent checks not run (no OIDC token); gated on baseline direction only"
+            exit 0
+          fi
+          if [[ "${{ needs.code-quality-checks.result }}" != "success" ]]; then
+            echo "::error::code-quality checks failed (result: ${{ needs.code-quality-checks.result }})"
+            exit 1
+          fi
+          echo "code-quality checks passed"

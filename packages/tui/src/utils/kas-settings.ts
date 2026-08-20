@@ -48,6 +48,8 @@ function applyGatedFeatures(settings: KasSettings): void {
  * Read CLI settings from disk and transform to AgentSettingsSchema format.
  * Returns undefined if no relevant settings are configured.
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 35 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function buildKasSettings(): KasSettings | undefined {
   const raw = readCliSettings();
   const settings: KasSettings = {};

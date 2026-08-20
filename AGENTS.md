@@ -366,6 +366,43 @@ cargo clippy --locked --workspace --color always -- -D warnings
 cargo +nightly fmt
 ```
 
+## Code Quality Gate Invariants
+
+The required `code-quality` check is blocking. Committed debt and duplication baselines may only decrease and coverage floors and their committed denominators may only rise: `Baseline_Direction` compares each limit that existed at the pull request's base commit, treats a new debt or duplication key as an implicit zero, and fails any loosening. Retiring a debt or duplication key is a tightening, because an absent key allows nothing. Retiring a coverage floor drops real enforcement, so it needs an acknowledgement naming `null`. A denominator is the only guard against a percentage rising because covered code left the measured set, so lowering one is a loosening; the committed values carry roughly two percent of slack, and deletion inside that slack needs no edit at all.
+
+The exclusion config that decides which sources reach the coverage denominator is not ratcheted, because its surfaces are keyed by pattern text: escaping a regex, or moving an entry from the global list into a per-stream filter, reads as a new exclusion while measuring strictly more code. The committed denominator is the guard instead — excluding sources shrinks the measured total, and a total below the committed minimum fails `Coverage_Check`. That bound is weaker than it looks, because the same total rises with every measured line a change adds: exclusion is bounded by the slack, roughly two percent, only when a change adds no measured code, and otherwise by the slack plus what it adds. Excluding beyond that requires lowering the committed denominator, which is itself a loosening needing an acknowledgement.
+
+Debt and duplication counts are exact rather than ceilings: a run measuring fewer suppressions or clones than the committed number fails and names the lower value, so an improvement is banked in the change that earned it instead of becoming allowance for new debt elsewhere. ESLint reports an unused disable directive as an error, so a suppression cannot outlive the violation it covered. The debt, duplication and coverage readings are published in the pull request comment, alongside each package's movement against the base revision; the lint and baseline-direction checks publish no reading there and are auditable only in the workflow log.
+
+A loosening is allowed only by an entry in `.baseline-loosening.json` naming both the value now committed and a reason. The entry covers that value alone: a later movement of the same limit needs its own reviewed entry, and an entry naming a value the tree no longer commits is itself a failure:
+
+```json
+{ ".lint-debt-baseline.json": { "complexity": { "value": 84, "reason": "why this was accepted" } } }
+```
+
+The perimeter file (`.jscpd.json`) is watched the same way. Seven fields are judged by direction: removing an `include` pattern, adding an `ignore` pattern, dropping a `format` entry, raising `minLines` or `minTokens`, or weakening `mode` all shrink what the gates see, so each needs an acknowledgement keyed `include:<pattern>`, `ignore:<pattern>`, `format:<entry>`, `minLines:<value>`, `minTokens:<value>` or `mode:<value>` with a reason. Moving a threshold the other way is a tightening and needs nothing. Removing a `path` scan root is watched the same way, keyed `path:<root>`; omitting `mode`, `minLines` or `minTokens` compares against the value jscpd itself defaults to, so deleting a redundant key is not a loosening. Every other key is compared for equality rather than direction, keyed `<field>:<value>`, because an option this list does not anticipate — `maxLines`, `maxSize`, `skipLocal`, or one a future jscpd adds — narrows the measured set just as effectively. Only keys that cannot change what is measured, such as `reporters`, are inert. The entry stays valid only while it describes the committed perimeter — an acknowledged removal whose pattern returns, or an acknowledged ignore that is no longer present, must be deleted:
+
+```json
+{ ".jscpd.json": { "ignore:**/generated/**": { "reason": "generated code is outside ESLint's scope" } } }
+```
+
+Every scoped ESLint suppression must be immediately preceded by a canonical justification comment:
+
+```ts
+// LINT-DEBT(complexity): pre-existing complexity exceeds the limit; refactor before extending
+// eslint-disable-next-line complexity
+```
+
+The grammar is `// LINT-DEBT(rule): reason`: `rule` must exactly match the suppressed ESLint rule identifier, and `reason` must contain non-whitespace justification text. These comments are exempt from the Comment Discipline rules — including the ones whose reason clause embeds verbatim ESLint output — because they are parsed by the gate, not read as documentation. A block `/* eslint-disable rule */` must be closed by a matching `/* eslint-enable rule */` in the same file — left open it suppresses to end of file, which one comment cannot justify. The gate has no report-only mode. Fork pull requests are the one carve-out from full enforcement: the credentialed checks do not run for them, and they are gated on the baseline-direction ratchet only. Beyond that there is no skip; the only exemption is a per-key, per-value acknowledgement in the diff.
+
+Inside JSX children a `//` line renders as visible text, so use the block form there. Both forms are accepted and share the same grammar:
+
+```tsx
+{/* LINT-DEBT(complexity): pre-existing complexity exceeds the limit; refactor before extending */}
+{/* eslint-disable-next-line complexity */}
+{items.map((item) => renderItem(item))}
+```
+
 ## GitHub CLI (`gh`)
 
 If the `gh` CLI is installed, use it to interact with GitHub — for example, creating PRs, reviewing PR comments and discussions, and checking GitHub Actions workflow status. Run `gh --version` to verify availability before use.

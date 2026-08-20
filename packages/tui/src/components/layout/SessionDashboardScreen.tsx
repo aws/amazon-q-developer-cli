@@ -275,6 +275,9 @@ export const SessionDashboardScreen: React.FC = () => {
     );
   }, [listData, highlightedSession]);
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 35. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 60 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   const previewLines: string[] = useMemo(() => {
     const budget = height - 6; // header + rules + footer + border
     const w = Math.max(previewW - 4, 8);
@@ -411,6 +414,7 @@ export const SessionDashboardScreen: React.FC = () => {
       return [dim('Loading session…')];
     }
     return [dim('Highlight a session to preview it.')];
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; dep list intentionally curated upstream on the session-preview memo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     turns,

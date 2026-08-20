@@ -167,6 +167,9 @@ let pendingChainedCommand: { name: string; args: string } | null = null;
  * @param ctx - Command context
  * @param options - Optional dispatch metadata
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Async function 'dispatch' has a complexity of 67. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 65 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export async function dispatch(
   cmd: AvailableCommand,
   args: string,

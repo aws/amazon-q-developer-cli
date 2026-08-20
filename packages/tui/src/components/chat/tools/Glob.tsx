@@ -190,6 +190,7 @@ export const Glob = React.memo(function Glob({
       );
     }
     return rows;
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; listed values cover state read through the render-local summary helper
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globOutput, fileNames, filePaths.length, isFinished]);
 

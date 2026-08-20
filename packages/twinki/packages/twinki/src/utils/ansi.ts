@@ -88,6 +88,9 @@ export class AnsiCodeTracker {
 	 * 
 	 * @param ansiCode - ANSI escape sequence to process
 	 */
+	// LINT-DEBT(complexity): pre-existing at gate adoption; Method 'process' has a complexity of 41. Maximum allowed is 30.; refactor before extending
+	// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 32 to the 30 allowed.; refactor before extending
+	// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 	process(ansiCode: string): void {
 		if (!ansiCode.endsWith("m")) {
 			return;

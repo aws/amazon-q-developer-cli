@@ -47,6 +47,7 @@ export const ChangelogPanel: React.FC<ChangelogPanelProps> = ({ onClose }) => {
   const icons = allowAsciiArt ? UNICODE_ICONS : ASCII_ICONS;
   const releases = useMemo(
     () => getRecentReleases(CHANGELOG_RELEASE_LIMIT, { icons }),
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; feedGeneration intentionally invalidates the file-backed release memo
     // eslint-disable-next-line react-hooks/exhaustive-deps -- feedGeneration invalidates the file re-read
     [icons, feedGeneration]
   );

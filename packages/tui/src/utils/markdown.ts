@@ -159,6 +159,9 @@ export function isIncrementalMarkdownDeltaSafe(delta: string): boolean {
  *
  * Returns `null` when the delta may change markdown semantics and a full re-parse is required.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'tryAppendMarkdownDelta' has a complexity of 52. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 46 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function tryAppendMarkdownDelta(
   previousSegments: MarkdownSegment[],
   delta: string,
@@ -305,6 +308,8 @@ export function tryAppendMarkdownDelta(
  * Simple markdown processor for basic formatting
  * Supports: **bold**, *italic*, `code`, and ```language code blocks
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 45 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export const parseMarkdown = (text: string): MarkdownSegment[] => {
   const segments: MarkdownSegment[] = [];
   let state = State.TEXT;
@@ -312,6 +317,9 @@ export const parseMarkdown = (text: string): MarkdownSegment[] => {
   let currentCode = '';
   let currentLanguage = '';
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 44. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 47 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   const flushSegment = (isComplete = false) => {
     if (state === State.TEXT && currentText) {
       // Process line-by-line if there are headers, lists, bold headings, blockquotes, or HRs

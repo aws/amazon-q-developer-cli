@@ -67,6 +67,8 @@ export function sliceWithWidth(
 	return result;
 }
 
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 39 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function sliceWithWidthImpl(
 	line: string,
 	startCol: number,

@@ -26,6 +26,9 @@ type RenderNodeFn = (node: TwinkiNode, maxWidth: number) => string[];
  * @param renderNodeFn - Function to render individual nodes
  * @returns Array of terminal lines representing the composed content
  */
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'renderBoxChildren' has too many parameters (8). Maximum allowed is 6.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 51 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line max-params, sonarjs/cognitive-complexity
 export function renderBoxChildren(
   node: TwinkiNode,
   innerWidth: number,
@@ -248,6 +251,8 @@ function renderBottomBorder(border: BorderChars, width: number, borderColor: str
   return plainBorderLine(border.bottomLeft, border.horizontal, border.bottomRight, width, borderColor, borderReset);
 }
 
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'renderBoxFrame' has too many parameters (12). Maximum allowed is 6.; refactor before extending
+// eslint-disable-next-line max-params
 function renderBoxFrame(
   width: number,
   border: BorderChars | null,

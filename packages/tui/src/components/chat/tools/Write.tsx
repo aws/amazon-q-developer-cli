@@ -51,6 +51,8 @@ export interface WriteProps {
  * - Parses tool call content for command type detection
  * - Supports create, strReplace, and insert operations
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'Write' has a complexity of 69. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export const Write = React.memo<WriteProps>(function Write({
   oldText,
   newText,

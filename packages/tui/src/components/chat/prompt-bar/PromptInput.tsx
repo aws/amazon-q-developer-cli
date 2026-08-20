@@ -535,6 +535,8 @@ export const PromptInput = React.memo(function PromptInput({
             // Position cursor after the chip
             let newCursor = 0;
             for (const s of normalized) {
+              // LINT-DEBT(max-depth): pre-existing at gate adoption; Blocks are nested too deeply (6). Maximum allowed is 5.; refactor before extending
+              // eslint-disable-next-line max-depth
               if (
                 s === fileSegment ||
                 (s.type === 'file' && s.filePath === filePath)
@@ -891,6 +893,9 @@ export const PromptInput = React.memo(function PromptInput({
   };
 
   useKeypress(
+    // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 197. Maximum allowed is 30.; refactor before extending
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 256 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
     (userInput: string, key: Key) => {
       // Read latest state from refs to avoid stale closures when keypresses
       // arrive faster than React can re-render.
@@ -1777,6 +1782,9 @@ export const PromptInput = React.memo(function PromptInput({
     }
   );
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 54. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 88 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   const renderContent = () => {
     // An open menu (slash commands, file picker) emits its own CURSOR_MARKER for
     // screen-reader tracking, so the prompt yields the marker to avoid two

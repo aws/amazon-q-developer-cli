@@ -194,6 +194,9 @@ export const Question: React.FC<QuestionProps> = ({
     }
   };
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 49. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 58 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     if (resolvedRef.current) return;
     const pastedInput = key.paste ? stripNonPrintable(input) : '';

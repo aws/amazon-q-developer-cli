@@ -1,0 +1,42 @@
+{
+  "path": [
+    "packages/tui/src",
+    "packages/twinki/packages",
+    "packages/terminal-harness"
+  ],
+  "mode": "mild",
+  "minLines": 10,
+  "minTokens": 75,
+  "format": [
+    "typescript",
+    "tsx",
+    "javascript"
+  ],
+  "include": [
+    "packages/tui/src/**",
+    "packages/twinki/packages/*/src/**",
+    "packages/terminal-harness/**"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/generated/**",
+    "**/__tests__/**",
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*.vitest.*",
+    "**/e2e_tests/**",
+    "**/integ_tests/**",
+    "**/acp_integ_tests/**",
+    "**/tests/**",
+    "**/test-utils/**",
+    "**/test_fixtures/**",
+    "**/fixtures/**",
+    "**/*.stories.*",
+    "**/.storybook/**",
+    "**/storybook/**",
+    "**/examples/**"
+  ]
+}

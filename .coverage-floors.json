@@ -1,0 +1,18 @@
+{
+  "packages/tui": {
+    "lines": 88.6,
+    "functions": 88.1,
+    "measured": {
+      "lines": 45400,
+      "functions": 3570
+    }
+  },
+  "packages/twinki": {
+    "lines": 90.4,
+    "functions": 85.1,
+    "measured": {
+      "lines": 9030,
+      "functions": 563
+    }
+  }
+}

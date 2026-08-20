@@ -68,6 +68,8 @@ export const SurveyPanel: React.FC<SurveyPanelProps> = ({
   );
 
   // Single useInput handler for ALL input — no Panel wrapper competing.
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 38 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   useInput((input, key) => {
     if (!question) return;
 

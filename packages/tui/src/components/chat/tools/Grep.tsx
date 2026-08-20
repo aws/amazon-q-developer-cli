@@ -87,6 +87,8 @@ export const Grep = React.memo(function Grep({
   );
 
   // Parse grep output from result
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 32 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   const grepOutput = useMemo((): GrepOutput | null => {
     const { obj, text } = unwrapResultOutput(result);
 
@@ -229,6 +231,7 @@ export const Grep = React.memo(function Grep({
     }
     if (grepOutput.truncated) rows.push('(results truncated)');
     return rows;
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; listed values cover state read through the render-local summary helper
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [grepOutput, results, isFinished, glyphs.arrow]);
 

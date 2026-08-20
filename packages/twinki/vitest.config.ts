@@ -15,7 +15,7 @@ export default defineConfig({
         functions: 85,
         statements: 90,
         branches: 85,
-        autoUpdate: true,
+        autoUpdate: false,
       },
       exclude: [
         '**/dist/**',

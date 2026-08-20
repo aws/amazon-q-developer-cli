@@ -58,6 +58,9 @@ export const McpPanel: React.FC<McpPanelProps> = ({
   onForceAuth,
   onAbortAuth,
   onRemoveCredentials,
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 66. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 81 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 }) => {
   const { getColor } = useTheme();
   // Set by /config before this panel opens; footer hint only ('to go back'
@@ -182,6 +185,8 @@ export const McpPanel: React.FC<McpPanelProps> = ({
 
   const rows: Row[] = useMemo(
     () =>
+      // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 36 to the 30 allowed.; refactor before extending
+      // eslint-disable-next-line sonarjs/cognitive-complexity
       visible.map((server) => {
         if (isRegistryView) {
           const isSelected = selected.has(server.name);

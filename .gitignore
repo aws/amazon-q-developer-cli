@@ -148,3 +148,8 @@ local/
 # llvm-cov coverage artifacts
 *.profraw
 **/*.profraw
+
+
+# Fixture trees from the code-quality script tests. Cleaned up on a normal run;
+# left behind when one is interrupted, and must never be committed.
+scripts/code-quality/tests/code-quality-test-*/

@@ -1054,6 +1054,8 @@ export type CanonicalBuiltinToolName =
   | 'goal'
   | 'unknown';
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'canonicalBuiltinToolName' has a complexity of 39. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export function canonicalBuiltinToolName(
   value: string | undefined
 ): CanonicalBuiltinToolName {

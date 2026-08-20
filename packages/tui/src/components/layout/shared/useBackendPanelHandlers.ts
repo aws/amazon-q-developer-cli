@@ -68,6 +68,7 @@ export function useBackendPanelHandlers() {
       clearReturnFlag?: boolean;
     }
   ) =>
+    // LINT-DEBT(react-hooks/rules-of-hooks): pre-existing suppression accepted at gate adoption; the callback factory is invoked in a fixed order on every render
     // eslint-disable-next-line react-hooks/rules-of-hooks
     useCallback(() => {
       setShow(false);
@@ -85,6 +86,7 @@ export function useBackendPanelHandlers() {
         setConfigReturnOnEscape(false);
         reopenConfigMenu();
       }
+      // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; option flags are fixed at each factory call site
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
       setShow,

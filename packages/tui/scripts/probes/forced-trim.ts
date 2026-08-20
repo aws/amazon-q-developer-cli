@@ -167,6 +167,8 @@ function writeFinding(opts: {
   return path;
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Async function 'main' has a complexity of 31. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 async function main() {
   mkdirSync(OUTPUT_DIR, { recursive: true });
   const started = Date.now();

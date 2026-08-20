@@ -132,6 +132,8 @@ export function removeChild(parent: TwinkiNode | RootContainer, child: TwinkiNod
  * @param child - Child node to insert
  * @param before - Reference child to insert before
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 31 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export function insertBefore(parent: TwinkiNode | RootContainer, child: TwinkiNode, before: TwinkiNode): void {
 	const container = PROP_NAMES.TYPE in parent ? parent : parent;
 	const isTextParent = PROP_NAMES.TYPE in parent && parent.type === NODE_TYPES.TWINKI_TEXT;

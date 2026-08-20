@@ -322,6 +322,9 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
   isRefreshing = false,
   backgroundReady = true,
   catalogIncomplete = false,
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 85. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 45 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 }) => {
   const { getColor, colors } = useTheme();
   const glyphs = useGlyphs();
@@ -514,6 +517,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       activeSessionEngine,
       activeSessionSource
     );
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; dep list intentionally curated upstream in the session dashboard
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sessions,
@@ -634,6 +638,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       sessions: pinned,
     };
     return [pinnedGroup, ...grouped.filter((g) => g.sessions.length > 0)];
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; dep list intentionally curated upstream in the session dashboard
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     enrichedSessions,
@@ -704,6 +709,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       meta,
     });
     return { flat, byIdentity, grouped };
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; dep list intentionally curated upstream in the session dashboard
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     enrichedSessions,
@@ -717,6 +723,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
   ]);
 
   // Apply text filter or search results.
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 64 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   const filteredGroups = useMemo(() => {
     if (searchResults) {
       // Content-search results: one flat group in rank order, built from the
@@ -837,6 +845,7 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
       if (matching.length > 0) result.push({ ...group, sessions: matching });
     }
     return result;
+    // LINT-DEBT(react-hooks/exhaustive-deps): pre-existing suppression accepted at gate adoption; dep list intentionally curated upstream in the session dashboard
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     baseGroups,
@@ -1191,6 +1200,9 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
   );
 
   // Keyboard handling.
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 167. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 215 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     // Ctrl+C closes the dashboard outright, whatever sub-state is open —
     // its terminal-wide reflex meaning is "get me out of here".
@@ -1874,6 +1886,8 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
     sessionStatusDisplay(entry.status, Boolean(entry.isActive)).label;
 
   // Preview rendering.
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 42 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line sonarjs/cognitive-complexity
   const renderPreview = (): React.ReactNode => {
     // Turns view reads the KAS turn tree, not the V2 `preview` — render it
     // first so KAS-native sessions (which have no V2 preview) still show.
@@ -2414,6 +2428,9 @@ export const SessionDashboard: React.FC<SessionDashboardProps> = ({
         })()}
 
         {/* Session list */}
+        {/* LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 61. Maximum allowed is 30.; refactor before extending */}
+        {/* LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 64 to the 30 allowed.; refactor before extending */}
+        {/* eslint-disable-next-line complexity, sonarjs/cognitive-complexity */}
         {visibleContent.map((item, i) => {
           // Inner content width: panel width minus its own horizontal padding.
           const contentW = Math.max(termWidth - 4, 1);

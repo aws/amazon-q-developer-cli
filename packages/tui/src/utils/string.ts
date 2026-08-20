@@ -38,6 +38,7 @@ export function expandTabs(text: string, tabWidth = 2): string {
 
 // Allow: tab (9), newline (10), carriage return (13), and anything >= 32
 // except DEL (127) and C1 control characters (128-159).
+// LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; printable-input validation intentionally enumerates control ranges
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F\x80-\x9F]/;
 
@@ -55,6 +56,7 @@ export const isPrintable = (str: string): boolean => !CONTROL_CHAR_RE.test(str);
  * emoji clusters like 👨‍👩‍👧 (family) and 🏳️‍🌈 (rainbow flag) to render as
  * one cluster instead of separate emojis.
  */
+// LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; the multi-line pattern intentionally enumerates non-printable ranges
 /* eslint-disable no-control-regex */
 const NON_PRINTABLE_RE =
   /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u200B\u200E\u200F\u2028-\u202F\u2060-\u206F\uFEFF\uFFF9-\uFFFB]/g;

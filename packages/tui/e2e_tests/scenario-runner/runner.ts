@@ -257,6 +257,8 @@ export function filterScenarios(
   return filtered;
 }
 
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 38 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 export async function runScenario(
   scenario: Scenario,
   opts: RunOptions

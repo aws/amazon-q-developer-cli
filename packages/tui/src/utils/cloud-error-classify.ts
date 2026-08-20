@@ -36,6 +36,8 @@ export type CloudOp =
   | 'list_sessions'
   | 'delete_session';
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'classifyCloudError' has a complexity of 39. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export function classifyCloudError(error: unknown): CloudErrorKind {
   const msg = extractRpcErrorMessage(error, '').toLowerCase();
   if (!msg) return 'other';

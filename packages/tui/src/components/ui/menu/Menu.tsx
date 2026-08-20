@@ -84,6 +84,8 @@ export interface MenuProps {
 
 import { rankMenuItems } from './menu-search.js';
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'Menu' has a complexity of 38. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export const Menu = React.memo(function Menu({
   items,
   prefix = '',
@@ -232,6 +234,9 @@ export const Menu = React.memo(function Menu({
     }
   }, [selectedIndex, onHighlight, displayItems]);
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 40. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 34 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     // ctrl+p = up, ctrl+n = down (standard readline/emacs navigation).
     // Yield Ctrl+P to lite preview controls (CommandMenu claims it); plain ↑

@@ -40,6 +40,8 @@ export class Input implements Component, Focusable {
 		this.cursor = Math.min(this.cursor, value.length);
 	}
 
+	// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 35 to the 30 allowed.; refactor before extending
+	// eslint-disable-next-line sonarjs/cognitive-complexity
 	handleInput(data: string): void {
 		if (data.includes('\x1b[200~')) {
 			this.isInPaste = true;

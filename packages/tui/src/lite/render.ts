@@ -91,6 +91,7 @@ export function clipVisibleWidth(s: string, maxChars: number): string {
   if (visibleWidth(s) <= maxChars) return s;
   // Re-apply a single chalk.reset at the end so the next row starts clean
   // even if we cut mid-styled-segment.
+  // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI SGR escape sequences are intentionally matched
   // eslint-disable-next-line no-control-regex
   const ansiRe = /\x1b\[[0-9;]*m/g;
   let out = '';
@@ -119,6 +120,7 @@ export function clipVisibleWidth(s: string, maxChars: number): string {
 }
 
 export function stripAnsiQuick(s: string): string {
+  // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI SGR escape sequences are intentionally stripped
   // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
@@ -153,6 +155,9 @@ export function wrapStyled(
  * input is empty. The SGR carryover below is what keeps highlighted diff
  * continuation rows holding their bg/color across a wrap boundary.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'wrapAnsiLine' has a complexity of 34. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 61 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function wrapAnsiLine(
   line: string,
   firstWidth: number,
@@ -167,6 +172,7 @@ export function wrapAnsiLine(
     return wrapAtWords(line, w0, wR).map((row) => row.trimEnd());
   }
   const out: string[] = [];
+  // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI SGR escapes are tokenized while wrapping styled text
   // eslint-disable-next-line no-control-regex
   const ansiRe = /\x1b\[[0-9;]*m/g;
   // Build character cells (visible width + ANSI bytes from the prior
@@ -276,6 +282,7 @@ export function wrapAnsiLine(
   // OOMing on inputs that wrap to thousands of rows.
   if (out.length > 1) {
     let activeSgr = '';
+    // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI SGR state is tracked across wrapped rows
     // eslint-disable-next-line no-control-regex
     const sgrRe = /\x1b\[[0-9;]*m/g;
     for (let i = 0; i < out.length; i++) {
@@ -981,6 +988,8 @@ export function renderToolCall(
  * `insert`/`append`, fields `old_str`/`new_str`/`file_text`/`insert_line`.
  * camelCase variants are accepted as a fallback for non-Rust callers.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'renderWriteToolCall' has a complexity of 32. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export function renderWriteToolCall(
   info: ToolCallRenderInfo,
   content: string,
@@ -1231,6 +1240,8 @@ function resolveLiteToolRenderDispatch(
  * name → args → response). Gated by the /verbose filter list; errors always
  * surface (red bar) regardless of the filter.
  */
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'renderVerboseOutput' has too many parameters (9). Maximum allowed is 6.; refactor before extending
+// eslint-disable-next-line max-params
 export function renderVerboseOutput(
   toolName: string,
   result?: { status: string; error?: string; output?: unknown },
@@ -1564,6 +1575,8 @@ type UnwrappedToolOutput =
  * items[].Json.{text,content}, {content:[{text}]}. Unknown → {kind:'json'}
  * with the most informative parsed object.
  */
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 34 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
   if (output == null || typeof output !== 'object') {
     return { kind: 'text', value: safeJson(output, 1_000_000) };
@@ -1737,6 +1750,7 @@ export function boundToolOutputLine(
   // keeps this prefix constant-size even if the dropped input changes color
   // thousands of times.
   const sgrState = new AnsiCodeTracker();
+  // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI SGR state is reconstructed at the retained tail boundary
   // eslint-disable-next-line no-control-regex
   const sgrRe = /\x1b\[[0-9;]*m/g;
   let match: RegExpExecArray | null;
@@ -1848,6 +1862,9 @@ export function stripShellPreamble(command: string): string {
  * surface a verb + path (so create/edit/insert/delete differ at a glance).
  * Paths go through {@link shortenPathForChip}; empty/`.` paths are dropped.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'extractInlineArg' has a complexity of 67. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 59 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function extractInlineArg(
   toolName: string,
   content: string,
@@ -2079,6 +2096,9 @@ export function formatToolArgLines(
  * levels). Long string values wrap at word boundaries, padded to the parent
  * indent so the tree doesn't crash to col 0.
  */
+// LINT-DEBT(max-params): pre-existing at gate adoption; Function 'formatArgLines' has too many parameters (7). Maximum allowed is 6.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 41 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line max-params, sonarjs/cognitive-complexity
 function formatArgLines(
   key: string,
   val: unknown,
@@ -2215,6 +2235,9 @@ interface TaskInputArg {
  * + files; remove → removed id chips + new_description; list → no body.
  * Returns the parsed command (for the inline chip) and body lines.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'formatTaskToolBody' has a complexity of 31. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 45 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function formatTaskToolBody(
   content: string,
   termCols?: number,
@@ -2680,6 +2703,9 @@ export function formatSubagentApprovalLines(
  * an error block. The summary prefers each stage's `contextSummary`, falling
  * back to `taskResult`; configured output caps apply to every digest.
  */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'renderSubagentFinalBlock' has a complexity of 64. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 56 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function renderSubagentFinalBlock(
   content: string,
   result: { status: string; error?: string; output?: unknown } | undefined,
@@ -3037,6 +3063,9 @@ function verboseOutputSuffix(
 }
 
 /** Render any message type to a plain text string for Static output. */
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'renderMessageToText' has a complexity of 68. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 95 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function renderMessageToText(
   msg: MessageLike,
   mainAgentName?: string,
@@ -3804,6 +3833,7 @@ interface DiffStyling {
 function extractBgOpen(bgFn: (s: string) => string, fallback: string): string {
   try {
     const styled = bgFn(' ');
+    // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; the leading ANSI SGR background sequence is extracted
     // eslint-disable-next-line no-control-regex
     const m = /^\x1b\[[0-9;]*m/.exec(styled);
     if (!m) return fallback;
@@ -3843,6 +3873,9 @@ function resolveDiffStyling(theme?: RenderTheme): DiffStyling {
   };
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'renderUnifiedDiff' has a complexity of 43. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 58 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function renderUnifiedDiff(
   oldText: string,
   newText: string,
@@ -3990,6 +4023,7 @@ export function renderUnifiedDiff(
 function applyBg(inner: string, bgOpen: string): string {
   // Re-assert bgOpen after every full reset cli-highlight emits between
   // tokens, else the bg clears mid-row and leaves "stripes".
+  // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; ANSI full resets are matched so the background can be reapplied
   // eslint-disable-next-line no-control-regex
   const reasserted = inner.replace(/\x1b\[0m/g, `\x1b[0m${bgOpen}`);
   return `${bgOpen}${reasserted}${ROW_RESET}`;

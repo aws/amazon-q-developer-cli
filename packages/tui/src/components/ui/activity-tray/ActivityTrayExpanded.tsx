@@ -44,6 +44,8 @@ export interface ActivityTrayExpandedProps {
   tabs: readonly ActivityTrayTab[];
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'ActivityTrayExpanded' has a complexity of 40. Maximum allowed is 30.; refactor before extending
+// eslint-disable-next-line complexity
 export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   activeTab,
   hasTasks,

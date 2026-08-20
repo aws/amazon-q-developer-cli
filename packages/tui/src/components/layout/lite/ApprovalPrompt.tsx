@@ -31,6 +31,9 @@ import {
 import { useGlyphs, useAllowIcons } from '../../../hooks/useGlyphs.js';
 import { chalk } from '../../../utils/color.js';
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'ApprovalPrompt' has a complexity of 61. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 37 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 export function ApprovalPrompt({
   messages,
   approval,
@@ -308,6 +311,9 @@ export function ApprovalPrompt({
     },
   ];
 
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 32. Maximum allowed is 30.; refactor before extending
+  // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 42 to the 30 allowed.; refactor before extending
+  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
   useKeypress((input, key) => {
     if (page === 'default') {
       // Esc / Ctrl+C interrupt the agent's current turn in addition to
@@ -713,6 +719,9 @@ export function ApprovalPrompt({
   );
 }
 
+// LINT-DEBT(complexity): pre-existing at gate adoption; Function 'extractApprovalDetail' has a complexity of 44. Maximum allowed is 30.; refactor before extending
+// LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 52 to the 30 allowed.; refactor before extending
+// eslint-disable-next-line complexity, sonarjs/cognitive-complexity
 function extractApprovalDetail(
   toolName: string,
   content: string,

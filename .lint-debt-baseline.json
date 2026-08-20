@@ -1,0 +1,9 @@
+{
+  "complexity": 83,
+  "max-depth": 10,
+  "max-params": 10,
+  "no-control-regex": 10,
+  "react-hooks/exhaustive-deps": 12,
+  "react-hooks/rules-of-hooks": 1,
+  "sonarjs/cognitive-complexity": 94
+}

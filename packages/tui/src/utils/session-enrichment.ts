@@ -86,6 +86,8 @@ export function enrichSessions(
     source?.isPromptless(s.sessionId, s.engine) ?? false;
   const isActive = (session: SessionListingInput) =>
     sessionMatchesActive(session, activeSessionId, activeEngine, activeSource);
+  // LINT-DEBT(complexity): pre-existing at gate adoption; Arrow function has a complexity of 33. Maximum allowed is 30.; refactor before extending
+  // eslint-disable-next-line complexity
   const enriched = sessions.map((s) => {
     // Title chain slot 1: the user's rename always wins.
     const override = getTitleOverride(s.sessionId);

@@ -141,6 +141,8 @@ export const SubagentToolPanel = React.memo<SubagentToolPanelProps>(
       return approvals;
     }, [approvalQueue]);
 
+    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 43 to the 30 allowed.; refactor before extending
+    // eslint-disable-next-line sonarjs/cognitive-complexity
     const rows = useMemo(() => {
       const subagentSessions = selectSubagentToolSessions(sessions.values(), {
         mainSessionId: sessionId,
