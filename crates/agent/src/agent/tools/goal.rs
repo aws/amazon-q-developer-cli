@@ -15,7 +15,7 @@ use super::{
 };
 use crate::protocol::AgentEvent;
 
-/// Built-in `goal` tool. Lets the agent signal goal completion or check progress.
+/// Built-in `goal` tool for signaling verified goal completion.
 /// Only the user can create or clear goals (via the `/goal` slash command).
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "command", rename_all = "snake_case")]
@@ -63,7 +63,7 @@ const SCHEMA: &str = r#"{
     "properties": {
         "command": {
             "type": "string",
-            "enum": ["complete", "status"],
+            "enum": ["complete"],
             "description": "The goal action to perform"
         },
         "summary": {
@@ -115,6 +115,13 @@ mod tests {
     fn parse_invalid_command_fails() {
         let json = serde_json::json!({"command": "invalid"});
         assert!(serde_json::from_value::<GoalTool>(json).is_err());
+    }
+
+    #[test]
+    fn schema_matches_supported_commands() {
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+        assert_eq!(schema["properties"]["command"]["enum"], serde_json::json!(["complete"]));
+        assert!(serde_json::from_value::<GoalTool>(serde_json::json!({"command": "status"})).is_err());
     }
 
     #[test]
