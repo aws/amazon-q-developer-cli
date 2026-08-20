@@ -5281,6 +5281,12 @@ pub async fn execute(
         }
     }
 
+    // Flush turn telemetry before MCP teardown: the OTel reader only exports on
+    // force-flush for a short-lived process, and teardown can outlast the parent's
+    // kill window. Bounded so a stalled endpoint can't starve teardown and orphan
+    // MCP children.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), os.telemetry.flush()).await;
+
     // Gracefully shut down all sessions so MCP child processes are cleaned up
     // before the tokio runtime exits. Timeout ensures we don't hang indefinitely
     // if an actor is stuck.

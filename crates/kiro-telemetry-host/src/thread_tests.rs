@@ -152,6 +152,28 @@ async fn cloned_thread_can_finish_before_original() {
 }
 
 #[tokio::test]
+async fn flush_completes_on_live_thread() {
+    let thread = TelemetryThread::new(HostConfig::default()).await.unwrap();
+    thread.send_user_logged_in().unwrap();
+    // Should force an export of the queued event, then return.
+    tokio::time::timeout(std::time::Duration::from_secs(5), thread.flush())
+        .await
+        .expect("flush should complete on a live thread");
+    thread.finish().await.unwrap();
+}
+
+#[tokio::test]
+async fn flush_after_finish_returns_without_hanging() {
+    let thread = TelemetryThread::new(HostConfig::default()).await.unwrap();
+    let clone = thread.clone();
+    thread.finish().await.unwrap();
+    // The worker task is gone; flush on the surviving clone must not hang.
+    tokio::time::timeout(std::time::Duration::from_secs(5), clone.flush())
+        .await
+        .expect("flush must return promptly once the worker has shut down");
+}
+
+#[tokio::test]
 async fn startup_spawn_failure_retries_final_export() {
     let state = tempfile::tempdir().unwrap();
     let identity = crate::process::ProcessIdentity::new(metric::Engine::V2, metric::ProcessRole::Host);

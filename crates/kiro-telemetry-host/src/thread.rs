@@ -71,13 +71,21 @@ pub enum TelemetryError {
 // Keep events inline on the hot path rather than adding a heap allocation per datapoint.
 #[allow(clippy::large_enum_variant)]
 enum TelemetryMessage {
-    Event { event: Event, epoch: u64 },
+    Event {
+        event: Event,
+        epoch: u64,
+    },
+    /// Force an OTel export of prior sends, then acknowledge. Ordered on the event FIFO.
+    Flush {
+        ack: oneshot::Sender<()>,
+    },
 }
 
 impl std::fmt::Debug for TelemetryMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Event { epoch, .. } => f.debug_struct("Event").field("epoch", epoch).finish(),
+            Self::Flush { .. } => f.debug_struct("Flush").finish(),
         }
     }
 }
@@ -513,6 +521,17 @@ impl TelemetryThread {
                                     trace!("legacy telemetry worker exited before accepting event");
                                 }
                             },
+                            TelemetryMessage::Flush { ack } => {
+                                // FIFO ordering already emitted every prior Event, so just export.
+                                if let Some(flush_worker) = flush_worker.as_ref() {
+                                    let otel = otel.clone();
+                                    let outcome = request_flush(flush_worker, move || otel.flush(), || {}).await;
+                                    if outcome != FlushOutcome::Succeeded {
+                                        error!(?outcome, "on-demand telemetry flush did not complete successfully");
+                                    }
+                                }
+                                let _ = ack.send(());
+                            },
                         }
                     },
                     _ = process_interval.tick(), if process_sampler.is_some() => {
@@ -609,6 +628,17 @@ impl TelemetryThread {
 
     pub async fn finish(self) -> Result<(), TelemetryError> {
         self.finish_with_timeout(Duration::from_millis(1000)).await
+    }
+
+    /// Force an OTel export of everything emitted so far, without consuming the
+    /// thread. Ordered on the event FIFO, so it reflects all prior sends. Returns
+    /// immediately if the worker has already shut down.
+    pub async fn flush(&self) {
+        let (ack, ack_rx) = oneshot::channel();
+        if self.tx.send_message(TelemetryMessage::Flush { ack }).is_err() {
+            return;
+        }
+        let _ = ack_rx.await;
     }
 
     pub async fn finish_with_timeout(mut self, timeout: Duration) -> Result<(), TelemetryError> {
