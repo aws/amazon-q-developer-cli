@@ -32,6 +32,7 @@ interface Scenario {
   id: string;
   name: string;
   category: string;
+  priority: string;
   description: string;
   docRef: string;
   steps: string[];
@@ -107,7 +108,12 @@ for (const cmd of docsCommands) {
   const scenario: Scenario = {
     id,
     name: `${cmd.command} command`,
-    category: 'slash-commands',
+    // Scaffolded scenarios land in `panels` at p2: a generated stub only proves
+    // the command opens without crashing, which is the informational tier. An
+    // author moves it to the category that matches what the command does (and
+    // raises the priority) when they replace the generated steps with real ones.
+    category: 'panels',
+    priority: 'p2',
     description: cmd.description.slice(0, 100),
     docRef: `/docs/cli/reference/slash-commands#${cmd.command.slice(1)}`,
     steps: [`type:${cmd.command}`, 'enter'],

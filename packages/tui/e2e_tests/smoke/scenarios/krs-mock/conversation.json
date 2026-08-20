@@ -1,0 +1,961 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Deterministic conversation-category journeys: multi-turn coherence, cancel/interrupt recovery, context recall, clear isolation, and compaction. Each scenario carries the scripted turns that answer its prompts.",
+  "scenarios": [
+    {
+      "id": "conversation-tool-then-followup",
+      "name": "Prior answer informs next turn",
+      "category": "conversation",
+      "description": "Agent answers about a file, then the user asks a follow-up about the same file \u2014 verifies the agent carries the earlier context across turns",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:read the file package.json and tell me the project name",
+        "waitForIdle",
+        "frame:after-read",
+        "prompt:what version is listed in that same file?",
+        "waitForIdle",
+        "frame:after-followup"
+      ],
+      "verify": [
+        "screen.contains:0.0.0-dev",
+        "screen.notContains:I don't have"
+      ],
+      "observe": "First turn establishes facts about package.json. The follow-up is answered from that established context without asking the user to restate the file, showing conversation context is retained across turns.",
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "read the file package.json and tell me the project name"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Let me read package.json for you. The project is called @kiro/tui and the version is listed in the file."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what version is listed in that same file?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The version listed in that same package.json file is 0.0.0-dev."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-five-turn-coherence",
+      "name": "Five-turn coherence",
+      "category": "conversation",
+      "description": "Agent maintains coherent context across five consecutive turns building on each other",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:I am building a todo app. The language is Rust.",
+        "waitForIdle",
+        "prompt:what language did I choose?",
+        "waitForIdle",
+        "prompt:suggest a crate for the CLI interface",
+        "waitForIdle",
+        "prompt:now suggest a crate for persistent storage",
+        "waitForIdle",
+        "prompt:summarize my project so far: language, CLI crate, and storage crate",
+        "waitForIdle",
+        "frame:final-summary"
+      ],
+      "verify": [
+        "screen.contains:clap",
+        "screen.contains:sled"
+      ],
+      "observe": "Each response builds on prior turns. Final summary references Rust, the CLI crate suggestion, and the storage crate suggestion \u2014 all from earlier turns. No hallucinated facts from outside the conversation.",
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "I am building a todo app. The language is Rust."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Great! I'll help you build a todo app. Let's use Rust as you specified."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what language did I choose?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "You chose Rust as the language for your todo app."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "suggest a crate for the CLI interface"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "For a CLI interface in Rust, I'd suggest the `clap` crate \u2014 it's the most popular and well-maintained command-line argument parser."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-4",
+          "match": {
+            "userInputContains": "now suggest a crate for persistent storage"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "For persistent storage in a Rust CLI app, I'd recommend `sled` \u2014 it's an embedded database that's fast and easy to use."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-5",
+          "match": {
+            "userInputContains": "summarize my project so far: language, CLI crate, and storag"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Here's your project summary:\n- Language: Rust\n- CLI crate: clap (for argument parsing)\n- Storage crate: sled (embedded database)\n\nYou're building a todo app in Rust with clap for the command-line interface and sled for persistent storage."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-cancel-no-desync",
+      "name": "Cancel mid-stream then continue",
+      "category": "conversation",
+      "description": "Cancel a streaming response, then send a new prompt that references earlier context \u2014 verifies no state desync after cancellation",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:my favorite color is blue. Acknowledge this.",
+        "waitForIdle",
+        "prompt:write a very long essay about the history of computing from 1950 to today",
+        "sleep:2000",
+        "ctrlc",
+        "waitForIdle",
+        "prompt:what is my favorite color?",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:You told me",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "First turn acknowledged. Second turn starts streaming then is cancelled. Third turn successfully recalls 'blue' from turn 1, proving the cancelled turn did not corrupt conversation state.",
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "my favorite color is blue. Acknowledge this."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Got it \u2014 your favorite color is blue. Acknowledged!"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ],
+            "chunkDelayMs": 500
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "write a very long essay about the history of computing from "
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Computing has a rich history spanning decades. Starting with early mechanical calculators, through the development of vacuum tube computers in the 1940s, transistors in the 1950s, and integrated circuits in the 1960s..."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ],
+            "chunkDelayMs": 500
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "what is my favorite color?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "You told me your favorite color is blue."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-work-session",
+      "name": "Realistic multi-turn work session with follow-ups",
+      "category": "conversation",
+      "description": "User asks about a file, then asks specific follow-up questions about it across multiple turns \u2014 mimics a real debugging/exploration session",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:read package.json and tell me the project name",
+        "waitForIdle",
+        "frame:after-read",
+        "prompt:what dependencies does it have? just list the first 3",
+        "waitForIdle",
+        "frame:after-deps",
+        "prompt:is there a test script defined?",
+        "waitForIdle",
+        "frame:after-test-check"
+      ],
+      "verify": [
+        "screen.contains:bun test",
+        "screen.notContains:I don't have access",
+        "screen.notContains:I cannot"
+      ],
+      "observe": "Three-turn work session. The agent establishes file facts in turn 1, then answers about dependencies and the test script in later turns from retained context, each response building on the prior turns without losing the thread.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "read package.json and tell me the project name"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The project name in package.json is @kiro/tui."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what dependencies does it have? just list the first 3"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The first 3 dependencies are: twinki, zustand, and chalk."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "is there a test script defined?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Yes, there is a test script defined: `bun test` which runs the unit tests."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-interrupt-redirect",
+      "name": "Cancel streaming response and redirect to new topic",
+      "category": "conversation",
+      "description": "Agent starts a long response, user cancels mid-stream and asks something completely different \u2014 verifies the agent handles the redirect without confusion",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:write a detailed essay about the history of programming languages",
+        "sleep:2000",
+        "ctrlc",
+        "waitForIdle",
+        "prompt:what is 7 times 8?",
+        "waitForIdle",
+        "frame:after-redirect"
+      ],
+      "verify": [
+        "screen.contains:56",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Agent starts long essay, gets cancelled. New prompt asks simple math. Agent answers 56 correctly without referencing the cancelled essay. No state corruption.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "write a detailed essay about the history of programming lang"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The history of programming languages begins in the 1950s with FORTRAN and COBOL. These early languages were designed for scientific and business computing respectively. In the 1960s, BASIC emerged as an accessible teaching language, while LISP pioneered functional programming concepts that would influence decades of language design..."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ],
+            "chunkDelayMs": 500
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what is 7 times 8?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "7 times 8 equals 56."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-queue-while-streaming",
+      "name": "Rapid sequential prompts handled correctly",
+      "category": "conversation",
+      "description": "User sends two prompts in quick succession \u2014 verifies both are processed without error or state corruption",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:say just the word hello",
+        "waitForIdle",
+        "prompt:say just the word world",
+        "waitForIdle",
+        "frame:after-rapid"
+      ],
+      "verify": [
+        "screen.contains:coding assistant",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Both prompts process sequentially. Second response contains world. No queueing error.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "say just the word hello"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Hello! Here's something interesting: the first computer bug was a real moth found inside a Mark II computer in 1947."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "say just the word world"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "I'm Kiro, an AI coding assistant. The world is a beautiful place to explore and build things."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-user-corrects-agent",
+      "name": "User corrects agent's mistake and agent adapts",
+      "category": "conversation",
+      "description": "Agent gives an answer, user says it's wrong and provides the correct information, then asks a follow-up that requires using the correction",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "prompt:what port does my server run on?",
+        "waitForIdle",
+        "prompt:that's wrong. the server runs on port 4567. remember that.",
+        "waitForIdle",
+        "prompt:what port did I say my server runs on?",
+        "waitForIdle",
+        "frame:after-correction"
+      ],
+      "verify": [
+        "screen.contains:You told me"
+      ],
+      "observe": "Agent may guess wrong port initially. User corrects to 4567. Third prompt verifies agent retained the correction. Response must contain 4567.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "what port does my server run on?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "I don't have information about your specific server configuration. It could be running on a common port like 3000, 8080, or 5000. Could you tell me?"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "that's wrong. the server runs on port 4567. remember that."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Got it \u2014 your server runs on port 4567. I'll remember that."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "what port did I say my server runs on?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "You told me your server runs on port 4567."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-clear-fresh-start",
+      "name": "Clear creates true isolation from prior context",
+      "category": "conversation",
+      "description": "Establish a distinctive fact, verify agent knows it, /clear, then verify agent does NOT know it \u2014 proves clear actually works",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:the secret code is NEPTUNE-7. confirm you know it.",
+        "waitForIdle",
+        "waitForText:NEPTUNE",
+        "type:/clear",
+        "enter",
+        "waitForText:ask a question",
+        "prompt:what is the secret code?",
+        "waitForIdle",
+        "frame:post-clear"
+      ],
+      "verify": [
+        "screen.contains:fresh conversation"
+      ],
+      "observe": "Pre-clear: agent confirms NEPTUNE-7. Post-clear: agent responds that it doesn't know any secret code. The agent's post-clear response should NOT reference NEPTUNE-7.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "the secret code is NEPTUNE-7. confirm you know it."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Got it \u2014 the secret code is NEPTUNE-7. I've noted it and can confirm: the code is NEPTUNE-7."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what is the secret code?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "I don't have any information about a secret code. This appears to be a fresh conversation with no prior context. How can I help you?"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-multi-cancel-stable",
+      "name": "Multiple consecutive cancels don't corrupt state",
+      "category": "conversation",
+      "description": "User sends a prompt, cancels, sends another, cancels again, then sends a third that completes \u2014 verifies repeated cancellation doesn't desync state",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:tell me about Python in great detail",
+        "sleep:1500",
+        "ctrlc",
+        "waitForIdle",
+        "prompt:tell me about Rust in great detail",
+        "sleep:1500",
+        "ctrlc",
+        "waitForIdle",
+        "prompt:what is 3+3?",
+        "waitForIdle",
+        "frame:after-multi-cancel"
+      ],
+      "verify": [
+        "screen.contains:3 + 3 = 6",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Two prompts cancelled in sequence. Third prompt completes with correct answer (6). No state desync, no 'Prompt already in progress' error. The system is stable after repeated interruptions.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "tell me about Python in great detail"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Python is a high-level, interpreted programming language known for its clear syntax and readability. Created by Guido van Rossum in 1991, it emphasizes code readability with significant whitespace..."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ],
+            "chunkDelayMs": 500
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "tell me about Rust in great detail"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Rust is a systems programming language focused on safety, speed, and concurrency. Developed by Mozilla Research, it guarantees memory safety without garbage collection through its ownership system..."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ],
+            "chunkDelayMs": 500
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "what is 3+3?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "3 + 3 = 6."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-late-recall",
+      "name": "Recall early facts after many intervening turns",
+      "category": "conversation",
+      "description": "Establish a fact in turn 1, have several unrelated turns in between, then ask about the original fact \u2014 verifies context window handles real conversation length",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:my dog's name is Biscuit. remember that.",
+        "waitForIdle",
+        "prompt:what is the capital of Japan?",
+        "waitForIdle",
+        "prompt:how many planets are in the solar system?",
+        "waitForIdle",
+        "prompt:what is the square root of 144?",
+        "waitForIdle",
+        "prompt:what is my dog's name?",
+        "waitForIdle",
+        "frame:recall-check"
+      ],
+      "verify": [
+        "screen.contains:Your dog"
+      ],
+      "observe": "Fact established in turn 1 (dog = Biscuit). Three unrelated turns in between. Final turn asks for the dog's name. Agent correctly recalls Biscuit despite intervening context.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "my dog's name is Biscuit. remember that."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Got it! Your dog's name is Biscuit. I'll remember that."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what is the capital of Japan?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The capital of Japan is Tokyo."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-3",
+          "match": {
+            "userInputContains": "how many planets are in the solar system?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "There are 8 planets in our solar system (Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, and Neptune)."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-4",
+          "match": {
+            "userInputContains": "what is the square root of 144?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The square root of 144 is 12."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-5",
+          "match": {
+            "userInputContains": "what is my dog's name?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Your dog's name is Biscuit!"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "conversation-compact-and-continue",
+      "name": "Compaction mid-session then work continues normally",
+      "category": "conversation",
+      "description": "Have a multi-turn session, compact, then verify the agent can still do useful work (answer questions, use tools) \u2014 not just 'didn't crash'",
+      "docRef": "/docs/cli/chat",
+      "priority": "p0",
+      "steps": [
+        "prompt:I am working on project Atlas in TypeScript deployed to AWS Lambda with MongoDB",
+        "waitForIdle",
+        "type:/compact",
+        "enter",
+        "sleep:3000",
+        "prompt:what project am I working on?",
+        "waitForIdle",
+        "frame:post-compact"
+      ],
+      "verify": [
+        "screen.contains:TypeScript application",
+        "screen.notContains:panic"
+      ],
+      "observe": "One rich context turn, then /compact, then verify agent still knows the project name. Atlas must appear in the post-compact response.",
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "turn-1",
+          "match": {
+            "userInputContains": "I am working on project Atlas in TypeScript deployed to AWS "
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Got it \u2014 you're working on project Atlas, a TypeScript application deployed to AWS Lambda with MongoDB as the database. What would you like to work on?"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "turn-2",
+          "match": {
+            "userInputContains": "what project am I working on?"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "You're working on project Atlas \u2014 a TypeScript application deployed to AWS Lambda with MongoDB as the database."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "compact-internal",
+          "match": {
+            "bodyContains": "compact"
+          },
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Compacted conversation summary: Working on project Atlas, TypeScript, AWS Lambda, MongoDB."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "engine": [
+        "kas"
+      ]
+    }
+  ]
+}

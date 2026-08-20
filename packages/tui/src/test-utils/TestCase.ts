@@ -194,11 +194,33 @@ export class TestCase {
     // `__dirname` resolves to `packages/tui/src/test-utils`; the TUI
     // entrypoint sits two levels up at `packages/tui/src/index.tsx`.
     const tuiEntry = path.resolve(__dirname, '..', 'index.tsx');
-    this.ptyManager.spawn('bun', [
-      'run',
-      tuiEntry,
-      ...(this.options.args || []),
-    ]);
+
+    // When KIRO_COVERAGE is set, spawn via `bun test --coverage` using a
+    // wrapper test file so bun's native coverage tracks the TUI source.
+    // Coverage data is written to KIRO_COVERAGE_DIR as lcov on exit.
+    const coverageDir = process.env.KIRO_COVERAGE_DIR;
+    const enableCoverage = process.env.KIRO_COVERAGE === '1' && coverageDir;
+
+    if (enableCoverage) {
+      const coverageWrapper = path.resolve(__dirname, 'coverage-wrapper.ts');
+      // No program args: positionals after the wrapper would be read by
+      // `bun test` as test-file filters, not passed to the TUI. Anything a
+      // coverage run needs has to travel by env instead.
+      this.ptyManager.spawn('bun', [
+        'test',
+        '--coverage',
+        '--coverage-reporter=lcov',
+        `--coverage-dir=${coverageDir}`,
+        '--timeout=999999',
+        coverageWrapper,
+      ]);
+    } else {
+      this.ptyManager.spawn('bun', [
+        'run',
+        tuiEntry,
+        ...(this.options.args || []),
+      ]);
+    }
 
     console.log(`TUI logs: ${this.paths.tuiLogFile}`);
     console.log(`Rust logs: ${this.paths.rustLogFile}`);
@@ -218,7 +240,21 @@ export class TestCase {
       /* ignore if terminal already closed */
     }
 
-    this.ptyManager.kill();
+    // When coverage is enabled, send SIGTERM and wait for graceful exit
+    // so bun test can flush lcov data before the process dies.
+    if (process.env.KIRO_COVERAGE === '1') {
+      try {
+        this.ptyManager.sendSignal('SIGTERM');
+        // Wait up to 10s for the process to exit gracefully (bun needs time to write lcov)
+        await this.ptyManager.expectExit(10_000);
+      } catch {
+        // If graceful exit times out, force kill
+        this.ptyManager.kill();
+      }
+    } else {
+      this.ptyManager.kill();
+    }
+
     this.tuiConnection?.close();
 
     // Close the IPC listener so its socket / named pipe is released. Without

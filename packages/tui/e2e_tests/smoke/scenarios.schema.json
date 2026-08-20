@@ -47,7 +47,8 @@
         "category",
         "description",
         "steps",
-        "verify"
+        "verify",
+        "priority"
       ],
       "additionalProperties": false,
       "properties": {
@@ -64,13 +65,23 @@
         "category": {
           "type": "string",
           "enum": [
-            "basic",
-            "slash-commands",
+            "boot",
+            "panels",
+            "agents",
+            "model-config",
             "conversation",
+            "rendering",
             "keyboard",
             "permissions",
             "tool-use",
-            "subagents"
+            "subagents",
+            "session-management",
+            "cloud",
+            "workflows",
+            "context-management",
+            "settings",
+            "accessibility",
+            "mcp"
           ],
           "description": "Grouping category for the scenario"
         },

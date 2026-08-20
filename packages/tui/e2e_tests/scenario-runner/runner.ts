@@ -3,6 +3,27 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { assertVerify } from './predicates';
 import { executeStep, frameLabel, isFrameStep } from './steps';
+
+/**
+ * When the suite runs under coverage, give each scenario its own lcov output
+ * dir so sequential scenarios don't overwrite one shared file. CI sets
+ * KIRO_COVERAGE=1 + KIRO_SCENARIO_COVERAGE_DIR (the base); this derives the
+ * per-scenario KIRO_COVERAGE_DIR that both the acp-mock (TestCase) and krs-mock
+ * (Rust launcher) paths read, plus the wrapper path the Rust launcher needs.
+ * A no-op when coverage is off, so normal runs are unaffected.
+ */
+function prepareScenarioCoverageDir(scenarioId: string): void {
+  if (process.env.KIRO_COVERAGE !== '1') return;
+  const base = process.env.KIRO_SCENARIO_COVERAGE_DIR;
+  if (!base) return;
+  const dir = path.join(base, scenarioId);
+  fs.mkdirSync(dir, { recursive: true });
+  process.env.KIRO_COVERAGE_DIR = dir;
+  process.env.KIRO_COVERAGE_WRAPPER = path.resolve(
+    import.meta.dir,
+    '../../src/test-utils/coverage-wrapper.ts'
+  );
+}
 import type {
   Frame,
   RunOptions,
@@ -418,6 +439,7 @@ export async function runAll(opts: RunOptions): Promise<RunReport> {
   const skipped = skippedScenarioIds.length;
 
   for (const scenario of scenarios) {
+    prepareScenarioCoverageDir(scenario.id);
     results.push(await runScenario(scenario, opts));
   }
 

@@ -7,7 +7,7 @@
     {
       "id": "boot",
       "name": "TUI Boot",
-      "category": "basic",
+      "category": "boot",
       "description": "TUI launches and shows the prompt input",
       "docRef": "/docs/cli/chat",
       "priority": "p0",
@@ -29,7 +29,7 @@
     {
       "id": "slash-autocomplete",
       "name": "Slash autocomplete dropdown",
-      "category": "slash-commands",
+      "category": "keyboard",
       "description": "Typing / shows autocomplete with available commands",
       "docRef": "/docs/cli/reference/slash-commands",
       "priority": "p0",
@@ -51,7 +51,7 @@
     {
       "id": "config-panel",
       "name": "/config category table",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Inside the cloud_config rollout, /config opens the consolidated config category table and ESC closes it",
       "docRef": "/docs/cli/reference/slash-commands",
       "priority": "p1",
@@ -69,7 +69,7 @@
         "screen.contains:steering",
         "screen.notContains:Unknown command"
       ],
-      "observe": "Category table renders with agents/MCP servers/powers/steering/skills/hooks rows; Source column renders when the data carries a config origin or the session is cloud (hidden otherwise); footer shows esc to close · up/down to navigate · enter to select. /config registers on KAS only.",
+      "observe": "Category table renders with agents/MCP servers/powers/steering/skills/hooks rows; Source column renders when the data carries a config origin or the session is cloud (hidden otherwise); footer shows esc to close \u00b7 up/down to navigate \u00b7 enter to select. /config registers on KAS only.",
       "engine": [
         "kas"
       ]
@@ -77,7 +77,7 @@
     {
       "id": "slash-help",
       "name": "/help command",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Show available commands panel",
       "docRef": "/docs/cli/reference/slash-commands#help",
       "priority": "p0",
@@ -100,7 +100,7 @@
     {
       "id": "slash-clear",
       "name": "/clear command",
-      "category": "slash-commands",
+      "category": "conversation",
       "description": "Clear conversation history",
       "docRef": "/docs/cli/reference/slash-commands#clear",
       "priority": "p0",
@@ -123,7 +123,7 @@
     {
       "id": "slash-model-picker",
       "name": "/model picker",
-      "category": "slash-commands",
+      "category": "model-config",
       "description": "Open interactive model picker",
       "docRef": "/docs/cli/reference/slash-commands#model",
       "priority": "p0",
@@ -146,7 +146,7 @@
     {
       "id": "slash-model-select",
       "name": "/model select specific",
-      "category": "slash-commands",
+      "category": "model-config",
       "description": "Select a model by typing its name",
       "docRef": "/docs/cli/reference/slash-commands#model",
       "steps": [
@@ -163,12 +163,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-agent-picker",
       "name": "/agent picker",
-      "category": "slash-commands",
+      "category": "agents",
       "description": "Open agent picker to browse available agents",
       "docRef": "/docs/cli/reference/slash-commands#agent",
       "steps": [
@@ -185,12 +186,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "slash-agent-swap",
       "name": "/agent swap <name>",
-      "category": "slash-commands",
+      "category": "agents",
       "description": "Swap to a different agent at runtime",
       "docRef": "/docs/cli/reference/slash-commands#agent",
       "steps": [
@@ -207,12 +209,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-context-show",
       "name": "/context show",
-      "category": "slash-commands",
+      "category": "context-management",
       "description": "Display context rule configuration and matched files",
       "docRef": "/docs/cli/reference/slash-commands#context",
       "steps": [
@@ -229,12 +232,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-context-add",
       "name": "/context add",
-      "category": "slash-commands",
+      "category": "context-management",
       "description": "Add a context rule",
       "docRef": "/docs/cli/reference/slash-commands#context",
       "steps": [
@@ -251,12 +255,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-context-remove",
       "name": "/context remove",
-      "category": "slash-commands",
+      "category": "context-management",
       "description": "Remove a context rule",
       "docRef": "/docs/cli/reference/slash-commands#context",
       "steps": [
@@ -273,12 +278,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-context-clear",
       "name": "/context clear",
-      "category": "slash-commands",
+      "category": "context-management",
       "description": "Remove all context rules",
       "docRef": "/docs/cli/reference/slash-commands#context",
       "steps": [
@@ -295,12 +301,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-tools-panel",
       "name": "/tools panel",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "View tools and permissions panel",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "steps": [
@@ -317,12 +324,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "slash-tools-trust",
       "name": "/tools trust",
-      "category": "slash-commands",
+      "category": "permissions",
       "description": "Trust a specific tool for the session",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "steps": [
@@ -338,12 +346,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-tools-untrust",
       "name": "/tools untrust",
-      "category": "slash-commands",
+      "category": "permissions",
       "description": "Revert a tool to per-request confirmation",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "steps": [
@@ -359,12 +368,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-tools-trust-all",
       "name": "/tools trust-all",
-      "category": "slash-commands",
+      "category": "permissions",
       "description": "Trust all tools for the session",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "steps": [
@@ -380,12 +390,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-tools-reset",
       "name": "/tools reset",
-      "category": "slash-commands",
+      "category": "permissions",
       "description": "Reset all tools to default permissions",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "steps": [
@@ -401,12 +412,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     },
     {
       "id": "slash-mcp-panel",
       "name": "/mcp panel",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "View MCP servers panel",
       "docRef": "/docs/cli/reference/slash-commands#mcp",
       "steps": [
@@ -423,12 +435,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-compact",
       "name": "/compact command",
-      "category": "slash-commands",
+      "category": "conversation",
       "description": "Summarize conversation to free context",
       "docRef": "/docs/cli/reference/slash-commands#compact",
       "steps": [
@@ -445,12 +458,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "slash-chat-new",
       "name": "/chat new",
-      "category": "slash-commands",
+      "category": "session-management",
       "description": "Start a fresh conversation",
       "docRef": "/docs/cli/reference/slash-commands#chat",
       "steps": [
@@ -467,12 +481,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "slash-chat-new-with-prompt",
       "name": "/chat new with initial prompt",
-      "category": "slash-commands",
+      "category": "session-management",
       "description": "Start fresh conversation with an initial prompt",
       "docRef": "/docs/cli/reference/slash-commands#chat",
       "steps": [
@@ -489,12 +504,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-usage",
       "name": "/usage command",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Show billing and credits",
       "docRef": "/docs/cli/reference/slash-commands#usage",
       "steps": [
@@ -511,12 +527,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-hooks",
       "name": "/hooks command",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "View context hooks",
       "docRef": "/docs/cli/reference/slash-commands#hooks",
       "steps": [
@@ -533,12 +550,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-code-status",
       "name": "/code status",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Show LSP server status",
       "docRef": "/docs/cli/reference/slash-commands#code",
       "steps": [
@@ -555,12 +573,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     },
     {
       "id": "slash-code-overview",
       "name": "/code overview",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Get workspace structure overview",
       "docRef": "/docs/cli/reference/slash-commands#code",
       "steps": [
@@ -577,12 +596,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     },
     {
       "id": "slash-quit",
       "name": "/quit command",
-      "category": "slash-commands",
+      "category": "boot",
       "description": "Exit the interactive chat session",
       "docRef": "/docs/cli/reference/slash-commands#quit",
       "priority": "p0",
@@ -605,7 +625,7 @@
     {
       "id": "slash-plan",
       "name": "/plan command",
-      "category": "slash-commands",
+      "category": "agents",
       "description": "Switch to Plan agent",
       "docRef": "/docs/cli/reference/slash-commands#plan",
       "steps": [
@@ -622,12 +642,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-knowledge-show",
       "name": "/knowledge show",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "List knowledge base entries",
       "docRef": "/docs/cli/reference/slash-commands#knowledge",
       "steps": [
@@ -644,12 +665,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     },
     {
       "id": "slash-prompts-list",
       "name": "/prompts list",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "List available prompts",
       "docRef": "/docs/cli/reference/slash-commands#prompts",
       "steps": [
@@ -666,7 +688,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     },
     {
       "id": "tool-use-read",
@@ -694,7 +717,7 @@
     {
       "id": "tool-use-shell",
       "name": "Shell tool execution",
-      "category": "tool-use",
+      "category": "permissions",
       "description": "Agent uses shell tool",
       "docRef": "/docs/cli/chat/permissions",
       "priority": "p1",
@@ -717,7 +740,7 @@
     {
       "id": "tool-use-write-approval",
       "name": "Write tool approval dialog",
-      "category": "tool-use",
+      "category": "permissions",
       "description": "Agent uses write tool, shows diff and approval",
       "docRef": "/docs/cli/chat/permissions",
       "steps": [
@@ -733,12 +756,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "tool-cancel",
       "name": "Cancel during response",
-      "category": "tool-use",
+      "category": "conversation",
       "description": "Ctrl+C cancels in-progress request",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
       "priority": "p1",
@@ -761,7 +785,7 @@
     {
       "id": "tool-cancel-recovery",
       "name": "Send prompt after cancel",
-      "category": "tool-use",
+      "category": "conversation",
       "description": "After cancelling, a new prompt can be sent",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
       "steps": [
@@ -780,7 +804,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "conversation-basic",
@@ -829,7 +854,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "conversation-clear-and-resume",
@@ -855,12 +881,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "conversation-long-response",
       "name": "Long streaming response",
-      "category": "conversation",
+      "category": "rendering",
       "description": "Agent generates a long response with streaming",
       "docRef": "/docs/cli/chat",
       "steps": [
@@ -877,12 +904,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "conversation-markdown",
       "name": "Markdown rendering in response",
-      "category": "conversation",
+      "category": "rendering",
       "description": "Agent response with code blocks and formatting",
       "docRef": "/docs/cli/chat",
       "steps": [
@@ -899,7 +927,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "permissions-trust-flow",
@@ -922,7 +951,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "permissions-trust-all-reset",
@@ -945,7 +975,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "subagent-spawn",
@@ -967,12 +998,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p0"
     },
     {
       "id": "keyboard-ctrlc-exit",
       "name": "Ctrl+C twice exits",
-      "category": "keyboard",
+      "category": "boot",
       "description": "Double Ctrl+C exits the TUI",
       "docRef": "/docs/cli/reference/slash-commands#keyboard-shortcuts",
       "priority": "p0",
@@ -1036,7 +1068,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "keyboard-ctrls-search",
@@ -1056,12 +1089,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-goal-set",
       "name": "/goal set",
-      "category": "slash-commands",
+      "category": "conversation",
       "description": "Set an autonomous goal for the agent to work toward iteratively",
       "docRef": "/docs/cli/reference/slash-commands#goal",
       "steps": [
@@ -1078,12 +1112,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-goal-clear",
       "name": "/goal clear",
-      "category": "slash-commands",
+      "category": "conversation",
       "description": "Clear the active goal",
       "docRef": "/docs/cli/reference/slash-commands#goal",
       "steps": [
@@ -1100,12 +1135,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-rewind",
       "name": "/rewind picker",
-      "category": "slash-commands",
+      "category": "conversation",
       "description": "Open the rewind picker to fork conversation at an earlier turn",
       "docRef": "/docs/cli/reference/slash-commands#rewind",
       "steps": [
@@ -1122,12 +1158,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-effort",
       "name": "/effort set level",
-      "category": "slash-commands",
+      "category": "model-config",
       "description": "Set reasoning effort level for the session",
       "docRef": "/docs/cli/reference/slash-commands#effort",
       "steps": [
@@ -1145,12 +1182,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-guide",
       "name": "/guide command",
-      "category": "slash-commands",
+      "category": "agents",
       "description": "Switch to the Guide agent for documentation-grounded help",
       "docRef": "/docs/cli/reference/slash-commands#guide",
       "steps": [
@@ -1168,12 +1206,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-stats",
       "name": "/stats command",
-      "category": "slash-commands",
+      "category": "panels",
       "description": "Show request IDs and timing info for recent turns",
       "docRef": "/docs/cli/reference/slash-commands#stats",
       "steps": [
@@ -1191,7 +1230,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p2"
     }
   ]
 }

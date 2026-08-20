@@ -1443,6 +1443,17 @@ jobs:
             --binary-path target/release/chat_cli \
             --manifest-path target/release/chat_cli.rc-binary-manifest.json
 
+      - name: Build Twinki workspace dependency
+        # Coverage instruments TUI *source*, so the wrapper imports
+        # `../index.tsx` and needs the twinki workspace package's build output
+        # (the downloaded bundle already has it inlined). Consequence worth
+        # knowing: under coverage this lane executes source, not the shipped
+        # bundle, so KIRO_TEST_TUI_JS_PATH below is set but unread here. The
+        # bundle stays certified by the ui-integration, e2e, smoke and
+        # scenario-categories lanes.
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
       - name: Run krs-mock lane
         shell: bash
         env:
@@ -1450,6 +1461,10 @@ jobs:
           KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
           MOCK_KRS_BIN: ${{ github.workspace }}/target/release/mock-krs-server
           SCENARIO_RUNNER_RETRIES: ${{ needs.resolve.outputs.scenario_runner_retries }}
+          # Instrument the TUI through the real Rust->bun launch. Per-scenario
+          # lcov lands under this base dir; the drift step merges it.
+          KIRO_COVERAGE: '1'
+          KIRO_SCENARIO_COVERAGE_DIR: ${{ github.workspace }}/verification-results/scenario-coverage
         run: |
           # The bundle rides across jobs as an artifact, which does not restore
           # file modes. chat_cli gets its execute bit back from verify-bundle;
@@ -1463,6 +1478,35 @@ jobs:
             --capture-frames \
             --output-dir verification-results/krs-mock
 
+      - name: Check scenario coverage drift
+        # Only judges a lane run that actually happened: with `always()` this
+        # step would also fire after a failed lane, where the coverage dir is
+        # empty for the obvious reason, and "no lcov" would bury the real error.
+        #
+        # Both outcomes are advisory — coverage reporting does not gate merge —
+        # but they are not equally quiet. Drift below the floor is a warning.
+        # Producing no lcov at all is how this lane silently stops measuring
+        # anything, so that surfaces as an error annotation on a green run.
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          FLOOR=packages/tui/e2e_tests/smoke/scenarios.coverage.json
+          ARGS=(check --coverage-dir "${{ github.workspace }}/verification-results/scenario-coverage")
+          if [ -f "$FLOOR" ]; then
+            ARGS+=(--floor "$FLOOR")
+          fi
+          set +e
+          bun packages/tui/e2e_tests/smoke/scenario-coverage.ts "${ARGS[@]}"
+          status=$?
+          set -e
+          case "$status" in
+            0) ;;
+            1) echo "::warning::scenario coverage fell below the committed floor" ;;
+            *) echo "::error::scenario coverage check failed (exit $status) — see the log above; if no lcov was produced the lane measured nothing"
+               exit "$status" ;;
+          esac
+
       - name: Upload krs-mock artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -1470,6 +1514,7 @@ jobs:
           name: verification-smoke-krs-mock
           path: |
             verification-results/krs-mock/
+            verification-results/scenario-coverage/
             packages/tui/e2e_tests/test-outputs/
           retention-days: 7
           if-no-files-found: warn

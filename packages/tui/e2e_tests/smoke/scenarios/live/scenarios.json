@@ -6,7 +6,7 @@
     {
       "id": "slash-save",
       "name": "/chat save",
-      "category": "slash-commands",
+      "category": "session-management",
       "description": "Save current session to a file",
       "docRef": "/docs/cli/reference/slash-commands#save",
       "steps": [
@@ -23,12 +23,13 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     },
     {
       "id": "slash-load",
       "name": "/chat load",
-      "category": "slash-commands",
+      "category": "session-management",
       "description": "Load a previously saved conversation",
       "docRef": "/docs/cli/reference/slash-commands#load",
       "steps": [
@@ -48,7 +49,8 @@
       ],
       "tags": [
         "smoke"
-      ]
+      ],
+      "priority": "p1"
     }
   ]
 }

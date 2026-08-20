@@ -68,6 +68,8 @@ export class E2ETestCase {
   private acpHelpers: AcpTestHelper[] = [];
   /** The sandbox env vars passed to the spawned CLI process. */
   private sandboxEnv: Record<string, string>;
+  /** The TUI bundle path, resolved and validated once for every spawn path. */
+  private readonly tuiJsPath: string;
   /** Temp directory for test isolation. Cleaned up on cleanup(). */
   readonly sandboxDir: string;
 
@@ -116,7 +118,19 @@ export class E2ETestCase {
     }
 
     const chatPath = requireChatCliBin();
-    const tuiJsPath = path.join(__dirname, '../dist/tui.js');
+    // Honor a caller-provided bundle path (CI points this at the downloaded
+    // verification bundle, which no longer lives under the workspace) the same
+    // way the binary is resolved from KIRO_CHAT_CLI_BIN. Validated here because
+    // a wrong path otherwise surfaces as an opaque startup timeout rather than
+    // as the missing file it is.
+    const tuiJsPath =
+      process.env.KIRO_TEST_TUI_JS_PATH ?? path.join(__dirname, '../dist/tui.js');
+    if (process.env.KIRO_TEST_TUI_JS_PATH && !fs.existsSync(tuiJsPath)) {
+      throw new Error(
+        `KIRO_TEST_TUI_JS_PATH points at a missing file: ${tuiJsPath}`
+      );
+    }
+    this.tuiJsPath = tuiJsPath;
 
     this.sandboxEnv = {
       CI: 'false',
@@ -222,9 +236,11 @@ export class E2ETestCase {
     // outer process and the CLI is spawned as an ACP backend child.
     const chatPath = requireChatCliBin();
     if (process.platform === 'win32') {
-      const tuiJsPath = path.join(__dirname, '../dist/tui.js');
+      // Reuse the constructor's already-resolved and existence-checked value:
+      // this branch hands the path straight to bun as argv, which is exactly
+      // where a wrong path becomes an opaque startup timeout.
       this.ptyManager.spawn('bun', [
-        tuiJsPath,
+        this.tuiJsPath,
         'chat',
         ...(this.options.extraCliArgs ?? []),
       ]);
@@ -262,7 +278,19 @@ export class E2ETestCase {
       /* ignore if terminal already closed */
     }
 
-    this.ptyManager.kill();
+    // Under coverage, ask the Rust launcher to shut down gracefully (it
+    // forwards SIGTERM to bun, which must exit cleanly for lcov to flush)
+    // before falling back to a hard kill.
+    if (process.env.KIRO_COVERAGE === '1') {
+      try {
+        this.ptyManager.sendSignal('SIGTERM');
+        await this.ptyManager.expectExit(15_000);
+      } catch {
+        this.ptyManager.kill();
+      }
+    } else {
+      this.ptyManager.kill();
+    }
     this.tuiConnection?.close();
     this.agentConnection?.close();
     this.tuiIpcServer?.close();

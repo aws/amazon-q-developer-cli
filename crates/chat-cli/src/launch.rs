@@ -592,6 +592,16 @@ fn resolve_remote_sessions_endpoint(
     None
 }
 
+/// Whether this process is an instrumented coverage run: KIRO_COVERAGE=1 plus
+/// the wrapper and output dir the instrumented spawn needs. Conjunctive on
+/// purpose, so the launch arm and the shutdown path agree — a graceful SIGTERM
+/// wait only makes sense for a child that is actually writing lcov.
+fn is_coverage_run() -> bool {
+    std::env::var("KIRO_COVERAGE").ok().as_deref() == Some("1")
+        && std::env::var_os("KIRO_COVERAGE_WRAPPER").is_some()
+        && std::env::var_os("KIRO_COVERAGE_DIR").is_some()
+}
+
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
 async fn launch_acp_interactive(
     os: &Os,
@@ -627,9 +637,36 @@ async fn launch_acp_interactive(
     );
 
     let mut cmd = tokio::process::Command::new(&asset_paths.bun_path);
-    cmd.arg(&asset_paths.tui_js_path)
-        .args(&args[1..])
-        .env("JSC_numberOfGCMarkers", "1")
+
+    // Coverage mode (tests only): run the TUI inside `bun test --coverage` so
+    // bun instruments the TUI source through the real Rust->bun launch path.
+    // The wrapper hosts the actual entrypoint. No CLI args are forwarded: under
+    // `bun test` a positional is a test-file filter, not a program argument, so
+    // passing them would select test files instead of configuring the TUI.
+    // That is safe because `bun test <file>` leaves `process.argv.slice(2)`
+    // empty, so the TUI parses no arguments and auto-submits no prompt — but it
+    // also means a scenario needing CLI configuration must pass it via env.
+    // Gated on KIRO_COVERAGE=1 plus a wrapper and output dir, so a production
+    // launch — where these are never set — is unaffected.
+    let coverage_wrapper = std::env::var_os("KIRO_COVERAGE_WRAPPER");
+    let coverage_dir = std::env::var_os("KIRO_COVERAGE_DIR");
+    let instrumented = is_coverage_run();
+    match (instrumented, coverage_wrapper, coverage_dir) {
+        (true, Some(wrapper), Some(dir)) => {
+            let mut dir_arg = OsString::from("--coverage-dir=");
+            dir_arg.push(&dir);
+            cmd.arg("test")
+                .arg("--coverage")
+                .arg("--coverage-reporter=lcov")
+                .arg(dir_arg)
+                .arg("--timeout=999999")
+                .arg(&wrapper);
+        },
+        _ => {
+            cmd.arg(&asset_paths.tui_js_path).args(&args[1..]);
+        },
+    }
+    cmd.env("JSC_numberOfGCMarkers", "1")
         // Surface the real CLI version to the TUI. The embedded TUI bundle's
         // package.json is pinned to "0.0.0-dev" in-repo and isn't bumped by
         // the tag-based release flow, so the TUI reads this env (carrying
@@ -843,6 +880,27 @@ async fn launch_acp_interactive(
             SignalKind,
             signal,
         };
+        // Coverage runs need the bun child to exit gracefully: `bun test
+        // --coverage` writes lcov only on a clean shutdown, so forward SIGTERM
+        // and give it a moment before falling back to SIGKILL.
+        let coverage_run = is_coverage_run();
+        async fn stop_child(child: &mut tokio::process::Child, graceful: bool) {
+            if graceful && let Some(pid) = child.id() {
+                use nix::sys::signal::{
+                    Signal,
+                    kill,
+                };
+                use nix::unistd::Pid;
+                let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+                if tokio::time::timeout(Duration::from_secs(10), child.wait())
+                    .await
+                    .is_ok()
+                {
+                    return;
+                }
+            }
+            let _ = child.kill().await;
+        }
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sighup = signal(SignalKind::hangup())?;
         loop {
@@ -857,17 +915,17 @@ async fn launch_acp_interactive(
                     break;
                 }
                 _ = sigterm.recv() => {
-                    let _ = child.kill().await;
+                    stop_child(&mut child, coverage_run).await;
                     status = None;
                     break;
                 }
                 _ = sighup.recv() => {
-                    let _ = child.kill().await;
+                    stop_child(&mut child, coverage_run).await;
                     status = None;
                     break;
                 }
                 _ = tokio::signal::ctrl_c() => {
-                    let _ = child.kill().await;
+                    stop_child(&mut child, coverage_run).await;
                     status = None;
                     break;
                 }
