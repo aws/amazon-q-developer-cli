@@ -27,7 +27,7 @@ interface VisualCoverageSummary {
 }
 
 interface VisualManifest {
-  version: 1;
+  version: 1 | 2;
   suite: string;
   generatedAt: string;
   frames: VisualFrame[];
@@ -236,7 +236,13 @@ export function collectVerificationArtifacts(
     }
 
     const manifest = readJson<VisualManifest>(filePath);
-    if (manifest.version !== 1 || !Array.isArray(manifest.frames)) {
+    if (manifest.version !== 1 && manifest.version !== 2) {
+      console.warn(
+        `Skipping unsupported visual manifest version at ${relativePath}: ${String(manifest.version)}`
+      );
+      continue;
+    }
+    if (!Array.isArray(manifest.frames)) {
       continue;
     }
 

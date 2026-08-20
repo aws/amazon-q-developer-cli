@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -32,7 +32,7 @@ describe('verification artifact report', () => {
     fs.writeFileSync(
       path.join(visualDir, 'manifest.json'),
       JSON.stringify({
-        version: 1,
+        version: 2,
         suite: 'workflow-monitor',
         generatedAt: '2026-08-11T00:00:00.000Z',
         frames: [{ status: 'passed' }, { status: 'failed' }],
@@ -138,6 +138,32 @@ describe('verification artifact report', () => {
     expect(markdown).toContain(
       '| verification-visual-legacy | legacy | 1 | 0 | n/a | n/a | n/a |'
     );
+  });
+
+  it('warns and skips unsupported visual manifest versions', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-verification-'));
+    const visualDir = path.join(root, 'verification-visual-unsupported');
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      fs.mkdirSync(visualDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(visualDir, 'manifest.json'),
+        JSON.stringify({
+          version: 3,
+          suite: 'unsupported',
+          generatedAt: '2026-08-11T00:00:00.000Z',
+          frames: [{ status: 'passed' }],
+        })
+      );
+
+      expect(collectVerificationArtifacts(root).visualSuites).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        'Skipping unsupported visual manifest version at verification-visual-unsupported/manifest.json: 3'
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('rejects inconsistent visual coverage values', () => {

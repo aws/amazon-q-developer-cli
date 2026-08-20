@@ -13,7 +13,7 @@
     "dev:256": "COLORTERM= bun run scripts/start-dev.ts",
     "release": "bun run scripts/start-release.ts",
     "dev:storybook": "bun --watch src/storybook/run-storybook.tsx",
-    "test:storybook:coverage": "bun --config=./bunfig.visual.toml test --timeout=30000 ./visual_tests/visual-coverage.test.ts",
+    "test:storybook:coverage": "bun --config=./bunfig.visual.toml test --timeout=30000 ./visual_tests/visual-coverage.test.ts ./visual_tests/terminal-frame.test.ts ./visual_tests/story-capture-contract.test.ts",
     "test:storybook:visual": "bun run src/storybook/capture-stories.ts",
     "build": "NODE_ENV=production bun build src/index.tsx --outfile dist/tui.js --target bun --minify",
     "typecheck": "tsc --noEmit",

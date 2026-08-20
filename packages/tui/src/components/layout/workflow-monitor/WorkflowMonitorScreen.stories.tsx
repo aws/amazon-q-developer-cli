@@ -551,7 +551,8 @@ function certification(
   assertions: NonNullable<
     NonNullable<StorybookParameters['certification']>['assertions']
   >,
-  viewport?: { columns: number; rows: number }
+  viewport?: { columns: number; rows: number },
+  captures?: NonNullable<StorybookParameters['certification']>['captures']
 ): StorybookParameters {
   return {
     layout: 'fullscreen',
@@ -569,6 +570,7 @@ function certification(
         ],
       },
       ...(viewport ? { viewport } : {}),
+      ...(captures ? { captures } : {}),
     },
   };
 }
@@ -611,11 +613,11 @@ const captureSteerConversation: StorybookPlay = async ({
   await type(STEER_MESSAGE, { delayMs: 0 });
   await press('enter');
   await waitFor(STEER_MESSAGE);
-  await capture('steer sent in workflow transcript');
-  await waitFor('Thinking...');
-  await capture('workflow thinking after steer');
+  await capture('steer-sent');
+  await waitFor('wf-coder  thinking...');
+  await capture('thinking');
   await waitFor(FOLLOW_UP_RESPONSE);
-  await capture('reply with preserved conversation history');
+  await capture('reply');
 };
 
 const captureConversationAfterWorkflowTabs: StorybookPlay = async ({
@@ -634,7 +636,7 @@ const captureConversationAfterWorkflowTabs: StorybookPlay = async ({
   await press('left');
   await waitFor('release-hardening - running');
   await waitFor(STEER_MESSAGE);
-  await capture('conversation preserved across workflow tabs');
+  await capture('conversation-preserved');
 };
 
 const meta = {
@@ -714,9 +716,26 @@ export const ApprovalInsideOutput = {
 
 export const SteerConversationLifecycle = {
   args: { scenario: 'running' satisfies WorkflowMonitorScenario },
-  parameters: certification({
-    visible: ['WORKFLOW OUTPUT', STEER_MESSAGE],
-  }),
+  parameters: certification(
+    {
+      visible: ['WORKFLOW OUTPUT'],
+    },
+    undefined,
+    {
+      'steer-sent': {
+        label: 'steer sent in workflow transcript',
+        assertions: { visible: [STEER_MESSAGE] },
+      },
+      thinking: {
+        label: 'workflow thinking after steer',
+        assertions: { visible: [STEER_MESSAGE, 'wf-coder  thinking...'] },
+      },
+      reply: {
+        label: 'reply with preserved conversation history',
+        assertions: { visible: [STEER_MESSAGE, FOLLOW_UP_RESPONSE] },
+      },
+    }
+  ),
   play: captureSteerConversation,
 };
 
@@ -756,9 +775,18 @@ export const MultiWorkflowNavigate = {
 
 export const MultiWorkflowConversationPreserved = {
   args: { scenario: 'multi-workflow' satisfies WorkflowMonitorScenario },
-  parameters: certification({
-    visible: ['release-hardening - running', STEER_MESSAGE, FOLLOW_UP_RESPONSE],
-  }),
+  parameters: certification(
+    {
+      visible: ['release-hardening - running'],
+    },
+    undefined,
+    {
+      'conversation-preserved': {
+        label: 'conversation preserved across workflow tabs',
+        assertions: { visible: [STEER_MESSAGE, FOLLOW_UP_RESPONSE] },
+      },
+    }
+  ),
   play: captureConversationAfterWorkflowTabs,
 };
 

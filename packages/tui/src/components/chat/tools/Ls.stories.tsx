@@ -1,61 +1,220 @@
 import { Ls } from './Ls.js';
+import { certifyVisualStory } from '../../../storybook/story-certification.js';
+
+const viewport = { columns: 120, rows: 16 };
+
+function listing(...paths: string[]): string {
+  return [
+    'User id: 501',
+    ...paths.map((path) => `-rw-r--r-- 1 501 20 1024 Jan 15 10:30 ${path}`),
+  ].join('\n');
+}
 
 const meta = {
   component: Ls,
   parameters: {
     layout: 'fullscreen',
-    storyOrder: ['Listing', 'Listed', 'ManyEntries', 'Error', 'Standalone'],
+    visualStates: {
+      loading: {
+        label: 'Directory listing in-progress indicator',
+        gapType: 'visual-baseline-required',
+        description:
+          'Loading differs only through animated status styling, which text assertions cannot prove.',
+      },
+      empty: { label: 'Empty directory' },
+      singular: { label: 'Directory with one entry' },
+      listed: { label: 'Short directory listing' },
+      'resolved-path': {
+        label: 'Relative input resolves to the returned absolute path',
+      },
+      'space-in-name': { label: 'Entry name containing spaces' },
+      collapsed: { label: 'Collapsed long directory listing' },
+      static: { label: 'Past listing uses a hidden-entry suffix' },
+      error: { label: 'Directory listing error' },
+      standalone: { label: 'Listing embedded without status chrome' },
+      expanded: {
+        label: 'Expanded directory listing',
+        gapType: 'integration-only',
+        description:
+          'Expansion is owned by the global tool-output controller, not Ls.',
+      },
+      'truncation-warning': {
+        label: 'Backend truncation warning remains visible',
+        gapType: 'product-limitation',
+        description:
+          'The parser currently removes directory truncation notices.',
+      },
+      'output-filtered': {
+        label: 'Output hidden by display policy',
+        gapType: 'integration-only',
+        description: 'The display-policy provider owns output visibility.',
+      },
+    },
+    storyOrder: [
+      'Listing',
+      'Empty',
+      'SingleEntry',
+      'ListedResolvedPath',
+      'ManyEntries',
+      'StaticSummary',
+      'Error',
+      'Standalone',
+    ],
   },
   tags: ['autodocs'],
 };
 
 export default meta;
 
-// Listing state (in progress)
 export const Listing = {
   args: {
     content: JSON.stringify({ path: 'src/components' }),
     isFinished: false,
   },
+  parameters: certifyVisualStory(
+    'Ls src/components',
+    {
+      visible: ['Ls src/components'],
+      hidden: ['entry', 'ctrl+o'],
+    },
+    [],
+    viewport
+  ),
 };
 
-// Listed with a few entries
-export const Listed = {
+export const Empty = {
   args: {
-    content: JSON.stringify({ path: 'src/components' }),
+    content: JSON.stringify({ path: '/workspace/empty' }),
+    isFinished: true,
+    result: {
+      status: 'success',
+      output: { items: [{ Text: 'User id: 501' }] },
+    },
+  },
+  parameters: certifyVisualStory(
+    'Ls /workspace/empty',
+    {
+      visible: ['Ls /workspace/empty'],
+      hidden: ['entry', 'ctrl+o', 'User id:'],
+    },
+    ['empty'],
+    viewport
+  ),
+};
+
+export const SingleEntry = {
+  args: {
+    content: JSON.stringify({ path: '/workspace/config' }),
+    isFinished: true,
+    result: {
+      status: 'success',
+      output: {
+        items: [{ Text: listing('/workspace/config/settings.json') }],
+      },
+    },
+  },
+  parameters: certifyVisualStory(
+    'settings.json',
+    {
+      visible: ['Ls /workspace/config', '1 entry', 'settings.json'],
+      hidden: ['User id:', 'ctrl+o'],
+    },
+    ['singular'],
+    viewport
+  ),
+};
+
+export const ListedResolvedPath = {
+  args: {
+    content: JSON.stringify({ path: '.' }),
     isFinished: true,
     result: {
       status: 'success',
       output: {
         items: [
           {
-            Text: 'User id: 501\ndrwxr-xr-x  staff  160  Jan 15 10:30  Button\ndrwxr-xr-x  staff  128  Jan 14 09:15  Modal\n-rw-r--r--  staff  2048  Jan 13 14:22  index.ts',
+            Text: listing(
+              '/home/user/Documents/game.py',
+              '/home/user/Documents/project notes.md'
+            ),
           },
         ],
       },
     },
   },
+  parameters: certifyVisualStory(
+    'project notes.md',
+    {
+      visible: [
+        'Ls /home/user/Documents',
+        '2 entries',
+        'game.py, project notes.md',
+      ],
+      hidden: ['User id:', '10:30'],
+    },
+    ['listed', 'resolved-path', 'space-in-name'],
+    viewport
+  ),
 };
 
-// Many entries (triggers collapse)
+const manyPaths = [
+  '/workspace/src/components',
+  '/workspace/src/hooks',
+  '/workspace/src/utils',
+  '/workspace/src/stores',
+  '/workspace/src/types',
+  '/workspace/src/index.tsx',
+  '/workspace/src/App.tsx',
+  '/workspace/src/kiro.ts',
+];
+
 export const ManyEntries = {
   args: {
-    content: JSON.stringify({ path: 'src', depth: 1 }),
+    content: JSON.stringify({ path: '/workspace/src', depth: 1 }),
     isFinished: true,
     result: {
       status: 'success',
-      output: {
-        items: [
-          {
-            Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  components\ndrwxr-xr-x  staff  192  Feb 09 16:30  hooks\ndrwxr-xr-x  staff  128  Feb 08 09:45  utils\ndrwxr-xr-x  staff  160  Feb 07 14:20  stores\ndrwxr-xr-x  staff  96   Feb 06 10:15  types\n-rw-r--r--  staff  4096  Feb 05 08:30  index.tsx\n-rw-r--r--  staff  1024  Feb 04 17:00  App.tsx\n-rw-r--r--  staff  512   Feb 03 12:45  kiro.ts',
-          },
-        ],
-      },
+      output: { items: [{ Text: listing(...manyPaths) }] },
     },
   },
+  parameters: certifyVisualStory(
+    '8 entries',
+    {
+      visible: [
+        'Ls /workspace/src',
+        'depth=1',
+        '8 entries',
+        'components, hooks, utils, stores, types',
+        '...+3 entries (ctrl+o to toggle)',
+      ],
+      hidden: ['index.tsx', 'kiro.ts'],
+    },
+    ['collapsed'],
+    viewport
+  ),
 };
 
-// Error state
+export const StaticSummary = {
+  args: {
+    content: JSON.stringify({ path: '/workspace/src' }),
+    isFinished: true,
+    isStatic: true,
+    result: {
+      status: 'success',
+      output: { items: [{ Text: listing(...manyPaths) }] },
+    },
+  },
+  parameters: certifyVisualStory(
+    '+3 more',
+    {
+      visible: ['8 entries', 'components, hooks, utils, stores, types +3 more'],
+      hidden: ['index.tsx', 'kiro.ts', 'ctrl+o'],
+    },
+    ['static'],
+    viewport
+  ),
+};
+
 export const Error = {
   args: {
     content: JSON.stringify({ path: '/nonexistent/dir' }),
@@ -65,12 +224,19 @@ export const Error = {
       error: 'Directory not found: /nonexistent/dir',
     },
   },
+  parameters: certifyVisualStory(
+    'Directory not found',
+    {
+      visible: ['Ls /nonexistent/dir', 'Directory not found: /nonexistent/dir'],
+    },
+    ['error'],
+    viewport
+  ),
 };
 
-// Standalone without StatusBar wrapper
 export const Standalone = {
   args: {
-    content: JSON.stringify({ path: 'packages/tui' }),
+    content: JSON.stringify({ path: '/workspace/packages/tui' }),
     noStatusBar: true,
     isFinished: true,
     result: {
@@ -78,10 +244,26 @@ export const Standalone = {
       output: {
         items: [
           {
-            Text: 'User id: 501\ndrwxr-xr-x  staff  256  Feb 10 11:00  src\n-rw-r--r--  staff  1024  Feb 09 16:30  package.json\n-rw-r--r--  staff  512   Feb 08 09:45  tsconfig.json',
+            Text: listing(
+              '/workspace/packages/tui/src',
+              '/workspace/packages/tui/package.json',
+              '/workspace/packages/tui/tsconfig.json'
+            ),
           },
         ],
       },
     },
   },
+  parameters: certifyVisualStory(
+    'package.json',
+    {
+      visible: [
+        'Ls /workspace/packages/tui',
+        '3 entries',
+        'src, package.json, tsconfig.json',
+      ],
+    },
+    ['listed', 'standalone'],
+    viewport
+  ),
 };

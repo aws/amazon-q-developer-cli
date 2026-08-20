@@ -45,6 +45,8 @@ import * as TableStories from '../components/ui/table/Table.stories.js';
 import * as PieSpinnerStories from '../components/ui/spinner/PieSpinner.stories.js';
 import * as SpinnerStories from '../components/ui/spinner/Spinner.stories.js';
 import * as ToolStories from '../components/chat/tools/Tool.stories.js';
+import * as CodeStories from '../components/chat/tools/Code.stories.js';
+import * as SessionToolStories from '../components/chat/tools/SessionTool.stories.js';
 import * as ImageReadStories from '../components/chat/tools/ImageRead.stories.js';
 import * as LsStories from '../components/chat/tools/Ls.stories.js';
 import * as WorkflowMonitorStories from '../components/layout/workflow-monitor/WorkflowMonitorScreen.stories.js';
@@ -53,6 +55,7 @@ import * as ActivityTrayStories from '../components/ui/activity-tray/ActivityTra
 import * as WorkflowToolStories from '../components/chat/tools/WorkflowTool.stories.js';
 import * as WorkflowLifecycleRowStories from '../components/ui/WorkflowLifecycleRow.stories.js';
 import * as CrewMonitorStories from '../components/multi-agent/CrewMonitor.stories.js';
+import * as ToolUseMessageStories from '../components/ui/ToolUseMessage.stories.js';
 
 interface RawStory {
   args?: Record<string, unknown>;
@@ -325,6 +328,11 @@ export const stories = [
     '../components/ui/spinner/Spinner.stories.js'
   ),
   convertStoryModule(ToolStories, '../components/chat/tools/Tool.stories.js'),
+  convertStoryModule(CodeStories, '../components/chat/tools/Code.stories.js'),
+  convertStoryModule(
+    SessionToolStories,
+    '../components/chat/tools/SessionTool.stories.js'
+  ),
   convertStoryModule(
     ImageReadStories,
     '../components/chat/tools/ImageRead.stories.js'
@@ -353,6 +361,10 @@ export const stories = [
   convertStoryModule(
     CrewMonitorStories,
     '../components/multi-agent/CrewMonitor.stories.js'
+  ),
+  convertStoryModule(
+    ToolUseMessageStories,
+    '../components/ui/ToolUseMessage.stories.js'
   ),
 ];
 

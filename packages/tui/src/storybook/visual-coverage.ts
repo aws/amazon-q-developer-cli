@@ -1,7 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import ts from 'typescript';
-import type { StorybookDefinition } from './contracts.js';
+import type { StorybookAssertions, StorybookDefinition } from './contracts.js';
+
+export const STORYBOOK_CATALOG_SUITE = 'storybook-catalog';
 
 export type VisualComponentClassification =
   | 'covered'
@@ -12,10 +14,13 @@ export interface VisualStoryCoverage {
   storyId: string;
   storyName: string;
   sourcePath: string;
-  status: 'covered' | 'missed';
+  status: 'covered' | 'failed' | 'planned' | 'missed';
   executedVariants: number;
+  failedVariants: number;
+  verifiedVariants: number;
   totalVariants: number;
   coveragePercent: number;
+  semanticCoveragePercent: number;
 }
 
 export interface VisualVariantCoverage {
@@ -24,7 +29,31 @@ export interface VisualVariantCoverage {
   storyName: string;
   variantId: string;
   variantName: string;
-  status: 'executed' | 'missed';
+  status: 'executed' | 'failed' | 'planned' | 'missed';
+  verification:
+    | 'asserted'
+    | 'capture-only'
+    | 'failed'
+    | 'planned-asserted'
+    | 'planned-capture'
+    | 'missed';
+  assertionCount: number;
+}
+
+export interface VisualStateCoverage {
+  id: string;
+  storyId: string;
+  storyName: string;
+  stateId: string;
+  label: string;
+  description?: string;
+  gapType?:
+    | 'missing-story'
+    | 'integration-only'
+    | 'product-limitation'
+    | 'visual-baseline-required';
+  status: 'covered' | 'failed' | 'planned' | 'missed';
+  evidence: readonly string[];
 }
 
 export interface VisualComponentCoverage {
@@ -37,10 +66,16 @@ export interface VisualComponentCoverage {
 }
 
 export interface VisualCoverage {
+  mode: 'planned' | 'captured';
   totalStories: number;
   coveredStories: number;
   totalVariants: number;
   executedVariants: number;
+  failedVariants: number;
+  verifiedVariants: number;
+  totalVisualStates: number;
+  coveredVisualStates: number;
+  failedVisualStates: number;
   totalStoryFiles: number;
   registeredStoryFiles: number;
   unregisteredStoryFiles: readonly string[];
@@ -50,10 +85,18 @@ export interface VisualCoverage {
   uncoveredComponents: number;
   storyCoveragePercent: number;
   variantExecutionPercent: number;
+  semanticVariantCoveragePercent: number;
+  visualStateCoveragePercent: number;
   componentCoveragePercent: number;
   stories: readonly VisualStoryCoverage[];
   variants: readonly VisualVariantCoverage[];
+  visualStates: readonly VisualStateCoverage[];
   components: readonly VisualComponentCoverage[];
+}
+
+export interface VisualCoverageExecution {
+  successfulVariantIds: ReadonlySet<string>;
+  successfulCaptureIds: ReadonlySet<string>;
 }
 
 interface RenderableComponent {
@@ -365,10 +408,100 @@ function percent(covered: number, total: number): number {
   return total === 0 ? 0 : (covered / total) * 100;
 }
 
-function certificationMatches(
+function assertionCount(assertions: StorybookAssertions | undefined): number {
+  return (
+    (assertions?.visible?.length ?? 0) +
+    (assertions?.hidden?.filter((value) => value !== 'undefined').length ?? 0) +
+    (assertions?.ordered?.length ?? 0) +
+    Object.keys(assertions?.occurrences ?? {}).length
+  );
+}
+
+function variantAssertionCount(
+  variant: StorybookDefinition['variants'][number]
+): number {
+  const certification = variant.parameters.certification;
+  return (
+    assertionCount(certification?.assertions) +
+    Object.values(certification?.captures ?? {}).reduce(
+      (total, capture) => total + assertionCount(capture.assertions),
+      0
+    )
+  );
+}
+
+function variantCoverageId(storyId: string, variantId: string): string {
+  return `${storyId}/${variantId}`;
+}
+
+function captureCoverageId(
+  storyId: string,
+  variantId: string,
+  captureId: string
+): string {
+  return `${variantCoverageId(storyId, variantId)}#${captureId}`;
+}
+
+function variantSucceeded(
+  storyId: string,
+  variant: StorybookDefinition['variants'][number],
+  execution: VisualCoverageExecution | 'planned'
+): boolean {
+  return (
+    execution !== 'planned' &&
+    execution.successfulVariantIds.has(variantCoverageId(storyId, variant.id))
+  );
+}
+
+function visualStateBindings(
+  variant: StorybookDefinition['variants'][number],
+  stateId: string
+): string[] {
+  const certification = variant.parameters.certification;
+  const captures = certification?.captures;
+  if (captures) {
+    return Object.entries(captures).flatMap(([captureId, capture]) =>
+      capture.coversVisualStates?.includes(stateId) &&
+      assertionCount(capture.assertions) > 0
+        ? [`${variant.id}#${captureId}`]
+        : []
+    );
+  }
+  return variant.parameters.coversVisualStates?.includes(stateId) &&
+    assertionCount(certification?.assertions) > 0
+    ? [variant.id]
+    : [];
+}
+
+function visualStateEvidence(
+  storyId: string,
+  variant: StorybookDefinition['variants'][number],
+  stateId: string,
+  execution: VisualCoverageExecution | 'planned'
+): string[] {
+  if (execution === 'planned') return [];
+  return visualStateBindings(variant, stateId).filter((binding) => {
+    const separator = binding.indexOf('#');
+    if (separator === -1) {
+      return execution.successfulVariantIds.has(
+        variantCoverageId(storyId, binding)
+      );
+    }
+    return execution.successfulCaptureIds.has(
+      captureCoverageId(
+        storyId,
+        binding.slice(0, separator),
+        binding.slice(separator + 1)
+      )
+    );
+  });
+}
+
+export function isVariantSelectedForVisualSuite(
   variant: StorybookDefinition['variants'][number],
   suite?: string
 ): boolean {
+  if (suite === STORYBOOK_CATALOG_SUITE) return true;
   const certification = variant.parameters.certification;
   return (
     certification !== undefined &&
@@ -379,9 +512,24 @@ function certificationMatches(
 export function collectVisualCoverage(
   sourceRoot: string,
   stories: readonly StorybookDefinition[],
-  suite?: string
+  execution: VisualCoverageExecution | 'planned',
+  suite?: string,
+  storyId?: string
 ): VisualCoverage {
   const normalizedRoot = path.resolve(sourceRoot);
+  const scopedStories = stories.flatMap((story) => {
+    if (storyId !== undefined && story.id !== storyId) return [];
+    const variants =
+      suite !== undefined && suite !== STORYBOOK_CATALOG_SUITE
+        ? story.variants.filter((variant) =>
+            isVariantSelectedForVisualSuite(variant, suite)
+          )
+        : story.variants;
+    return variants.length > 0 ? [{ story, variants }] : [];
+  });
+  const scopedVariantsByStory = new Map(
+    scopedStories.map(({ story, variants }) => [story.id, variants] as const)
+  );
   const program = createProgram(normalizedRoot);
   const checker = program.getTypeChecker();
   const components = discoverComponents(normalizedRoot, program);
@@ -422,8 +570,12 @@ export function collectVisualCoverage(
       const catalog = catalogRoots.get(subject) ?? new Set<string>();
       catalog.add(story.id);
       catalogRoots.set(subject, catalog);
+      const scopedVariants = scopedVariantsByStory.get(story.id) ?? [];
       if (
-        story.variants.some((variant) => certificationMatches(variant, suite))
+        scopedVariants.length > 0 &&
+        scopedVariants.every((variant) =>
+          variantSucceeded(story.id, variant, execution)
+        )
       ) {
         const covered = coveredRoots.get(subject) ?? new Set<string>();
         covered.add(story.id);
@@ -476,41 +628,188 @@ export function collectVisualCoverage(
   const registeredStoryFileCount = storyFiles.filter((storyFile) =>
     registeredStoryFiles.has(storyFile)
   ).length;
-  const storyCoverage = stories
-    .map((story): VisualStoryCoverage => {
-      const executedVariants = story.variants.filter((variant) =>
-        certificationMatches(variant, suite)
+  const storyCoverage = scopedStories
+    .map(({ story, variants }): VisualStoryCoverage => {
+      const selectedVariants = variants.filter((variant) =>
+        isVariantSelectedForVisualSuite(variant, suite)
+      );
+      const executedVariants = selectedVariants.filter((variant) =>
+        variantSucceeded(story.id, variant, execution)
+      ).length;
+      const failedVariants =
+        execution === 'planned'
+          ? 0
+          : selectedVariants.length - executedVariants;
+      const verifiedVariants = selectedVariants.filter(
+        (variant) =>
+          variantSucceeded(story.id, variant, execution) &&
+          variantAssertionCount(variant) > 0
       ).length;
       return {
         storyId: story.id,
         storyName: story.name,
         sourcePath: story.sourcePath,
-        status: executedVariants > 0 ? 'covered' : 'missed',
+        status:
+          execution === 'planned'
+            ? 'planned'
+            : executedVariants > 0
+              ? 'covered'
+              : failedVariants > 0
+                ? 'failed'
+                : 'missed',
         executedVariants,
-        totalVariants: story.variants.length,
-        coveragePercent: percent(executedVariants, story.variants.length),
+        failedVariants,
+        verifiedVariants,
+        totalVariants: variants.length,
+        coveragePercent: percent(executedVariants, variants.length),
+        semanticCoveragePercent: percent(verifiedVariants, variants.length),
       };
     })
     .sort((left, right) => left.storyId.localeCompare(right.storyId));
-  const variantCoverage = stories
-    .flatMap((story) =>
-      story.variants.map(
-        (variant): VisualVariantCoverage => ({
-          id: `${story.id}/${variant.id}`,
+  const variantCoverage = scopedStories
+    .flatMap(({ story, variants }) =>
+      variants.map((variant): VisualVariantCoverage => {
+        const selected = isVariantSelectedForVisualSuite(variant, suite);
+        const succeeded =
+          selected && variantSucceeded(story.id, variant, execution);
+        const assertions = variantAssertionCount(variant);
+        return {
+          id: variantCoverageId(story.id, variant.id),
           storyId: story.id,
           storyName: story.name,
           variantId: variant.id,
           variantName: variant.name,
-          status: certificationMatches(variant, suite) ? 'executed' : 'missed',
-        })
-      )
+          status: !selected
+            ? 'missed'
+            : execution === 'planned'
+              ? 'planned'
+              : succeeded
+                ? 'executed'
+                : 'failed',
+          verification: !selected
+            ? 'missed'
+            : execution === 'planned'
+              ? assertions > 0
+                ? 'planned-asserted'
+                : 'planned-capture'
+              : !succeeded
+                ? 'failed'
+                : assertions > 0
+                  ? 'asserted'
+                  : 'capture-only',
+          assertionCount: assertions,
+        };
+      })
     )
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const visualStateCoverage = scopedStories
+    .flatMap(({ story, variants }): VisualStateCoverage[] => {
+      const declaredStates =
+        variants.find(
+          (variant) => variant.parameters.visualStates !== undefined
+        )?.parameters.visualStates ?? {};
+      const declaredIds = new Set(Object.keys(declaredStates));
+      for (const variant of story.variants) {
+        const captures = variant.parameters.certification?.captures;
+        if (
+          captures &&
+          (variant.parameters.coversVisualStates?.length ?? 0) > 0
+        ) {
+          throw new Error(
+            `Story "${story.id}" variant "${variant.id}" must bind journey states to individual captures`
+          );
+        }
+        for (const state of variant.parameters.coversVisualStates ?? []) {
+          if (!declaredIds.has(state)) {
+            throw new Error(
+              `Story "${story.id}" variant "${variant.id}" covers undeclared visual state "${state}"`
+            );
+          }
+        }
+        for (const [captureId, capture] of Object.entries(captures ?? {})) {
+          if (
+            (capture.coversVisualStates?.length ?? 0) > 0 &&
+            assertionCount(capture.assertions) === 0
+          ) {
+            throw new Error(
+              `Story "${story.id}" variant "${variant.id}" capture "${captureId}" maps visual states without assertions`
+            );
+          }
+          for (const state of capture.coversVisualStates ?? []) {
+            if (!declaredIds.has(state)) {
+              throw new Error(
+                `Story "${story.id}" variant "${variant.id}" capture "${captureId}" covers undeclared visual state "${state}"`
+              );
+            }
+          }
+        }
+      }
+      return Object.entries(declaredStates).map(
+        ([stateId, definition]): VisualStateCoverage => {
+          const evidence = variants
+            .filter((variant) =>
+              isVariantSelectedForVisualSuite(variant, suite)
+            )
+            .flatMap((variant) =>
+              visualStateEvidence(story.id, variant, stateId, execution)
+            )
+            .sort();
+          const hasBindings = variants.some(
+            (variant) =>
+              isVariantSelectedForVisualSuite(variant, suite) &&
+              visualStateBindings(variant, stateId).length > 0
+          );
+          if (definition.gapType && !definition.description?.trim()) {
+            throw new Error(
+              `Story "${story.id}" visual state "${stateId}" declares gap "${definition.gapType}" without a description`
+            );
+          }
+          if (definition.gapType && evidence.length > 0) {
+            throw new Error(
+              `Story "${story.id}" visual state "${stateId}" declares gap "${definition.gapType}" but is covered by: ${evidence.join(', ')}`
+            );
+          }
+          return {
+            id: `${story.id}/${stateId}`,
+            storyId: story.id,
+            storyName: story.name,
+            stateId,
+            label: definition.label,
+            ...(definition.description
+              ? { description: definition.description }
+              : {}),
+            ...(definition.gapType ? { gapType: definition.gapType } : {}),
+            status:
+              evidence.length > 0
+                ? 'covered'
+                : execution === 'planned' && hasBindings
+                  ? 'planned'
+                  : execution !== 'planned' && hasBindings
+                    ? 'failed'
+                    : 'missed',
+            evidence,
+          };
+        }
+      );
+    })
     .sort((left, right) => left.id.localeCompare(right.id));
   const coveredStories = storyCoverage.filter(
     (story) => story.status === 'covered'
   ).length;
   const executedVariants = variantCoverage.filter(
     (variant) => variant.status === 'executed'
+  ).length;
+  const failedVariants = variantCoverage.filter(
+    (variant) => variant.status === 'failed'
+  ).length;
+  const verifiedVariants = variantCoverage.filter(
+    (variant) => variant.verification === 'asserted'
+  ).length;
+  const coveredVisualStates = visualStateCoverage.filter(
+    (state) => state.status === 'covered'
+  ).length;
+  const failedVisualStates = visualStateCoverage.filter(
+    (state) => state.status === 'failed'
   ).length;
   const coveredComponents = componentCoverage.filter(
     (component) => component.classification === 'covered'
@@ -522,10 +821,16 @@ export function collectVisualCoverage(
     componentCoverage.length - coveredComponents - catalogOnlyComponents;
 
   return {
+    mode: execution === 'planned' ? 'planned' : 'captured',
     totalStories: storyCoverage.length,
     coveredStories,
     totalVariants: variantCoverage.length,
     executedVariants,
+    failedVariants,
+    verifiedVariants,
+    totalVisualStates: visualStateCoverage.length,
+    coveredVisualStates,
+    failedVisualStates,
     totalStoryFiles: storyFiles.length,
     registeredStoryFiles: registeredStoryFileCount,
     unregisteredStoryFiles: storyFiles.filter(
@@ -537,12 +842,21 @@ export function collectVisualCoverage(
     uncoveredComponents,
     storyCoveragePercent: percent(coveredStories, storyCoverage.length),
     variantExecutionPercent: percent(executedVariants, variantCoverage.length),
+    semanticVariantCoveragePercent: percent(
+      verifiedVariants,
+      variantCoverage.length
+    ),
+    visualStateCoveragePercent: percent(
+      coveredVisualStates,
+      visualStateCoverage.length
+    ),
     componentCoveragePercent: percent(
       coveredComponents,
       componentCoverage.length
     ),
     stories: storyCoverage,
     variants: variantCoverage,
+    visualStates: visualStateCoverage,
     components: componentCoverage,
   };
 }
@@ -559,20 +873,63 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function visualGapCounts(coverage: VisualCoverage): {
+  missingStory: number;
+  integrationOnly: number;
+  productLimitation: number;
+  visualBaselineRequired: number;
+  unclassified: number;
+} {
+  const missed = coverage.visualStates.filter(
+    (state) => state.status === 'missed'
+  );
+  return {
+    missingStory: missed.filter((state) => state.gapType === 'missing-story')
+      .length,
+    integrationOnly: missed.filter(
+      (state) => state.gapType === 'integration-only'
+    ).length,
+    productLimitation: missed.filter(
+      (state) => state.gapType === 'product-limitation'
+    ).length,
+    visualBaselineRequired: missed.filter(
+      (state) => state.gapType === 'visual-baseline-required'
+    ).length,
+    unclassified: missed.filter((state) => state.gapType === undefined).length,
+  };
+}
+
 function coverageSummaryMarkdown(coverage: VisualCoverage): string {
+  const gaps = visualGapCounts(coverage);
+  const evidenceNotice =
+    coverage.mode === 'planned'
+      ? '> **Incomplete evidence:** This is planned catalog inventory. No runtime captures were applied, so zero failures do not indicate a passing visual suite.\n\n'
+      : '';
   return `# Visual Stories Coverage
 
-| Metric | Coverage | Covered | Missed | Total |
+${evidenceNotice}| Metric | Coverage | Covered | Not covered | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Story coverage | **${formatPercent(coverage.storyCoveragePercent)}** | ${coverage.coveredStories} | ${coverage.totalStories - coverage.coveredStories} | ${coverage.totalStories} |
 | Variant execution | **${formatPercent(coverage.variantExecutionPercent)}** | ${coverage.executedVariants} | ${coverage.totalVariants - coverage.executedVariants} | ${coverage.totalVariants} |
+| Semantic variant coverage | **${formatPercent(coverage.semanticVariantCoveragePercent)}** | ${coverage.verifiedVariants} | ${coverage.totalVariants - coverage.verifiedVariants} | ${coverage.totalVariants} |
+| Visual state coverage | **${formatPercent(coverage.visualStateCoveragePercent)}** | ${coverage.coveredVisualStates} | ${coverage.totalVisualStates - coverage.coveredVisualStates} | ${coverage.totalVisualStates} |
 | Component coverage | **${formatPercent(coverage.componentCoveragePercent)}** | ${coverage.coveredComponents} | ${coverage.totalComponents - coverage.coveredComponents} | ${coverage.totalComponents} |
 
-*Story coverage: a story is covered when at least one of its variants runs in this visual suite.*
+Failed variants: **${coverage.failedVariants}**.
 
-*Variant execution: the share of registered variants selected and run by this visual suite.*
+Failed visual states: **${coverage.failedVisualStates}**.
 
-*Component coverage: a static estimate of components reachable from covered stories; conditional branches may be counted even when they do not render in a captured frame.*
+Open visual-state gaps: **${gaps.missingStory} missing stories**, **${gaps.integrationOnly} integration-only**, **${gaps.productLimitation} product limitations**, **${gaps.visualBaselineRequired} visual-baseline-required**, **${gaps.unclassified} unclassified**.
+
+*Story coverage: a story is covered when at least one in-scope variant completes successfully.*
+
+*Variant execution: the share of in-scope variants that complete without capture or assertion failures.*
+
+*Semantic variant coverage: the share of successful variants with explicit visible, hidden, ordering, or occurrence assertions.*
+
+*Visual state coverage: the share of explicitly declared UI states proved by a successful variant or named capture.*
+
+*Component coverage: a static estimate of components reachable from stories with successful captures; conditional branches may be counted even when they do not render in a captured frame.*
 
 Story catalog: ${coverage.registeredStoryFiles}/${coverage.totalStoryFiles} files registered. Coverage percentages are informational and do not enforce a threshold.
 `;
@@ -593,7 +950,7 @@ export function visualCoverageMarkdown(coverage: VisualCoverage): string {
     .filter((story) => story.status === 'covered')
     .map(
       (story) =>
-        `- \`${story.storyId}\` - ${story.executedVariants}/${story.totalVariants} variants executed`
+        `- \`${story.storyId}\` - ${story.executedVariants}/${story.totalVariants} passed; ${story.failedVariants} failed; ${story.verifiedVariants}/${story.totalVariants} asserted`
     );
   const missedStories = coverage.stories
     .filter((story) => story.status === 'missed')
@@ -601,12 +958,51 @@ export function visualCoverageMarkdown(coverage: VisualCoverage): string {
       (story) =>
         `- \`${story.storyId}\` - 0/${story.totalVariants} variants executed`
     );
+  const failedStories = coverage.stories
+    .filter((story) => story.status === 'failed')
+    .map(
+      (story) =>
+        `- \`${story.storyId}\` - ${story.failedVariants}/${story.totalVariants} variants failed`
+    );
+  const plannedStories = coverage.stories
+    .filter((story) => story.status === 'planned')
+    .map(
+      (story) =>
+        `- \`${story.storyId}\` - ${story.totalVariants} variants planned`
+    );
   const executedVariants = coverage.variants
     .filter((variant) => variant.status === 'executed')
-    .map((variant) => `- \`${variant.id}\``);
+    .map(
+      (variant) =>
+        `- \`${variant.id}\` - ${variant.verification === 'asserted' ? `${variant.assertionCount} assertions` : 'capture only'}`
+    );
   const missedVariants = coverage.variants
     .filter((variant) => variant.status === 'missed')
     .map((variant) => `- \`${variant.id}\``);
+  const failedVariants = coverage.variants
+    .filter((variant) => variant.status === 'failed')
+    .map((variant) => `- \`${variant.id}\``);
+  const plannedVariants = coverage.variants
+    .filter((variant) => variant.status === 'planned')
+    .map((variant) => `- \`${variant.id}\``);
+  const coveredVisualStates = coverage.visualStates
+    .filter((state) => state.status === 'covered')
+    .map(
+      (state) =>
+        `- \`${state.id}\` - ${state.label}; evidence: ${state.evidence.join(', ')}`
+    );
+  const missedVisualStates = coverage.visualStates
+    .filter((state) => state.status === 'missed')
+    .map(
+      (state) =>
+        `- \`${state.id}\` - ${state.label}${state.gapType ? ` [${state.gapType}]` : ''}${state.description ? `; ${state.description}` : ''}`
+    );
+  const failedVisualStates = coverage.visualStates
+    .filter((state) => state.status === 'failed')
+    .map((state) => `- \`${state.id}\` - ${state.label}`);
+  const plannedVisualStates = coverage.visualStates
+    .filter((state) => state.status === 'planned')
+    .map((state) => `- \`${state.id}\` - ${state.label}`);
   const coveredComponents = coverage.components
     .filter((component) => component.classification === 'covered')
     .map(
@@ -633,15 +1029,49 @@ ${markdownList(coveredStories)}
 
 ${markdownList(missedStories)}
 
+### Failed (${failedStories.length})
+
+${markdownList(failedStories)}
+
+### Planned (${plannedStories.length})
+
+${markdownList(plannedStories)}
+
 ## Variant Detail
 
 ### Executed (${executedVariants.length})
 
 ${markdownList(executedVariants)}
 
+### Failed (${failedVariants.length})
+
+${markdownList(failedVariants)}
+
 ### Missed (${missedVariants.length})
 
 ${markdownList(missedVariants)}
+
+### Planned (${plannedVariants.length})
+
+${markdownList(plannedVariants)}
+
+## Visual State Detail
+
+### Covered (${coveredVisualStates.length})
+
+${markdownList(coveredVisualStates)}
+
+### Missed (${missedVisualStates.length})
+
+${markdownList(missedVisualStates)}
+
+### Failed (${failedVisualStates.length})
+
+${markdownList(failedVisualStates)}
+
+### Planned (${plannedVisualStates.length})
+
+${markdownList(plannedVisualStates)}
 
 ## Component Detail
 
@@ -663,10 +1093,10 @@ function coverageMetricHtml(
   description: string,
   coveredTerm = 'covered'
 ): string {
-  const missed = total - covered;
+  const notCovered = total - covered;
   return `<article class="coverage-row">
-  <div class="coverage-name"><h2>${escapeHtml(label)}</h2><p>${covered} ${coveredTerm} · ${missed} missed · ${total} total</p></div>
-  <div class="coverage-track" role="img" aria-label="${escapeHtml(`${label}: ${formatPercent(coveragePercent)}, ${covered} ${coveredTerm}, ${missed} missed, ${total} total`)}"><span style="width:${coveragePercent.toFixed(1)}%"></span></div>
+  <div class="coverage-name"><h2>${escapeHtml(label)}</h2><p>${covered} ${coveredTerm} · ${notCovered} not covered · ${total} total</p></div>
+  <div class="coverage-track" role="img" aria-label="${escapeHtml(`${label}: ${formatPercent(coveragePercent)}, ${covered} ${coveredTerm}, ${notCovered} not covered, ${total} total`)}"><span style="width:${coveragePercent.toFixed(1)}%"></span></div>
   <strong>${formatPercent(coveragePercent)}</strong>
   <p class="coverage-note">${escapeHtml(description)}</p>
 </article>`;
@@ -699,6 +1129,19 @@ function statusLabel(component: VisualComponentCoverage): {
 }
 
 export function visualCoverageHtml(coverage: VisualCoverage): string {
+  const gaps = visualGapCounts(coverage);
+  const plannedStories = coverage.stories.filter(
+    (story) => story.status === 'planned'
+  ).length;
+  const failedStories = coverage.stories.filter(
+    (story) => story.status === 'failed'
+  ).length;
+  const plannedVariants = coverage.variants.filter(
+    (variant) => variant.status === 'planned'
+  ).length;
+  const plannedVisualStates = coverage.visualStates.filter(
+    (state) => state.status === 'planned'
+  ).length;
   const storyRows = [...coverage.stories]
     .sort(
       (left, right) =>
@@ -709,9 +1152,11 @@ export function visualCoverageHtml(coverage: VisualCoverage): string {
     .map(
       (story) => `<tr>
 <th scope="row"><code>${escapeHtml(story.storyId)}</code><span>${escapeHtml(story.storyName)}</span></th>
-<td><span class="status ${story.status}">${story.status === 'covered' ? 'Covered' : 'Missed'}</span></td>
+<td><span class="status ${story.status}">${story.status === 'covered' ? 'Covered' : story.status === 'failed' ? 'Failed' : story.status === 'planned' ? 'Planned' : 'Missed'}</span></td>
 <td class="num">${story.executedVariants}/${story.totalVariants}</td>
-<td class="num">${formatPercent(story.coveragePercent)}</td>
+<td class="num">${story.failedVariants}</td>
+<td class="num">${story.verifiedVariants}/${story.totalVariants}</td>
+<td class="num">${formatPercent(story.semanticCoveragePercent)}</td>
 </tr>`
     )
     .join('\n');
@@ -725,7 +1170,8 @@ export function visualCoverageHtml(coverage: VisualCoverage): string {
       (variant) => `<tr>
 <th scope="row"><code>${escapeHtml(variant.id)}</code><span>${escapeHtml(variant.variantName)}</span></th>
 <td><code>${escapeHtml(variant.storyId)}</code></td>
-<td><span class="status ${variant.status === 'executed' ? 'covered' : 'missed'}">${variant.status === 'executed' ? 'Executed' : 'Missed'}</span></td>
+<td><span class="status ${variant.status === 'executed' ? 'covered' : variant.status}">${variant.status === 'executed' ? 'Passed' : variant.status === 'failed' ? 'Failed' : variant.status === 'planned' ? 'Planned' : 'Not run'}</span></td>
+<td><span class="status ${variant.verification === 'asserted' ? 'covered' : variant.status}">${variant.verification === 'asserted' ? `Asserted (${variant.assertionCount})` : variant.verification === 'capture-only' ? 'Capture only' : variant.verification === 'failed' ? 'Capture failed' : variant.verification === 'planned-asserted' ? `Assertions planned (${variant.assertionCount})` : variant.verification === 'planned-capture' ? 'Capture planned' : 'Not run'}</span></td>
 </tr>`
     )
     .join('\n');
@@ -744,6 +1190,21 @@ export function visualCoverageHtml(coverage: VisualCoverage): string {
 <td>${escapeHtml(status.evidence)}</td>
 </tr>`;
     })
+    .join('\n');
+  const visualStateRows = [...coverage.visualStates]
+    .sort(
+      (left, right) =>
+        Number(right.status === 'covered') -
+          Number(left.status === 'covered') || left.id.localeCompare(right.id)
+    )
+    .map(
+      (state) => `<tr>
+<th scope="row"><code>${escapeHtml(state.id)}</code><span>${escapeHtml(state.label)}</span></th>
+<td><span class="status ${state.status}">${state.status === 'covered' ? 'Covered' : state.status === 'failed' ? 'Failed' : state.status === 'planned' ? 'Planned' : 'Missed'}</span></td>
+<td>${escapeHtml(state.status === 'covered' ? 'evidenced' : state.status === 'failed' ? 'capture failed' : state.status === 'planned' ? 'capture planned' : (state.gapType?.replace(/-/g, ' ') ?? 'unclassified'))}</td>
+<td>${escapeHtml(state.evidence.join(', ') || (state.status === 'failed' ? 'A mapped capture or assertion failed' : state.status === 'planned' ? 'Runtime evidence not collected' : [state.gapType?.replace(/-/g, ' '), state.description].filter(Boolean).join(': ') || 'No executing variant declares this state'))}</td>
+</tr>`
+    )
     .join('\n');
   return `<!doctype html>
 <html lang="en">
@@ -770,6 +1231,8 @@ main{width:100%;padding:0 clamp(16px,4vw,56px) 64px}
 .coverage-track span{display:block;height:100%;background:var(--accent)}
 .coverage-note{grid-column:2/4;margin:0;color:var(--mute);font-size:13px;font-style:italic}
 .catalog-note{margin:16px 0 40px;color:var(--mute);font-size:13px}
+.gap-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;margin:28px 0 40px;background:var(--line);border:1px solid var(--line)}
+.gap-summary div{padding:18px;background:var(--paper)}.gap-summary dt{color:var(--mute);font-size:12px}.gap-summary dd{margin:4px 0 0;font-family:var(--mono);font-size:24px;font-weight:700}
 .inventory{padding-top:40px}
 .inventory>h2{margin:0 0 8px;font-size:24px}
 .inventory>p{max-width:72ch;margin:0 0 24px;color:var(--mute)}
@@ -789,25 +1252,36 @@ tbody th span{display:block;margin-top:2px;color:var(--mute);font-family:var(--f
 code{font-family:var(--mono);font-size:.92em}
 .status{font-weight:650}
 .status.covered{color:var(--covered)}
-.status.missed{color:var(--missed)}
-@media(max-width:720px){.coverage-row{grid-template-columns:1fr auto}.coverage-track{grid-column:1/3}.coverage-note{grid-column:1/3}.coverage-row>strong{grid-column:2;grid-row:1}.table-wrap{margin-inline:-16px;padding-inline:16px}}
+.status.missed,.status.failed{color:var(--missed)}
+.status.planned{color:var(--mute)}
+@media(max-width:720px){.coverage-row{grid-template-columns:1fr auto}.coverage-track{grid-column:1/3}.coverage-note{grid-column:1/3}.coverage-row>strong{grid-column:2;grid-row:1}.gap-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.table-wrap{margin-inline:-16px;padding-inline:16px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style>
 </head>
 <body>
-<header><h1>Visual Stories Coverage</h1><p>Baseline coverage for the current visual suite. Percentages are informational; the detailed inventory shows exactly what is covered and what remains.</p></header>
+<header><h1>Visual Stories Coverage</h1><p>${coverage.mode === 'captured' ? 'Runtime coverage for the current visual suite.' : 'Planned catalog inventory without runtime evidence.'} Percentages are informational; the detailed inventory shows exactly what is covered and what remains.</p></header>
 <main>
 <section class="baseline" aria-label="Coverage baseline">
 ${coverageMetricHtml('Story coverage', coverage.coveredStories, coverage.totalStories, coverage.storyCoveragePercent, 'A story is covered when at least one of its variants runs in this visual suite.')}
-${coverageMetricHtml('Variant execution', coverage.executedVariants, coverage.totalVariants, coverage.variantExecutionPercent, 'The share of registered variants selected and run by this visual suite.', 'executed')}
+${coverageMetricHtml('Variant execution', coverage.executedVariants, coverage.totalVariants, coverage.variantExecutionPercent, 'The share of in-scope variants that completed without capture or assertion failures.', 'passed')}
+${coverageMetricHtml('Semantic variant coverage', coverage.verifiedVariants, coverage.totalVariants, coverage.semanticVariantCoveragePercent, 'The share of variants with explicit assertions. Capture-only variants are inventory, not behavioral proof.', 'asserted')}
+${coverageMetricHtml('Visual state coverage', coverage.coveredVisualStates, coverage.totalVisualStates, coverage.visualStateCoveragePercent, 'The share of explicitly declared UI states exercised by an executed variant. Missing states remain visible as concrete work.')}
 ${coverageMetricHtml('Component coverage', coverage.coveredComponents, coverage.totalComponents, coverage.componentCoveragePercent, 'A static estimate of components reachable from covered stories; conditional branches may be counted even when they do not render.')}
 </section>
 <p class="catalog-note">Story catalog: ${coverage.registeredStoryFiles}/${coverage.totalStoryFiles} files registered. A missing registration fails the coverage test.</p>
+<dl class="gap-summary" aria-label="Open visual-state gaps">
+<div><dt>Missing story</dt><dd>${gaps.missingStory}</dd></div>
+<div><dt>Integration-only</dt><dd>${gaps.integrationOnly}</dd></div>
+<div><dt>Product limitation</dt><dd>${gaps.productLimitation}</dd></div>
+<div><dt>Visual baseline required</dt><dd>${gaps.visualBaselineRequired}</dd></div>
+<div><dt>Unclassified</dt><dd>${gaps.unclassified}</dd></div>
+</dl>
 <section class="inventory">
 <h2>Coverage detail</h2>
 <p>Each inventory uses explicit Covered, Executed, or Missed labels. Component evidence names the stories that make a component statically reachable.</p>
-<details open><summary>Stories <span>${coverage.coveredStories} covered · ${coverage.totalStories - coverage.coveredStories} missed</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">Story</th><th scope="col">Status</th><th scope="col" class="num">Variants</th><th scope="col" class="num">Coverage</th></tr></thead><tbody>${storyRows}</tbody></table></div></details>
-<details><summary>Variants <span>${coverage.executedVariants} executed · ${coverage.totalVariants - coverage.executedVariants} missed</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">Variant</th><th scope="col">Story</th><th scope="col">Status</th></tr></thead><tbody>${variantRows}</tbody></table></div></details>
+<details open><summary>Stories <span>${coverage.coveredStories} captured · ${failedStories} failed · ${plannedStories} planned · ${coverage.totalStories - coverage.coveredStories - failedStories - plannedStories} missed</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">Story</th><th scope="col">Status</th><th scope="col" class="num">Passed</th><th scope="col" class="num">Failed</th><th scope="col" class="num">Asserted</th><th scope="col" class="num">Semantic coverage</th></tr></thead><tbody>${storyRows}</tbody></table></div></details>
+<details><summary>Variants <span>${coverage.executedVariants} passed · ${coverage.failedVariants} failed · ${plannedVariants} planned · ${coverage.verifiedVariants} asserted</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">Variant</th><th scope="col">Story</th><th scope="col">Execution</th><th scope="col">Semantic evidence</th></tr></thead><tbody>${variantRows}</tbody></table></div></details>
+<details><summary>Visual states <span>${coverage.coveredVisualStates} covered · ${coverage.failedVisualStates} failed · ${plannedVisualStates} planned · ${coverage.totalVisualStates - coverage.coveredVisualStates - coverage.failedVisualStates - plannedVisualStates} missed</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">State</th><th scope="col">Status</th><th scope="col">Disposition</th><th scope="col">Variant evidence or gap</th></tr></thead><tbody>${visualStateRows}</tbody></table></div></details>
 <details><summary>Components <span>${coverage.coveredComponents} covered · ${coverage.totalComponents - coverage.coveredComponents} missed</span></summary><div class="table-wrap"><table><thead><tr><th scope="col">Component</th><th scope="col">Status</th><th scope="col">Story evidence</th></tr></thead><tbody>${componentRows}</tbody></table></div></details>
 </section>
 </main>

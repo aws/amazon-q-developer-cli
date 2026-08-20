@@ -1,346 +1,814 @@
-/**
- * CrewMonitor stories — demonstrates the full session rendering pipeline.
- * Mix of grouped crew sessions and standalone /spawn sessions.
- */
-import React, { useEffect, useRef } from 'react';
-import { sessionConversationsStore } from '../../stores/session-conversations.js';
-import { AgentEventType } from '../../types/agent-events.js';
-import { CrewMonitorScreen } from '../layout/CrewMonitorScreen.js';
-import { AppStoreContext, createAppStore } from '../../stores/app-store.js';
-import { ThemeProvider } from '../../theme/index.js';
+import React, { useState } from 'react';
+import { useInput } from '../../renderer.js';
 import { Kiro } from '../../kiro.js';
+import {
+  AppStoreContext,
+  createAppStore,
+  MessageRole,
+  ToolUseStatus,
+  type AppStoreApi,
+  type MessageType,
+} from '../../stores/app-store.js';
+import { sessionConversationsStore } from '../../stores/session-conversations.js';
+import type {
+  StorybookParameters,
+  StorybookPlay,
+} from '../../storybook/contracts.js';
+import { ThemeProvider } from '../../theme/index.js';
+import {
+  AgentEventType,
+  ApprovalOptionId,
+  ContentType,
+  type ApprovalRequestInfo,
+  type AgentStreamEvent,
+} from '../../types/agent-events.js';
+import type { AgentSession, SessionStatus } from '../../types/multi-session.js';
+import { CrewMonitorScreen } from '../layout/CrewMonitorScreen.js';
 
-const GROUP_A = 'crew-research-trading-sys';
-const GROUP_B = 'crew-implement-trading-sy';
+type CrewMonitorScenario =
+  | 'empty'
+  | 'pending'
+  | 'completed'
+  | 'thinking'
+  | 'failed'
+  | 'approval'
+  | 'mixed'
+  | 'loop-deduplication'
+  | 'navigation'
+  | 'kill-confirmation';
 
-// Mix: 2 standalone /spawn sessions + 2 crew groups
-const SESSIONS = [
-  // Crew A — research pipeline (parallel researchers → architect)
-  {
-    id: 's0',
-    name: 'research-market',
-    role: 'researcher',
-    status: 'terminated' as const,
-    group: GROUP_A,
-    dependsOn: [],
-  },
-  {
-    id: 's1',
-    name: 'research-ml',
-    role: 'researcher',
-    status: 'terminated' as const,
-    group: GROUP_A,
-    dependsOn: [],
-  },
-  {
-    id: 's2',
-    name: 'research-risk',
-    role: 'researcher',
-    status: 'terminated' as const,
-    group: GROUP_A,
-    dependsOn: [],
-  },
-  {
-    id: 's3',
-    name: 'architect',
-    role: 'architect',
-    status: 'terminated' as const,
-    group: GROUP_A,
-    dependsOn: ['research-market', 'research-ml', 'research-risk'],
-  },
-  // Crew B — implementation pipeline
-  {
-    id: 's4',
-    name: 'impl-data',
-    role: 'implementer',
-    status: 'busy' as const,
-    group: GROUP_B,
-    dependsOn: [],
-  },
-  {
-    id: 's5',
-    name: 'impl-risk',
-    role: 'implementer',
-    status: 'busy' as const,
-    group: GROUP_B,
-    dependsOn: [],
-  },
-  {
-    id: 'pending:impl-exec',
-    name: 'impl-exec',
-    role: 'implementer',
-    status: 'pending' as const,
-    group: GROUP_B,
-    dependsOn: ['impl-data'],
-  },
-  {
-    id: 'pending:review',
-    name: 'review',
-    role: 'reviewer',
-    status: 'pending' as const,
-    group: GROUP_B,
-    dependsOn: ['impl-data', 'impl-risk', 'impl-exec'],
-  },
-  // Standalone /spawn sessions (no group)
-  {
-    id: 'solo0',
-    name: 'fix-auth-bug',
-    role: 'engineer',
-    status: 'busy' as const,
-    group: undefined,
-    dependsOn: [],
-  },
-  {
-    id: 'solo1',
-    name: 'update-readme',
-    role: 'writer',
-    status: 'terminated' as const,
-    group: undefined,
-    dependsOn: [],
-  },
-];
-
-function seedConversations() {
-  const store = sessionConversationsStore.getState();
-
-  // solo0: fix-auth-bug — actively working
-  const hSolo = store.createHandlerForSession('solo0');
-  hSolo({
-    type: AgentEventType.Content,
-    id: 'x1',
-    content: { type: 'text', text: 'Investigating auth token expiry issue.' },
-  } as any);
-  hSolo({
-    type: AgentEventType.ToolCall,
-    id: 'x2',
-    name: 'grep',
-    kind: 'grep',
-    args: { pattern: 'token.*expir', path: 'src/auth' },
-    locations: [],
-  } as any);
-  hSolo({
-    type: AgentEventType.ToolCallFinished,
-    id: 'x2',
-    result: { status: 'success', output: '3 matches' },
-  } as any);
-  hSolo({
-    type: AgentEventType.ToolCall,
-    id: 'x3',
-    name: 'fs_read',
-    kind: 'read',
-    args: { path: 'src/auth/token.ts' },
-    locations: [{ path: 'src/auth/token.ts' }],
-  } as any);
-  hSolo({
-    type: AgentEventType.ToolCallFinished,
-    id: 'x3',
-    result: { status: 'success', output: 'Read' },
-  } as any);
-  hSolo({
-    type: AgentEventType.Content,
-    id: 'x4',
-    content: {
-      type: 'text',
-      text: 'Found the bug — refresh token not being rotated on use. Fixing now.',
-    },
-  } as any);
-  hSolo({
-    type: AgentEventType.ToolCall,
-    id: 'x5',
-    name: 'fs_write',
-    kind: 'write',
-    args: { path: 'src/auth/token.ts' },
-    locations: [{ path: 'src/auth/token.ts' }],
-  } as any);
-  // x5 still in progress
-
-  // research-market: completed
-  const hA = store.createHandlerForSession('s0');
-  hA({
-    type: AgentEventType.Content,
-    id: 'a1',
-    content: {
-      type: 'text',
-      text: 'Researching real-time market data ingestion architectures.',
-    },
-  } as any);
-  hA({
-    type: AgentEventType.ToolCall,
-    id: 'a2',
-    name: 'web_search',
-    kind: 'search',
-    args: { query: 'real-time market data streaming' },
-    locations: [],
-  } as any);
-  hA({
-    type: AgentEventType.ToolCallFinished,
-    id: 'a2',
-    result: { status: 'success', output: '8 results' },
-  } as any);
-  hA({
-    type: AgentEventType.Content,
-    id: 'a3',
-    content: {
-      type: 'text',
-      text: 'WebSocket feeds with FIX protocol recommended. Sub-ms latency achievable with kernel bypass.',
-    },
-  } as any);
-
-  // impl-data-signals: actively working
-  const hC = store.createHandlerForSession('s4');
-  hC({
-    type: AgentEventType.Content,
-    id: 'c1',
-    content: {
-      type: 'text',
-      text: 'Implementing data ingestion pipeline and ML signal generation.',
-    },
-  } as any);
-  hC({
-    type: AgentEventType.ToolCall,
-    id: 'c2',
-    name: 'fs_write',
-    kind: 'write',
-    args: { path: 'src/data/market-feed.ts' },
-    locations: [{ path: 'src/data/market-feed.ts' }],
-  } as any);
-  hC({
-    type: AgentEventType.ToolCallFinished,
-    id: 'c2',
-    result: { status: 'success', output: 'Written' },
-  } as any);
-  hC({
-    type: AgentEventType.ToolCall,
-    id: 'c3',
-    name: 'execute_bash',
-    kind: 'shell',
-    args: { command: 'npm test -- src/signals' },
-    locations: [],
-  } as any);
-  hC({
-    type: AgentEventType.ToolCallUpdate,
-    id: 'c3',
-    content: {
-      type: 'text',
-      text: '✓ feature_extraction\n✓ ml_engine\n✓ signal_generator',
-    },
-  } as any);
-  hC({
-    type: AgentEventType.ToolCallFinished,
-    id: 'c3',
-    result: { status: 'success', output: '3 passed' },
-  } as any);
-  hC({
-    type: AgentEventType.Content,
-    id: 'c4',
-    content: {
-      type: 'text',
-      text: 'All signal tests passing. Moving to WebSocket feed integration.',
-    },
-  } as any);
-  hC({
-    type: AgentEventType.ToolCall,
-    id: 'c5',
-    name: 'fs_write',
-    kind: 'write',
-    args: { path: 'src/data/ws-feed.ts' },
-    locations: [{ path: 'src/data/ws-feed.ts' }],
-  } as any);
-  // c5 still in progress
-
-  // impl-risk-backtest: actively working
-  const hD = store.createHandlerForSession('s5');
-  hD({
-    type: AgentEventType.Content,
-    id: 'd1',
-    content: {
-      type: 'text',
-      text: 'Implementing risk management and backtesting framework.',
-    },
-  } as any);
-  hD({
-    type: AgentEventType.ToolCall,
-    id: 'd2',
-    name: 'fs_write',
-    kind: 'write',
-    args: { path: 'src/risk/manager.py' },
-    locations: [{ path: 'src/risk/manager.py' }],
-  } as any);
-  hD({
-    type: AgentEventType.ToolCallFinished,
-    id: 'd2',
-    result: { status: 'success', output: 'Written' },
-  } as any);
-  hD({
-    type: AgentEventType.ToolCall,
-    id: 'd3',
-    name: 'execute_bash',
-    kind: 'shell',
-    args: { command: 'python -m pytest tests/risk/' },
-    locations: [],
-  } as any);
-  hD({
-    type: AgentEventType.ToolCallUpdate,
-    id: 'd3',
-    content: {
-      type: 'text',
-      text: 'test_var_calculation ... ok\ntest_position_limits ... ok\ntest_drawdown_monitor ... ',
-    },
-  } as any);
-  // d3 still running
+interface CrewMonitorStoryProps {
+  scenario: CrewMonitorScenario;
 }
 
-const StoryWrapper: React.FC<{ children: React.ReactNode }> = ({
-  children,
-}) => {
-  const storeRef = useRef(createAppStore({ kiro: new Kiro() }));
+interface CrewFixture {
+  sessions: AgentSession[];
+  conversations?: ReadonlyMap<string, MessageType[]>;
+  events?: Readonly<Record<string, AgentStreamEvent[]>>;
+  approvalQueue?: ApprovalRequestInfo[];
+  focusedIndex?: number;
+  agentEngine?: 'v2' | 'kas';
+}
 
-  useEffect(() => {
-    // Override terminal size for storybook — process.stdout.columns is undefined in browser
-    if (!process.stdout.columns) {
-      (process.stdout as any).columns = 160;
-      (process.stdout as any).rows = 50;
-    }
+interface CrewStoryStores {
+  appStore: AppStoreApi;
+}
 
-    SESSIONS.forEach((s) => {
-      storeRef.current.getState().addSession({
-        id: s.id,
-        name: s.name,
-        status: s.status,
-        type: 'ephemeral',
-        created: new Date(),
-        lastActivity: new Date(),
-        role: s.role,
-        group: s.group,
-        dependsOn: (s as any).dependsOn ?? [],
-      } as any);
-    });
-  }, []);
+const firstAssistant =
+  'Inventory complete: authentication and storage surfaces mapped.';
+const secondAssistant =
+  'Plan approved: validate the cache key before release rollout.';
+const streamingTail =
+  'Applying the cache validation while preserving the verified history';
+const toolCommand = 'bun test ./visual_tests/cache-key.test.ts';
+const toolResult = '4 cache-key checks passed';
 
+function session(
+  id: string,
+  name: string,
+  status: SessionStatus,
+  overrides: Partial<AgentSession> = {}
+): AgentSession {
+  return {
+    id,
+    name,
+    role: 'engineer',
+    status,
+    type: 'ephemeral',
+    created: new Date(`2026-08-18T12:00:0${id.length % 10}.000Z`),
+    lastActivity: new Date('2026-08-18T12:01:00.000Z'),
+    ...overrides,
+  };
+}
+
+function user(id: string, content: string): MessageType {
+  return { id, role: MessageRole.User, content };
+}
+
+function assistant(id: string, content: string): MessageType {
+  return { id, role: MessageRole.Model, content };
+}
+
+function approvalFixture(): CrewFixture {
+  const approval: ApprovalRequestInfo = {
+    sessionId: 'approval-worker',
+    toolCall: {
+      toolCallId: 'approval-shell',
+      name: 'execute_bash',
+      kind: 'execute',
+      rawInput: { command: 'cargo test -p agent' },
+    },
+    permissionOptions: [
+      {
+        kind: ApprovalOptionId.AllowOnce,
+        name: 'Allow once',
+        optionId: ApprovalOptionId.AllowOnce,
+      },
+      {
+        kind: ApprovalOptionId.RejectOnce,
+        name: 'Reject',
+        optionId: ApprovalOptionId.RejectOnce,
+      },
+    ],
+    resolve: () => undefined,
+  };
+  const messages: MessageType[] = [
+    user('approval-user', 'Run the targeted Rust suite.'),
+    {
+      id: 'approval-shell',
+      role: MessageRole.ToolUse,
+      name: 'execute_bash',
+      kind: 'execute',
+      content: JSON.stringify({ command: 'cargo test -p agent' }),
+      status: ToolUseStatus.Pending,
+    },
+  ];
+  return {
+    sessions: [session('approval-worker', 'rust-verifier', 'busy')],
+    conversations: new Map([['approval-worker', messages]]),
+    events: {
+      'approval-worker': [
+        {
+          type: AgentEventType.ToolCall,
+          id: 'approval-shell',
+          name: 'execute_bash',
+          kind: 'execute',
+          args: { command: 'cargo test -p agent' },
+        },
+      ],
+    },
+    approvalQueue: [approval],
+  };
+}
+
+function fixtureFor(scenario: CrewMonitorScenario): CrewFixture {
+  switch (scenario) {
+    case 'empty':
+      return { sessions: [] };
+    case 'pending':
+      return {
+        sessions: [
+          session('pending-review', 'release-review', 'pending', {
+            dependsOn: ['build-assets'],
+          }),
+        ],
+      };
+    case 'completed':
+      return {
+        sessions: [
+          session('completed-worker', 'artifact-builder', 'terminated', {
+            summary: 'All platform artifacts are available.',
+          }),
+        ],
+        conversations: new Map([
+          [
+            'completed-worker',
+            [
+              user('completed-user', 'Build all release artifacts.'),
+              assistant(
+                'completed-assistant',
+                'Built Linux, macOS, and Windows release artifacts.'
+              ),
+            ],
+          ],
+        ]),
+        events: {
+          'completed-worker': [
+            {
+              type: AgentEventType.Content,
+              id: 'completed-event',
+              content: { type: ContentType.Text, text: 'done' },
+            },
+          ],
+        },
+      };
+    case 'thinking':
+      return {
+        sessions: [session('thinking-worker', 'dependency-auditor', 'busy')],
+      };
+    case 'failed':
+      return {
+        sessions: [
+          session('failed-worker', 'windows-packager', 'failed', {
+            summary: 'Windows linker failed.',
+          }),
+        ],
+        conversations: new Map([
+          [
+            'failed-worker',
+            [
+              user('failed-user', 'Package the Windows binary.'),
+              assistant(
+                'failed-assistant',
+                'The linker could not resolve the embedded asset.'
+              ),
+            ],
+          ],
+        ]),
+        events: {
+          'failed-worker': [
+            {
+              type: AgentEventType.Content,
+              id: 'failed-event',
+              content: { type: ContentType.Text, text: 'failed' },
+            },
+          ],
+        },
+      };
+    case 'approval':
+      return approvalFixture();
+    case 'mixed':
+      return {
+        sessions: [
+          session('crew-research', 'research-contracts', 'terminated', {
+            group: 'release-crew',
+            role: 'researcher',
+          }),
+          session('crew-build', 'build-assets', 'busy', {
+            group: 'release-crew',
+            role: 'builder',
+            dependsOn: ['research-contracts'],
+          }),
+          session('solo-docs', 'update-release-notes', 'busy', {
+            role: 'writer',
+          }),
+        ],
+      };
+    case 'loop-deduplication':
+      return {
+        sessions: [
+          session('loop-old', 'retry-validation', 'terminated', {
+            group: 'release-loop',
+            hasLoop: true,
+            loopIteration: 0,
+            loopMaxIterations: 3,
+          }),
+          session('loop-new', 'retry-validation', 'busy', {
+            group: 'release-loop',
+            hasLoop: true,
+            loopIteration: 1,
+            loopMaxIterations: 3,
+          }),
+        ],
+        conversations: new Map([
+          [
+            'loop-old',
+            [
+              user('loop-old-user', 'Run the first attempt.'),
+              assistant(
+                'loop-old-assistant',
+                'Obsolete first iteration output'
+              ),
+            ],
+          ],
+          [
+            'loop-new',
+            [
+              user('loop-new-user', 'Retry with corrected inputs.'),
+              assistant(
+                'loop-new-assistant',
+                'Current second iteration output'
+              ),
+            ],
+          ],
+        ]),
+      };
+    case 'navigation':
+      return {
+        sessions: [
+          session('nav-one', 'source-auditor', 'terminated', {
+            created: new Date('2026-08-18T12:00:00.000Z'),
+          }),
+          session('nav-two', 'binary-verifier', 'busy', {
+            created: new Date('2026-08-18T12:01:00.000Z'),
+          }),
+        ],
+        conversations: new Map([
+          [
+            'nav-one',
+            [
+              user('nav-one-user', 'Audit source inputs.'),
+              assistant('nav-one-assistant', 'Source audit complete.'),
+            ],
+          ],
+          [
+            'nav-two',
+            [
+              user('nav-two-user', 'Verify the binary.'),
+              assistant(
+                'nav-two-assistant',
+                'Binary verification in progress.'
+              ),
+            ],
+          ],
+        ]),
+      };
+    case 'kill-confirmation':
+      return {
+        sessions: [session('kill-worker', 'long-running-check', 'busy')],
+        agentEngine: 'v2',
+      };
+  }
+}
+
+function applyFixture(stores: CrewStoryStores, fixture: CrewFixture): void {
+  sessionConversationsStore.setState({
+    conversations: new Map(fixture.conversations ?? []),
+  });
+  stores.appStore.setState({
+    sessions: new Map(
+      fixture.sessions.map((activeSession) => [activeSession.id, activeSession])
+    ),
+    sessionEventBuffer: { ...(fixture.events ?? {}) },
+    approvalQueue: [...(fixture.approvalQueue ?? [])],
+    pendingApproval: fixture.approvalQueue?.[0] ?? null,
+    focusedCrewIndex: fixture.focusedIndex ?? 0,
+    liveOutputs: new Map(),
+  });
+}
+
+function createStoryStores(fixture: CrewFixture): CrewStoryStores {
+  const appStore = createAppStore({
+    kiro: new Kiro(),
+    agentEngine: fixture.agentEngine ?? 'kas',
+  });
+  const stores = { appStore };
+  applyFixture(stores, fixture);
+  return stores;
+}
+
+function CrewStorySurface({
+  stores,
+}: {
+  stores: CrewStoryStores;
+}): React.ReactElement {
   return (
     <ThemeProvider>
-      <AppStoreContext.Provider value={storeRef.current}>
-        {children}
+      <AppStoreContext.Provider value={stores.appStore}>
+        <CrewMonitorScreen />
       </AppStoreContext.Provider>
     </ThemeProvider>
   );
+}
+
+function CrewMonitorStory({
+  scenario,
+}: CrewMonitorStoryProps): React.ReactElement {
+  const [stores] = useState(() => createStoryStores(fixtureFor(scenario)));
+  return <CrewStorySurface stores={stores} />;
+}
+
+function CrewTransitionStory(): React.ReactElement {
+  const [{ stores, handleEvent }] = useState(() => {
+    const journeyStores = createStoryStores({ sessions: [] });
+    const state = journeyStores.appStore.getState();
+    state.addSession(session('journey-worker', 'cache-validator', 'idle'));
+    const handler = sessionConversationsStore
+      .getState()
+      .createHandlerForSession('journey-worker');
+    const emit = (event: AgentStreamEvent): void => {
+      handler(event);
+      journeyStores.appStore
+        .getState()
+        .pushSessionEvent('journey-worker', event);
+    };
+    emit({
+      type: AgentEventType.UserMessage,
+      id: 'user-1',
+      content: {
+        type: ContentType.Text,
+        text: 'Map the release-sensitive surfaces.',
+      },
+    });
+    emit({
+      type: AgentEventType.Content,
+      id: 'assistant-1',
+      content: { type: ContentType.Text, text: firstAssistant },
+    });
+    emit({
+      type: AgentEventType.UserMessage,
+      id: 'user-2',
+      content: {
+        type: ContentType.Text,
+        text: 'Choose a safe rollout plan.',
+      },
+    });
+    emit({
+      type: AgentEventType.Content,
+      id: 'assistant-2',
+      content: { type: ContentType.Text, text: secondAssistant },
+    });
+    return { stores: journeyStores, handleEvent: emit };
+  });
+  const [step, setStep] = useState(0);
+  useInput((_, key) => {
+    if (!key.tab || step >= 3) return;
+    const nextStep = step + 1;
+    if (nextStep === 1) {
+      stores.appStore
+        .getState()
+        .updateSession('journey-worker', { status: 'busy' });
+      handleEvent({
+        type: AgentEventType.UserMessage,
+        id: 'user-3',
+        content: {
+          type: ContentType.Text,
+          text: 'Apply the plan and show progress.',
+        },
+      });
+      handleEvent({
+        type: AgentEventType.Content,
+        id: 'assistant-3',
+        content: { type: ContentType.Text, text: streamingTail },
+      });
+    } else if (nextStep === 2) {
+      handleEvent({
+        type: AgentEventType.ToolCall,
+        id: 'journey-shell',
+        name: 'execute_bash',
+        kind: 'execute',
+        args: { command: toolCommand },
+      });
+    } else {
+      handleEvent({
+        type: AgentEventType.ToolCallFinished,
+        id: 'journey-shell',
+        result: { status: 'success', output: toolResult },
+      });
+      stores.appStore.getState().updateSession('journey-worker', {
+        status: 'terminated',
+        summary: 'Cache validation completed safely.',
+      });
+    }
+    setStep(nextStep);
+  });
+  return <CrewStorySurface stores={stores} />;
+}
+
+function certification(
+  readyText: string,
+  assertions: NonNullable<
+    NonNullable<StorybookParameters['certification']>['assertions']
+  >,
+  coversVisualStates: readonly string[],
+  captures?: NonNullable<StorybookParameters['certification']>['captures']
+): StorybookParameters {
+  return {
+    layout: 'fullscreen',
+    capturesKeyboard: true,
+    coversVisualStates,
+    certification: {
+      suite: 'visual-stories',
+      readyText,
+      viewport: { columns: 150, rows: 38 },
+      assertions: {
+        visible: ['AGENT MONITOR', ...(assertions.visible ?? [])],
+        hidden: ['undefined', ...(assertions.hidden ?? [])],
+      },
+      ...(captures ? { captures } : {}),
+    },
+  };
+}
+
+const captureConversationLifecycle: StorybookPlay = async ({
+  press,
+  waitFor,
+  capture,
+}) => {
+  await capture('static-history');
+  await press('tab');
+  await waitFor(streamingTail);
+  await capture('streaming-tail');
+  await press('tab');
+  await waitFor(toolCommand);
+  await capture('tool-started');
+  await press('tab');
+  await waitFor('Summary: Cache validation completed safely.');
+  await capture('tool-completed');
 };
 
-export const LiveCrew = {
-  component: () => {
-    useEffect(() => {
-      seedConversations();
-    }, []);
-    return (
-      <StoryWrapper>
-        <CrewMonitorScreen />
-      </StoryWrapper>
-    );
+const captureSessionNavigation: StorybookPlay = async ({
+  press,
+  waitFor,
+  capture,
+}) => {
+  await capture('first-session');
+  await press('right');
+  await waitFor('Binary verification in progress.');
+  await capture('second-session');
+};
+
+const armKillConfirmation: StorybookPlay = async ({
+  press,
+  waitFor,
+  capture,
+}) => {
+  await press('ctrl+x');
+  await waitFor('Press ctrl+x again to kill session');
+  await capture('kill-armed');
+};
+
+const meta = {
+  title: 'Agents/CrewMonitor',
+  component: CrewMonitorStory,
+  parameters: {
+    layout: 'fullscreen',
+    visualStates: {
+      empty: { label: 'No active subagents' },
+      pending: { label: 'Pending session waiting on dependencies' },
+      completed: {
+        label: 'Completed session with retained output and summary',
+      },
+      thinking: { label: 'Executing session without an active tool' },
+      failed: { label: 'Failed session with retained output' },
+      approval: { label: 'Active tool approval inside selected session' },
+      'mixed-crew-standalone': {
+        label: 'Grouped crew and standalone sessions together',
+        gapType: 'product-limitation',
+        description:
+          'CrewMonitor currently filters the DAG to the first group and omits standalone sessions whenever a group exists.',
+      },
+      'loop-deduplicated': {
+        label: 'Only the latest loop iteration remains visible',
+      },
+      'session-navigation': {
+        label: 'Selection moves between session outputs',
+      },
+      'kill-confirmation': { label: 'V2 session kill confirmation armed' },
+      'static-history': { label: 'Two completed assistant turns' },
+      'streaming-tail': {
+        label: 'Two static turns plus one active assistant tail',
+      },
+      'tool-started': {
+        label: 'Active tool follows and preserves assistant history',
+      },
+      'tool-output-streaming': {
+        label: 'Live subagent tool output while the tool is running',
+        gapType: 'product-limitation',
+        description:
+          'The multi-session conversation path drops ToolCallUpdate and does not populate the liveOutputs map consumed by Shell.',
+      },
+      'tool-completed': {
+        label: 'Completed tool result with prior assistant history preserved',
+      },
+      'tool-result-body': {
+        label: 'Completed subagent tool result body',
+        gapType: 'product-limitation',
+        description:
+          'Legacy static Shell rendering hides result output in SessionOutput after completion.',
+      },
+    },
+    storyOrder: [
+      'Empty',
+      'PendingOnly',
+      'CompletedHistory',
+      'Thinking',
+      'Failed',
+      'ApprovalRequired',
+      'MixedCrewAndStandalone',
+      'LoopIterationDeduplication',
+      'SessionNavigation',
+      'ConversationAndToolLifecycle',
+      'KillConfirmation',
+    ],
   },
-  parameters: { capturesKeyboard: true },
 };
 
-export default {
-  component: null,
-  parameters: { layout: 'fullscreen', storyOrder: ['LiveCrew'] },
+export default meta;
+
+export const Empty = {
+  args: { scenario: 'empty' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'No active subagents',
+    { visible: ['No active subagents', 'q or ctrl+g to return to chat'] },
+    ['empty']
+  ),
+};
+
+export const PendingOnly = {
+  args: { scenario: 'pending' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'release-review',
+    {
+      visible: ['release-review', 'Waiting', 'No activity yet'],
+      hidden: ['Thinking...'],
+    },
+    ['pending']
+  ),
+};
+
+export const CompletedHistory = {
+  args: { scenario: 'completed' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'Built Linux, macOS, and Windows release artifacts.',
+    {
+      visible: [
+        'artifact-builder',
+        'Completed',
+        'Built Linux, macOS, and Windows release artifacts.',
+        'Summary: All platform artifacts are available.',
+      ],
+    },
+    ['completed']
+  ),
+};
+
+export const Thinking = {
+  args: { scenario: 'thinking' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'Thinking...',
+    { visible: ['dependency-auditor', 'Thinking...'] },
+    ['thinking']
+  ),
+};
+
+export const Failed = {
+  args: { scenario: 'failed' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'The linker could not resolve the embedded asset.',
+    {
+      visible: [
+        'windows-packager',
+        'Failed',
+        'The linker could not resolve the embedded asset.',
+      ],
+    },
+    ['failed']
+  ),
+};
+
+export const ApprovalRequired = {
+  args: { scenario: 'approval' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'Yes, single permission',
+    {
+      visible: [
+        'rust-verifier',
+        'cargo test -p agent',
+        'Yes, single permission',
+        'No',
+      ],
+    },
+    ['approval']
+  ),
+};
+
+export const MixedCrewAndStandalone = {
+  args: { scenario: 'mixed' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'research-contracts',
+    {
+      visible: [
+        'research-contracts',
+        'build-assets',
+        'Completed',
+        'Thinking...',
+      ],
+    },
+    []
+  ),
+};
+
+export const LoopIterationDeduplication = {
+  args: {
+    scenario: 'loop-deduplication' satisfies CrewMonitorScenario,
+  },
+  parameters: certification(
+    'Current second iteration output',
+    {
+      visible: ['retry-validation', '[2/3]', 'Current second iteration output'],
+      hidden: ['Obsolete first iteration output'],
+    },
+    ['loop-deduplicated']
+  ),
+};
+
+export const SessionNavigation = {
+  args: { scenario: 'navigation' satisfies CrewMonitorScenario },
+  parameters: certification(
+    'Source audit complete.',
+    { visible: ['source-auditor', 'binary-verifier'] },
+    [],
+    {
+      'first-session': {
+        label: 'first session output selected',
+        assertions: { visible: ['Source audit complete.'] },
+      },
+      'second-session': {
+        label: 'second session output selected',
+        assertions: { visible: ['Binary verification in progress.'] },
+        coversVisualStates: ['session-navigation'],
+      },
+    }
+  ),
+  play: captureSessionNavigation,
+};
+
+export const ConversationAndToolLifecycle = {
+  component: CrewTransitionStory,
+  parameters: certification(
+    firstAssistant,
+    { visible: [firstAssistant, secondAssistant] },
+    [],
+    {
+      'static-history': {
+        label: 'two static assistant turns',
+        coversVisualStates: ['static-history'],
+        assertions: {
+          visible: [firstAssistant, secondAssistant],
+          hidden: [streamingTail, toolCommand],
+          ordered: [firstAssistant, secondAssistant],
+          occurrences: { [firstAssistant]: 1, [secondAssistant]: 1 },
+        },
+      },
+      'streaming-tail': {
+        label: 'streaming tail with static history preserved',
+        coversVisualStates: ['streaming-tail'],
+        assertions: {
+          visible: [firstAssistant, secondAssistant, streamingTail],
+          hidden: [toolCommand],
+          ordered: [firstAssistant, secondAssistant, streamingTail],
+          occurrences: {
+            [firstAssistant]: 1,
+            [secondAssistant]: 1,
+            [streamingTail]: 1,
+          },
+        },
+      },
+      'tool-started': {
+        label: 'active tool with assistant history preserved',
+        coversVisualStates: ['tool-started'],
+        assertions: {
+          visible: [
+            firstAssistant,
+            secondAssistant,
+            streamingTail,
+            toolCommand,
+          ],
+          hidden: [toolResult],
+          ordered: [
+            firstAssistant,
+            secondAssistant,
+            streamingTail,
+            toolCommand,
+          ],
+          occurrences: {
+            [firstAssistant]: 1,
+            [secondAssistant]: 1,
+            [streamingTail]: 1,
+            [toolCommand]: 1,
+          },
+        },
+      },
+      'tool-completed': {
+        label: 'completed tool with assistant history preserved',
+        coversVisualStates: ['tool-completed'],
+        assertions: {
+          visible: [
+            firstAssistant,
+            secondAssistant,
+            streamingTail,
+            toolCommand,
+            'Summary: Cache validation completed safely.',
+          ],
+          hidden: ['esc to cancel'],
+          ordered: [
+            firstAssistant,
+            secondAssistant,
+            streamingTail,
+            toolCommand,
+            'Summary: Cache validation completed safely.',
+          ],
+          occurrences: {
+            [firstAssistant]: 1,
+            [secondAssistant]: 1,
+            [streamingTail]: 1,
+            [toolCommand]: 1,
+          },
+        },
+      },
+    }
+  ),
+  play: captureConversationLifecycle,
+};
+
+export const KillConfirmation = {
+  args: {
+    scenario: 'kill-confirmation' satisfies CrewMonitorScenario,
+  },
+  parameters: certification(
+    'long-running-check',
+    { visible: ['ctrl+x kill session'] },
+    [],
+    {
+      'kill-armed': {
+        label: 'kill confirmation armed',
+        coversVisualStates: ['kill-confirmation'],
+        assertions: {
+          visible: ['Press ctrl+x again to kill session'],
+        },
+      },
+    }
+  ),
+  play: armKillConfirmation,
 };

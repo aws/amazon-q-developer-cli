@@ -37,7 +37,7 @@ on:
         type: boolean
         default: false
       run_visual:
-        description: Run visual story certification
+        description: Run the Visual Stories capture lane
         type: boolean
         default: true
       run_integration:
@@ -73,9 +73,9 @@ on:
         type: string
         default: ''
       visual_suite:
-        description: Storybook certification suite
+        description: Visual Stories suite
         type: string
-        default: workflow-monitor
+        default: storybook-catalog
       scenario_runner_retries:
         description: Retries inside the scenario runner for failed scenarios
         type: choice
@@ -296,7 +296,7 @@ jobs:
             echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
-            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=storybook-catalog" >> "$GITHUB_OUTPUT"
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
@@ -316,7 +316,7 @@ jobs:
               echo "run_twinki_perf=false" >> "$GITHUB_OUTPUT"
               echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
               echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
-              echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+              echo "visual_suite=storybook-catalog" >> "$GITHUB_OUTPUT"
               echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
               echo "scenario_tag=" >> "$GITHUB_OUTPUT"
               echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
@@ -343,7 +343,7 @@ jobs:
             fi
             echo 'live_engines=[]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
-            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=storybook-catalog" >> "$GITHUB_OUTPUT"
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
@@ -362,7 +362,7 @@ jobs:
             echo "run_twinki_perf=true" >> "$GITHUB_OUTPUT"
             echo 'live_engines=["v2","kas"]' >> "$GITHUB_OUTPUT"
             echo "smoke_priority=all" >> "$GITHUB_OUTPUT"
-            echo "visual_suite=workflow-monitor" >> "$GITHUB_OUTPUT"
+            echo "visual_suite=storybook-catalog" >> "$GITHUB_OUTPUT"
             echo "scenario_categories=[]" >> "$GITHUB_OUTPUT"
             echo "scenario_tag=" >> "$GITHUB_OUTPUT"
             echo "scenario_runner_retries=1" >> "$GITHUB_OUTPUT"
@@ -1617,7 +1617,7 @@ jobs:
           - os: windows-x64-latest-16-cores
             artifact_suffix: windows
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -1701,6 +1701,22 @@ jobs:
           else
             echo "Visual coverage was not produced." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Verify visual artifact entry points
+        if: always()
+        shell: bash
+        env:
+          VISUAL_SUITE: ${{ needs.resolve.outputs.visual_suite }}
+        run: |
+          artifact_root="packages/tui/verification-results/visual/$VISUAL_SUITE"
+          missing=0
+          for entry_point in index.html coverage.html manifest.json; do
+            if [ ! -f "$artifact_root/$entry_point" ]; then
+              echo "::error file=$artifact_root/$entry_point::Visual artifact entry point was not generated"
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       - name: Upload visual artifacts
         if: always()

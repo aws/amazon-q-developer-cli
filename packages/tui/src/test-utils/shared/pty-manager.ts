@@ -6,6 +6,10 @@
 import { Terminal } from '@xterm/headless';
 import * as pty from 'bun-pty';
 import stripAnsi from 'strip-ansi';
+import {
+  readVisibleTerminalFrame,
+  type TerminalFrame,
+} from './terminal-frame.js';
 
 /**
  * Configuration options for PTY creation.
@@ -81,6 +85,8 @@ export class PtyManager {
   private pty?: pty.IPty;
   private output: string = '';
   private terminal: Terminal;
+  private outputRevision = 0;
+  private parsedRevision = 0;
   // Latched exit state. bun-pty's onExit fires once and is NOT replayed to
   // listeners that register afterward, so a process that dies before
   // expectExit() is called would otherwise hang that call for its full
@@ -124,7 +130,10 @@ export class PtyManager {
     // Capture output and feed to xterm for parsing
     this.pty.onData((data) => {
       this.output += data;
-      this.terminal.write(data);
+      const revision = ++this.outputRevision;
+      this.terminal.write(data, () => {
+        this.parsedRevision = Math.max(this.parsedRevision, revision);
+      });
     });
 
     // Latch exit eagerly so a later expectExit() never waits on an event that
@@ -289,6 +298,10 @@ export class PtyManager {
     }
   }
 
+  dispose(): void {
+    this.terminal.dispose();
+  }
+
   /**
    * Sends a POSIX signal to the spawned process (e.g. 'SIGTERM', 'SIGHUP').
    * Throws if the process was never spawned or has no PID.
@@ -321,6 +334,10 @@ export class PtyManager {
    */
   getPid(): number | undefined {
     return this.pty?.pid;
+  }
+
+  getExitCode(): number | undefined {
+    return this.exited ? (this.exitCode ?? 0) : undefined;
   }
 
   /**
@@ -366,6 +383,34 @@ export class PtyManager {
     }
 
     return lines;
+  }
+
+  async captureVisibleFrame(
+    options: { quietMs?: number; timeoutMs?: number } = {}
+  ): Promise<TerminalFrame> {
+    const quietMs = options.quietMs ?? 25;
+    const timeoutMs = options.timeoutMs ?? 5000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() <= deadline) {
+      const revision = this.outputRevision;
+      while (this.parsedRevision < revision && Date.now() <= deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      if (this.parsedRevision < revision) break;
+
+      await new Promise((resolve) => setTimeout(resolve, quietMs));
+      if (
+        revision === this.outputRevision &&
+        this.parsedRevision >= this.outputRevision
+      ) {
+        return readVisibleTerminalFrame(this.terminal);
+      }
+    }
+
+    throw new Error(
+      `Terminal did not settle within ${String(timeoutMs)}ms for frame capture`
+    );
   }
 
   /**
