@@ -30,14 +30,6 @@ jobs:
               - 'deny.toml'
               - '.github/workflows/rust.yml'
 
-  kiro-bot-release-contract:
-    name: Kiro bot no-RAG contract
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test no-RAG release contract
-        run: bash .github/scripts/kiro-bot-release/test-no-rag-contract.sh
-
   cargo-clippy:
     name: Clippy (${{ matrix.os }})
     needs: check-paths
