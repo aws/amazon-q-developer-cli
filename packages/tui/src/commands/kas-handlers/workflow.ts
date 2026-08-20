@@ -89,18 +89,24 @@ const WORKFLOW_CREATOR_AGENT = 'wf-workflow-creator';
  * `/workflow new <description>` — mirror of `/spec new`: hand the description
  * to the agent and ask it to author a reusable recipe.
  *
- * Two things this prompt has to get right, both learned from the server side:
+ * Three things this prompt has to get right, all learned the slow way:
  *
- * 1. Delegate to `wf-workflow-creator`. It owns the workflow schema and
- *    validates before returning, so it produces launchable recipes where the
- *    chat model guessing at the schema produces invalid ones.
- * 2. Ask for a *file*, not the creator's native output. The creator's normal
- *    contract is `save_workflow_definition` → a single-use `generated://<id>`
- *    ref, which is consumed the moment it launches. `/workflow run` and the
- *    recipe picker instead read `<name>.workflow.json` from `.kiro/workflows/`
- *    (see the agent's recipe-loader), so a `generated://` ref would leave
- *    nothing for this command to find. We want a persistent, re-runnable
- *    recipe on disk.
+ * 1. Delegate to `wf-workflow-creator`, and delegate *immediately*. It owns
+ *    the workflow schema and validates before returning, so it produces
+ *    launchable recipes where the chat model guessing at the schema produces
+ *    invalid ones. Without the "first action" directive the chat model burns
+ *    a long thinking pass planning the workflow itself before handing it off.
+ * 2. Ask the creator to return the *JSON*, not its native output. The
+ *    creator's only tool is `save_workflow_definition`, which stores the
+ *    definition server-side and returns a single-use `generated://<id>` ref
+ *    the orchestrator cannot read — a ref-only reply forces the chat model
+ *    to reconstruct the whole definition from the creator's summary. The
+ *    parent still emits the JSON once as the write's arguments; copying
+ *    verbatim removes the reconstruction reasoning, not the output tokens.
+ * 3. Ask for a *file*. `/workflow run` and the recipe picker read
+ *    `<name>.workflow.json` from `.kiro/workflows/`, so the returned JSON
+ *    must be written there verbatim — already validated, so rewriting or
+ *    re-validating it only adds tokens and thinking time.
  */
 async function createWorkflowFromDescription(
   ctx: CommandContext,
@@ -113,26 +119,31 @@ async function createWorkflowFromDescription(
   }
 
   const prompt = [
-    `Author a new reusable workflow recipe for this goal: ${goal}`,
+    `Create a reusable workflow recipe for this goal: ${goal}`,
     '',
-    `Delegate the authoring to the \`${WORKFLOW_CREATOR_AGENT}\` agent if it is`,
-    'available — it owns the workflow schema and validates what it produces.',
-    'Give it the goal above plus any relevant context (file paths, decisions,',
-    'constraints). If it is not available, author the definition yourself and',
-    'validate it with the validate_workflow tool before writing it.',
+    `Your FIRST action must be delegating to the \`${WORKFLOW_CREATOR_AGENT}\``,
+    'agent — do not investigate the codebase, plan the workflow yourself, or',
+    'write anything before delegating. It owns the workflow schema. Pass it',
+    'the goal verbatim (plus any context I gave above) and these',
+    'instructions: author the workflow, validate it with',
+    'save_workflow_definition, then return the complete validated workflow',
+    'JSON as the final response — the JSON itself, not just a `generated://`',
+    'reference, because the caller cannot read server-side references.',
+    'Declare any inputs the recipe needs in its `inputs` block, and pass',
+    'step data through `{{...}}` references in each step `prompt` — there',
+    'is no step-level `input` field.',
     '',
-    'Each step passes its instructions to its agent through `prompt`. A',
-    'step-level `input` field is no longer part of the schema and is rejected',
-    'at parse time, so embed any data the step needs in its `prompt` using',
-    '`{{...}}` references.',
+    'When the delegation returns, write the returned JSON verbatim to',
+    '`.kiro/workflows/<name>.workflow.json` in the workspace (kebab-case',
+    "`<name>` from the workflow's `name` field). It is already validated —",
+    'do not edit, reformat, or re-validate it.',
     '',
-    'This recipe must persist as a re-runnable file, so do NOT stop at a',
-    'single-use `generated://` reference: write the validated workflow JSON to',
-    '`.kiro/workflows/<name>.workflow.json` (kebab-case `<name>`) in the',
-    'workspace. Declare any inputs the recipe needs.',
+    `Only if \`${WORKFLOW_CREATOR_AGENT}\` is unavailable: author the`,
+    'definition yourself under the same constraints, validate it with the',
+    'validate_workflow tool, and write it to the same path.',
     '',
-    'When it is saved, tell me the recipe name so I can launch it with',
-    '`/workflow run <name>`.',
+    'End with one short sentence naming the recipe and that I can launch it',
+    'with `/workflow run <name>`.',
   ].join('\n');
 
   await ctx.sendMessage(prompt, undefined, `/workflow new ${goal}`);

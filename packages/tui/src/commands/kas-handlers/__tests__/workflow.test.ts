@@ -143,6 +143,43 @@ describe('/workflow KAS command', () => {
     expect(ctx._spies.setShowWorkflowHistory).not.toHaveBeenCalled();
   });
 
+  it('sends one delegation-first authoring prompt for /workflow new', async () => {
+    const ctx = createKasContext();
+
+    expect(await executeCommand('/workflow new ship a release', ctx)).toBe(
+      true
+    );
+
+    expect(ctx._spies.sendMessage).toHaveBeenCalledTimes(1);
+    const [prompt, images, displayContent] =
+      ctx._spies.sendMessage!.mock.calls[0]!;
+    // Performance contract: delegate immediately, get the JSON back, write
+    // it verbatim — no second authoring pass in the parent session.
+    expect(prompt).toContain('FIRST action must be delegating');
+    expect(prompt).toContain('wf-workflow-creator');
+    expect(prompt).toContain('return the complete validated workflow');
+    expect(prompt).toContain('.kiro/workflows/<name>.workflow.json');
+    expect(prompt).toContain('verbatim');
+    // Launch contract: without a declared `inputs` block the input-collection
+    // panel never opens, and step-level `input` fails validation at run time.
+    expect(prompt).toContain('Declare any inputs the recipe needs');
+    expect(prompt).toContain('no step-level `input` field');
+    expect(prompt).toContain('ship a release');
+    expect(images).toBeUndefined();
+    expect(displayContent).toBe('/workflow new ship a release');
+  });
+
+  it('rejects /workflow new without a description', async () => {
+    const ctx = createKasContext();
+
+    expect(await executeCommand('/workflow new', ctx)).toBe(true);
+
+    expect(ctx._spies.sendMessage).not.toHaveBeenCalled();
+    expect(ctx._spies.showAlert!.mock.calls[0]![0]).toContain(
+      'Usage: /workflow new'
+    );
+  });
+
   it('lists only retryable workflows for /workflow retry', async () => {
     const failed = run(
       'failed',
