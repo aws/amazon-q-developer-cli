@@ -100,12 +100,40 @@ async fn handle_dispatch(
     }
 }
 
-/// Serve the dispatch endpoint. Binds `0.0.0.0` only when a peer token is
+/// A dispatch server whose TCP listener is already open but which is not yet
+/// serving.
+///
+/// Binding is split from serving so the caller can hold the socket open *before*
+/// Slack ingress starts accepting events. Otherwise a peer that already holds the
+/// lease for a conversation can `POST /dispatch` in the window between ingress
+/// starting and the listener existing, and the forward is refused.
+pub struct BoundDispatchServer {
+    listener: TcpListener,
+    app: Router,
+}
+
+impl BoundDispatchServer {
+    pub async fn serve(self) -> anyhow::Result<()> {
+        axum::serve(self.listener, self.app).await?;
+        Ok(())
+    }
+}
+
+/// Read the configured peer token, if any. Resolved by the caller so
+/// `bind_dispatch_server` stays a function of its arguments.
+pub fn dispatch_token() -> Option<String> {
+    std::env::var(ENV_DISPATCH_TOKEN).ok().filter(|t| !t.is_empty())
+}
+
+/// Bind the dispatch endpoint. Binds `0.0.0.0` only when a peer token is
 /// configured — without one there is nothing to authenticate forwarded events
 /// against, so we bind loopback and refuse to expose `/dispatch` to the subnet.
-pub async fn run_dispatch_server(port: u16, dispatcher: Arc<dyn Dispatcher>) -> anyhow::Result<()> {
-    let token = std::env::var(ENV_DISPATCH_TOKEN).ok().filter(|t| !t.is_empty());
-    let (bind_ip, app) = match token {
+pub async fn bind_dispatch_server(
+    port: u16,
+    dispatcher: Arc<dyn Dispatcher>,
+    token: Option<String>,
+) -> anyhow::Result<BoundDispatchServer> {
+    let (bind_ip, app) = match token.filter(|t| !t.is_empty()) {
         Some(token) => (
             IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             router(DispatchState {
@@ -127,8 +155,7 @@ pub async fn run_dispatch_server(port: u16, dispatcher: Arc<dyn Dispatcher>) -> 
     let addr = SocketAddr::new(bind_ip, port);
     let listener = TcpListener::bind(addr).await?;
     info!(%addr, "dispatch server listening");
-    axum::serve(listener, app).await?;
-    Ok(())
+    Ok(BoundDispatchServer { listener, app })
 }
 
 #[cfg(test)]
@@ -253,5 +280,57 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    async fn bind_with_token(token: Option<&str>) -> BoundDispatchServer {
+        bind_dispatch_server(0, Arc::new(Recorder::default()), token.map(str::to_string))
+            .await
+            .unwrap()
+    }
+
+    /// The point of splitting bind from serve: the socket must already accept
+    /// connections before the caller starts Slack ingress, so a peer forward that
+    /// races startup is queued by the kernel rather than refused.
+    #[tokio::test]
+    async fn binding_opens_the_socket_before_serving() {
+        let bound = bind_with_token(Some(TEST_TOKEN)).await;
+        let addr = bound.listener.local_addr().unwrap();
+
+        // Connect before `serve()` is ever called: a refused connection here is
+        // exactly the startup race this split closes.
+        let early = tokio::net::TcpStream::connect(addr).await;
+        assert!(early.is_ok(), "listener must accept connections before serve()");
+
+        tokio::spawn(bound.serve());
+        let response = reqwest::Client::new()
+            .post(format!("http://{addr}/dispatch"))
+            .header(DISPATCH_TOKEN_HEADER, TEST_TOKEN)
+            .json(&serde_json::json!({"event_id": "evt-after-serve"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    /// Without a peer token there is nothing to authenticate forwards against, so
+    /// `/dispatch` must not exist and the bind must stay on loopback.
+    #[tokio::test]
+    async fn unauthenticated_bind_serves_only_healthz_on_loopback() {
+        let bound = bind_with_token(None).await;
+        let addr = bound.listener.local_addr().unwrap();
+        assert!(addr.ip().is_loopback(), "must not expose an unauthenticated port");
+        tokio::spawn(bound.serve());
+
+        assert_eq!(
+            reqwest::get(format!("http://{addr}/healthz")).await.unwrap().status(),
+            StatusCode::OK
+        );
+        let dispatch = reqwest::Client::new()
+            .post(format!("http://{addr}/dispatch"))
+            .json(&serde_json::json!({"event_id": "forged"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(dispatch.status(), StatusCode::NOT_FOUND);
     }
 }

@@ -1,0 +1,86 @@
+{
+  "type": "interactive",
+  "envelope_id": "49f9c2e6-3f77-4d8f-92f5-abcdef123456",
+  "accepts_response_payload": false,
+  "payload": {
+    "type": "block_actions",
+    "team": {"id": "T123"},
+    "user": {"id": "U123"},
+    "api_app_id": "A123",
+    "container": {
+      "type": "message",
+      "message_ts": "1700000000.2",
+      "channel_id": "C123"
+    },
+    "trigger_id": "trigger",
+    "channel": {"id": "C123"},
+    "message": {
+      "type": "message",
+      "ts": "1700000000.2",
+      "thread_ts": "1700000000.1",
+      "text": "Short accessibility fallback",
+      "user": "UKIRO",
+      "bot_id": "BKIRO",
+      "blocks": [
+        {
+          "type": "plan",
+          "title": "Working on your request",
+          "tasks": [
+            {
+              "id": "kiro-context",
+              "title": "Gathering context",
+              "status": "complete"
+            }
+          ]
+        },
+        {
+          "type": "rich_text",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                {"type": "text", "text": "The complete answer from Slack."}
+              ]
+            }
+          ]
+        },
+        {
+          "type": "context",
+          "elements": [
+            {
+              "type": "mrkdwn",
+              "text": "AI-generated; verify before acting.",
+              "verbatim": true
+            }
+          ]
+        },
+        {
+          "type": "context_actions",
+          "elements": [
+            {
+              "type": "feedback_buttons",
+              "action_id": "kiro_response_feedback",
+              "positive_button": {
+                "text": {"type": "plain_text", "text": "Good response"},
+                "value": "positive_feedback",
+                "accessibility_label": "Submit positive feedback on this response"
+              },
+              "negative_button": {
+                "text": {"type": "plain_text", "text": "Needs improvement"},
+                "value": "negative_feedback",
+                "accessibility_label": "Submit negative feedback on this response"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "actions": [
+      {
+        "type": "feedback_buttons",
+        "action_id": "kiro_response_feedback",
+        "value": "positive_feedback"
+      }
+    ]
+  }
+}

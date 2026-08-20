@@ -78,9 +78,13 @@ IP. Cache resolutions for ≤ 60 s (Cloud Map's SRV TTL).
 `engine::dispatch_server`:
 
 ```rust
-pub async fn run_dispatch_server(port: u16, dispatcher: Arc<dyn Dispatcher>) {
+// Bind and serve are separate so the caller can open the socket before
+// starting Slack ingress: a peer forward that races startup is then queued
+// by the kernel rather than refused.
+pub async fn bind_dispatch_server(port: u16, dispatcher: Arc<dyn Dispatcher>)
+    -> anyhow::Result<BoundDispatchServer> {
     let app = axum::Router::new().route("/dispatch", post(handle_dispatch));
-    axum::serve(listener, app).await
+    Ok(BoundDispatchServer { listener: TcpListener::bind(addr).await?, app })
 }
 
 async fn handle_dispatch(

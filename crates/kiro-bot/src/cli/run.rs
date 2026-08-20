@@ -213,22 +213,31 @@ async fn run_bot(cfg: Config, secrets: Secrets) -> Result<()> {
             .with_interaction_events(on_interaction)
             .with_push_events(on_push),
     );
+    // Phase 2: bind the dispatch server with a real Dispatcher that replays
+    // forwarded Slack events through the same handlers as Slack-native
+    // delivery. `dispatch_port` was resolved earlier so the self-id stitched
+    // into the lease table matches the port we listen on here.
+    //
+    // The listener is bound *before* Slack ingress starts accepting events: a
+    // peer holding the lease for a conversation may forward to us as soon as we
+    // are reachable, and a `POST /dispatch` that lands before the socket exists
+    // is refused outright.
+    let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> = Arc::new(
+        crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()),
+    );
+    let bound_dispatch = crate::engine::dispatch_server::bind_dispatch_server(
+        dispatch_port,
+        dispatcher,
+        crate::engine::dispatch_server::dispatch_token(),
+    )
+    .await?;
+
     listener
         .listen_for(&SlackApiToken::new(slack_secrets.app_token.clone().into()))
         .await?;
     info!("⚡ Bot started");
 
-    // Phase 2: bind the dispatch server with a real Dispatcher that replays
-    // forwarded Slack events through the same handlers as Slack-native
-    // delivery. `dispatch_port` was resolved earlier so the self-id stitched
-    // into the lease table matches the port we listen on here.
-    let dispatcher: Arc<dyn crate::engine::dispatch_server::Dispatcher> = Arc::new(
-        crate::engine::coordinator_bootstrap::BotCoreDispatcher::new(state.clone()),
-    );
-    let mut dispatch_handle = tokio::spawn(crate::engine::dispatch_server::run_dispatch_server(
-        dispatch_port,
-        dispatcher,
-    ));
+    let mut dispatch_handle = tokio::spawn(bound_dispatch.serve());
 
     let runtime_error = tokio::select! {
         exit_code = listener.serve() => listener_exit_error(exit_code),

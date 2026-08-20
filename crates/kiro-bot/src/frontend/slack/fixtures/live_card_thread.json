@@ -1,0 +1,98 @@
+{
+  "ok": true,
+  "has_more": false,
+  "messages": [
+    {
+      "type": "message",
+      "ts": "1700000000.1",
+      "text": "<@U_KIRO> Which command runs the TUI end-to-end suite?",
+      "user": "U_ALICE"
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.2",
+      "thread_ts": "1700000000.1",
+      "text": "Short accessibility fallback",
+      "user": "U_KIRO",
+      "bot_id": "B_KIRO",
+      "blocks": [
+        {
+          "type": "plan",
+          "title": "Working on your request",
+          "tasks": [
+            {
+              "id": "kiro-context",
+              "title": "Gathering context",
+              "status": "complete"
+            }
+          ]
+        },
+        {
+          "type": "rich_text",
+          "block_id": "answer",
+          "elements": [
+            {
+              "type": "rich_text_section",
+              "elements": [
+                {"type": "text", "text": "The command is:\n"},
+                {"type": "text", "text": "bun run test:e2e", "style": {"code": true}},
+                {"type": "text", "text": "\n\nIt builds the Rust binary first and exercises the terminal harness."}
+              ]
+            },
+            {
+              "type": "rich_text_section",
+              "elements": [
+                {"type": "text", "text": "Source: "},
+                {
+                  "type": "link",
+                  "url": "https://github.com/kiro-team/kiro-cli/blob/fc05a6803a4122c9170cf6bc809b9ee7786cfabb/docs/testing.md",
+                  "text": "docs/testing.md"
+                },
+                {"type": "text", "text": "."}
+              ]
+            }
+          ]
+        },
+        {
+          "type": "context",
+          "elements": [
+            {
+              "type": "mrkdwn",
+              "text": "AI-generated; verify before acting.",
+              "verbatim": true
+            }
+          ]
+        },
+        {
+          "type": "context_actions",
+          "elements": [
+            {
+              "type": "feedback_buttons",
+              "action_id": "kiro_response_feedback",
+              "positive_button": {
+                "text": {"type": "plain_text", "text": "Good response"},
+                "value": "positive_feedback",
+                "accessibility_label": "Submit positive feedback on this response"
+              },
+              "negative_button": {
+                "text": {"type": "plain_text", "text": "Needs improvement"},
+                "value": "negative_feedback",
+                "accessibility_label": "Submit negative feedback on this response"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "ts": "1700000000.3",
+      "thread_ts": "1700000000.1",
+      "text": "Does that build Rust first?",
+      "user": "U_ALICE"
+    }
+  ],
+  "response_metadata": {
+    "next_cursor": ""
+  }
+}

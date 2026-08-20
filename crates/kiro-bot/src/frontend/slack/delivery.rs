@@ -802,32 +802,184 @@ fn fallback_text(markdown: &str, sources: Option<&str>, has_disclaimer: bool) ->
     fallback
 }
 
-pub(super) fn context_message_text(content: &SlackMessageContent) -> Option<String> {
-    let block_text = content
-        .blocks
-        .as_deref()
+/// Recover the readable text of a message we previously posted, walking the raw
+/// block JSON by `type` tag rather than a typed enum.
+///
+/// This must stay untyped. `slack-morphism`'s `SlackBlock` is an internally
+/// tagged enum with no catch-all variant, and the bot writes two block types it
+/// cannot represent: the `plan` card (no such variant at all) and
+/// `context_actions` carrying `feedback_buttons` (the crate expects
+/// `positive`/`negative`, Slack sends `positive_button`/`negative_button`).
+/// Either one makes serde reject the *whole* enclosing payload, so reading our
+/// own messages back through the typed model is not possible.
+///
+/// `fallback` is the message's top-level `text`, which Slack always populates
+/// and which the bot already writes as the accessibility fallback. Any block
+/// tag we don't understand degrades to that, which covers future card chrome
+/// without needing to model it.
+pub(super) fn context_message_text(fallback: Option<&str>, blocks: Option<&[serde_json::Value]>) -> Option<String> {
+    let mut answer = Vec::new();
+    let mut metadata = Vec::new();
+    // Set when any tag was not understood, at block *or* inline level. Partial
+    // recovery is worse than the fallback, because it silently drops content.
+    let mut lost_content = false;
+    for block in blocks.into_iter().flatten() {
+        match block.get("type").and_then(serde_json::Value::as_str) {
+            Some("markdown") => match block.get("text").and_then(serde_json::Value::as_str) {
+                Some(text) => answer.push(text.to_string()),
+                None => lost_content = true,
+            },
+            Some("rich_text") => match rich_text_block_text(block, &mut lost_content) {
+                Some(text) if !text.is_empty() => answer.push(text),
+                Some(_) => {},
+                None => lost_content = true,
+            },
+            Some("context") => metadata.extend(context_block_text(block)),
+            // Card chrome the bot writes itself: progress plan and the feedback
+            // buttons. Neither carries answer text, so both are simply skipped.
+            Some("plan" | "context_actions") => {},
+            _ => lost_content = true,
+        }
+    }
+    // Either nothing recognisable carried the answer, or we only recovered part
+    // of it — the accessibility fallback is then the faithful source.
+    if answer.is_empty() || lost_content {
+        if let Some(fallback) = fallback.filter(|text| !text.is_empty()) {
+            return Some(fallback.to_string());
+        }
+        if answer.is_empty() {
+            return None;
+        }
+    }
+    answer.extend(metadata);
+    Some(answer.join("\n"))
+}
+
+fn context_block_text(block: &serde_json::Value) -> Vec<String> {
+    block
+        .get("elements")
+        .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
-        .flat_map(|block| match block {
-            SlackBlock::Markdown(markdown) => vec![markdown.text.as_str()],
-            SlackBlock::Context(context) => context
-                .elements
-                .iter()
-                .filter_map(|element| match element {
-                    SlackContextBlockElement::Plain(text) => Some(text.text.as_str()),
-                    SlackContextBlockElement::MarkDown(text) => Some(text.text.as_str()),
-                    SlackContextBlockElement::Image(_) => None,
-                })
-                .collect(),
-            _ => Vec::new(),
+        .filter(|element| {
+            matches!(
+                element.get("type").and_then(serde_json::Value::as_str),
+                Some("plain_text" | "mrkdwn")
+            )
+        })
+        .filter_map(|element| element.get("text").and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+        .collect()
+}
+
+fn rich_text_block_text(block: &serde_json::Value, lost_content: &mut bool) -> Option<String> {
+    let elements = block.get("elements")?.as_array()?;
+    Some(
+        elements
+            .iter()
+            .map(|element| rich_text_element_text(element, lost_content))
+            .filter(|text| !text.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn rich_text_element_text(element: &serde_json::Value, lost_content: &mut bool) -> String {
+    let mut inline = |key| match element.get(key).and_then(serde_json::Value::as_array) {
+        Some(elements) => rich_text_inline_text(elements, lost_content),
+        None => {
+            *lost_content = true;
+            String::new()
+        },
+    };
+    match element.get("type").and_then(serde_json::Value::as_str) {
+        Some("rich_text_section") => inline("elements"),
+        Some("rich_text_preformatted") => format!("```\n{}\n```", inline("elements")),
+        Some("rich_text_quote") => inline("elements")
+            .lines()
+            .map(|line| format!("> {line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Some("rich_text_list") => rich_text_list_text(element, lost_content),
+        _ => {
+            *lost_content = true;
+            String::new()
+        },
+    }
+}
+
+fn rich_text_list_text(element: &serde_json::Value, lost_content: &mut bool) -> String {
+    let Some(items) = element.get("elements").and_then(serde_json::Value::as_array) else {
+        *lost_content = true;
+        return String::new();
+    };
+    let ordered = element.get("style").and_then(serde_json::Value::as_str) == Some("ordered");
+    let indent = "  ".repeat(
+        element
+            .get("indent")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_default() as usize,
+    );
+    let offset = element
+        .get("offset")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or_default();
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let marker = if ordered {
+                format!("{}.", offset + index as u64 + 1)
+            } else {
+                "-".to_string()
+            };
+            format!("{indent}{marker} {}", rich_text_element_text(item, lost_content))
         })
         .collect::<Vec<_>>()
-        .join("\n");
-    if block_text.is_empty() {
-        content.text.clone()
-    } else {
-        Some(block_text)
+        .join("\n")
+}
+
+fn rich_text_inline_text(elements: &[serde_json::Value], lost_content: &mut bool) -> String {
+    elements
+        .iter()
+        .map(|element| {
+            let text = |key: &str| element.get(key).and_then(serde_json::Value::as_str);
+            let rendered = match element.get("type").and_then(serde_json::Value::as_str) {
+                Some("text") => text("text").map(str::to_string),
+                Some("link") => text("url").map(|url| match text("text") {
+                    Some(label) => format!("<{url}|{label}>"),
+                    None => url.to_string(),
+                }),
+                Some("user") => text("user_id").map(|user| format!("<@{user}>")),
+                Some("channel") => text("channel_id").map(|channel| format!("<#{channel}>")),
+                Some("usergroup") => text("usergroup_id").map(|group| format!("<!subteam^{group}>")),
+                Some("emoji") => text("name").map(|name| format!(":{name}:")),
+                Some("broadcast") => text("range").map(|range| format!("@{range}")),
+                _ => None,
+            };
+            match rendered {
+                Some(text) => apply_rich_text_style(text, element.get("style")),
+                None => {
+                    *lost_content = true;
+                    String::new()
+                },
+            }
+        })
+        .collect()
+}
+
+fn apply_rich_text_style(text: String, style: Option<&serde_json::Value>) -> String {
+    let Some(style) = style else {
+        return text;
+    };
+    let enabled = |key| style.get(key).and_then(serde_json::Value::as_bool) == Some(true);
+    if enabled("code") {
+        return format!("`{text}`");
     }
+    [("bold", "*"), ("italic", "_"), ("strike", "~")]
+        .into_iter()
+        .filter(|(key, _)| enabled(key))
+        .fold(text, |text, (_, marker)| format!("{marker}{text}{marker}"))
 }
 
 fn slack_context_markdown(text: &str) -> String {

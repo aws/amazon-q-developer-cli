@@ -254,12 +254,23 @@ mod tests {
         assert!(fallback.ends_with(DISCLAIMER_CONTEXT));
     }
 
+    /// Read a rendered chunk back the way the thread-history path does: over the
+    /// raw wire JSON, not the typed `SlackMessageContent`.
+    fn context_of(content: &SlackMessageContent) -> Option<String> {
+        let blocks = content
+            .blocks
+            .as_ref()
+            .map(|blocks| serde_json::to_value(blocks).unwrap())
+            .and_then(|blocks| blocks.as_array().cloned());
+        context_message_text(content.text.as_deref(), blocks.as_deref())
+    }
+
     #[test]
     fn thread_context_prefers_rendered_markdown_over_fallback_text() {
         let content = render_message("## Root cause\nThe worker stopped.").chunks.remove(0);
 
         assert_eq!(
-            context_message_text(&content).as_deref(),
+            context_of(&content).as_deref(),
             Some("## Root cause\nThe worker stopped.")
         );
     }
@@ -272,10 +283,86 @@ mod tests {
         .chunks
         .remove(0);
 
-        let context = context_message_text(&content).unwrap();
+        let context = context_of(&content).unwrap();
 
         assert!(context.starts_with("The worker stopped."));
         assert!(context.contains("Sources: <https://example.com/acp|ACP lifecycle>"));
+    }
+
+    /// The bot's own card chrome carries no answer text, so it is skipped rather
+    /// than rendered into the agent's thread context.
+    #[test]
+    fn thread_context_skips_plan_and_feedback_card_chrome() {
+        let blocks = serde_json::json!([
+            {"type": "plan", "title": "Working on your request", "tasks": []},
+            {"type": "markdown", "text": "The answer."},
+            {"type": "context_actions", "elements": [{"type": "feedback_buttons"}]},
+        ]);
+
+        assert_eq!(
+            context_message_text(Some("fallback"), blocks.as_array().map(Vec::as_slice)).as_deref(),
+            Some("The answer.")
+        );
+    }
+
+    /// A block type nobody has modelled yet still has to produce usable context:
+    /// Slack always populates top-level `text`, so that is the recovery path.
+    #[test]
+    fn unknown_block_types_fall_back_to_the_accessibility_text() {
+        let blocks = serde_json::json!([{"type": "some_future_card", "payload": {"deeply": "nested"}}]);
+
+        assert_eq!(
+            context_message_text(Some("Readable fallback"), blocks.as_array().map(Vec::as_slice)).as_deref(),
+            Some("Readable fallback")
+        );
+        // With neither a known block nor a fallback there is nothing faithful to
+        // report, so the message is skipped instead of emitting raw JSON.
+        assert_eq!(context_message_text(None, blocks.as_array().map(Vec::as_slice)), None);
+    }
+
+    /// Half an answer is worse than the accessibility fallback: if any inline
+    /// element inside a `rich_text` block is unrecognised, the recovered text
+    /// would silently omit content, so the fallback wins instead.
+    #[test]
+    fn partially_understood_rich_text_prefers_the_complete_fallback() {
+        let blocks = serde_json::json!([{
+            "type": "rich_text",
+            "elements": [{
+                "type": "rich_text_section",
+                "elements": [
+                    {"type": "text", "text": "Deploy is blocked by "},
+                    {"type": "some_future_inline", "text": "the thing that matters"},
+                ]
+            }]
+        }]);
+
+        assert_eq!(
+            context_message_text(
+                Some("Deploy is blocked by the thing that matters"),
+                blocks.as_array().map(Vec::as_slice)
+            )
+            .as_deref(),
+            Some("Deploy is blocked by the thing that matters")
+        );
+
+        // A known tag missing the field that carries its text is the same kind of
+        // partial loss, so it must reach the fallback too rather than rendering
+        // an entry with the emoji silently dropped.
+        let missing_field = serde_json::json!([{
+            "type": "rich_text",
+            "elements": [{
+                "type": "rich_text_section",
+                "elements": [
+                    {"type": "text", "text": "Ship it "},
+                    {"type": "emoji"},
+                ]
+            }]
+        }]);
+
+        assert_eq!(
+            context_message_text(Some("Ship it :rocket:"), missing_field.as_array().map(Vec::as_slice)).as_deref(),
+            Some("Ship it :rocket:")
+        );
     }
 
     #[test]

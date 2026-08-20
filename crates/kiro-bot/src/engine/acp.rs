@@ -382,7 +382,7 @@ pub trait Worker {
 #[async_trait::async_trait(?Send)]
 pub trait WorkerPool {
     fn get(&self, conversation: &str) -> Option<Rc<dyn Worker>>;
-    async fn get_or_spawn(&self, conversation: &str) -> Result<Rc<dyn Worker>, String>;
+    async fn get_or_spawn(&self, conversation: &str) -> Result<Rc<dyn Worker>, WorkerAllocationError>;
     async fn remove(&self, conversation: &str) -> bool;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -390,6 +390,22 @@ pub trait WorkerPool {
     }
     fn max_workers(&self) -> usize;
 }
+
+/// Why a worker could not be allocated.
+///
+/// `Busy` is benign back-pressure (every worker is in use); `Spawn` means the
+/// ACP process would not start. Both used to surface as a bare `String`, so a
+/// crash-looping agent binary and a bot at capacity were indistinguishable in
+/// logs. The user-facing text is unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkerAllocationError {
+    Busy,
+    Spawn(String),
+}
+
+/// Shown to the user when every worker is in use. Kept byte-identical to the
+/// message this path has always returned.
+const WORKER_BUSY_MESSAGE: &str = "⏳ All workers busy — try again shortly";
 
 #[async_trait::async_trait(?Send)]
 trait WorkerFactory {
@@ -1698,7 +1714,7 @@ impl WorkerPool for AcpPool {
         self.workers.borrow().get(conversation).cloned()
     }
 
-    async fn get_or_spawn(&self, conversation: &str) -> Result<Rc<dyn Worker>, String> {
+    async fn get_or_spawn(&self, conversation: &str) -> Result<Rc<dyn Worker>, WorkerAllocationError> {
         let existing_worker = self.workers.borrow().get(conversation).cloned();
         if let Some(worker) = existing_worker {
             match worker.health() {
@@ -1745,13 +1761,13 @@ impl WorkerPool for AcpPool {
             }
         }
         if self.workers.borrow().len() + self.spawning.get() >= self.max {
-            return Err("⏳ All workers busy — try again shortly".into());
+            return Err(WorkerAllocationError::Busy);
         }
         self.spawning.set(self.spawning.get() + 1);
         let _reservation = SpawnReservation {
             spawning: self.spawning.clone(),
         };
-        let w = self.factory.spawn().await?;
+        let w = self.factory.spawn().await.map_err(WorkerAllocationError::Spawn)?;
         self.workers.borrow_mut().insert(conversation.to_string(), w.clone());
         Ok(w)
     }
@@ -1841,7 +1857,17 @@ async fn execute_prompt(
     loop {
         let worker = match pool.get_or_spawn(&conversation).await {
             Ok(worker) => worker,
-            Err(error) => {
+            // Benign back-pressure: every worker is in use. Distinct from a
+            // spawn failure so on-call can tell "at capacity" from "won't start".
+            Err(WorkerAllocationError::Busy) => {
+                warn!(
+                    %request_id,
+                    conversation_id = %conversation,
+                    "ACP worker capacity is exhausted"
+                );
+                return PromptResult::text(WORKER_BUSY_MESSAGE);
+            },
+            Err(WorkerAllocationError::Spawn(error)) => {
                 warn!(
                     %request_id,
                     conversation_id = %conversation,
@@ -3493,7 +3519,9 @@ mod tests {
 
                 let second = pool.get_or_spawn("conversation-b").await;
                 match second {
-                    Err(error) => assert_eq!(error, "⏳ All workers busy — try again shortly"),
+                    // At capacity is reported as `Busy`, not as an opaque string, so
+                    // it stays distinguishable from a spawn crash.
+                    Err(error) => assert_eq!(error, WorkerAllocationError::Busy),
                     Ok(_) => panic!("second spawn exceeded max_workers"),
                 }
 
@@ -3501,6 +3529,28 @@ mod tests {
                 first.await.unwrap().unwrap();
                 assert_eq!(pool.len(), 1);
                 assert_eq!(pool.spawning.get(), 0);
+            })
+            .await;
+    }
+
+    /// A worker that will not start is an operational failure, not back-pressure.
+    /// Both used to arrive as an indistinguishable `String`.
+    #[tokio::test]
+    async fn spawn_failures_are_reported_separately_from_capacity() {
+        tokio::task::LocalSet::new()
+            .run_until(async {
+                let acp_info = Arc::new(Mutex::new(AcpInfo::default()));
+                let factory = Rc::new(TestFactory {
+                    workers: RefCell::new(VecDeque::new()),
+                    acp_info: acp_info.clone(),
+                    spawns: Cell::new(0),
+                });
+                let pool = AcpPool::new(factory, None, 1, acp_info);
+
+                match pool.get_or_spawn("conversation-a").await {
+                    Err(error) => assert_eq!(error, WorkerAllocationError::Spawn("no replacement worker".into())),
+                    Ok(_) => panic!("factory has no worker to hand out"),
+                }
             })
             .await;
     }

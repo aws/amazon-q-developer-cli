@@ -49,6 +49,33 @@ pub(super) struct ThreadSnapshot {
     pub(super) context: Vec<String>,
 }
 
+/// A `conversations.replies` page, deserialized with `blocks` left as raw JSON.
+///
+/// `slack-morphism`'s `SlackHistoryMessage` cannot be used here: its `blocks`
+/// are a `SlackBlock` enum with no catch-all variant, and the bot posts blocks
+/// that enum cannot represent (`plan`, and `context_actions` carrying
+/// `feedback_buttons`). Because the enum is internally tagged, one unrepresentable
+/// block fails the entire page — so the bot could not read back its own threads.
+#[derive(Debug, serde::Deserialize)]
+struct ThreadRepliesPage {
+    messages: Vec<ThreadHistoryMessage>,
+    response_metadata: Option<ThreadRepliesMetadata>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ThreadRepliesMetadata {
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ThreadHistoryMessage {
+    ts: String,
+    user: Option<String>,
+    bot_id: Option<String>,
+    text: Option<String>,
+    blocks: Option<Vec<serde_json::Value>>,
+}
+
 fn transcript_thread_snapshot(turns: Vec<Turn>) -> ThreadSnapshot {
     ThreadSnapshot {
         owned_by_bot: !turns.is_empty(),
@@ -84,36 +111,34 @@ impl ThreadAccumulator {
 
     fn absorb(
         &mut self,
-        message: &SlackHistoryMessage,
+        message: &ThreadHistoryMessage,
         thread_ts: &str,
         bot_user_ids: &[&str],
         bot_id: &str,
         user_map: &UserMap,
     ) {
-        self.owned_by_bot |= message.sender.user.as_ref().is_some_and(|user| {
+        self.owned_by_bot |= message.user.as_ref().is_some_and(|user| {
             bot_user_ids
                 .iter()
-                .any(|candidate| !candidate.is_empty() && *candidate == user.0)
+                .any(|candidate| !candidate.is_empty() && candidate == user)
         }) || message
-            .sender
             .bot_id
             .as_ref()
-            .is_some_and(|candidate| !bot_id.is_empty() && candidate.0 == bot_id);
+            .is_some_and(|candidate| !bot_id.is_empty() && candidate == bot_id);
 
         if self.context_limit == 0 {
             return;
         }
-        let Some(text) = context_message_text(&message.content) else {
+        let Some(text) = context_message_text(message.text.as_deref(), message.blocks.as_deref()) else {
             return;
         };
         let user = message
-            .sender
             .user
             .as_ref()
-            .map(|user| user_map.resolve(user.as_ref()).to_string())
+            .map(|user| user_map.resolve(user).to_string())
             .unwrap_or_else(|| "bot".into());
         let entry = format!("{user}: {text}");
-        if message.origin.ts.0 == thread_ts {
+        if message.ts == thread_ts {
             self.root = Some(entry);
             return;
         }
@@ -163,6 +188,22 @@ pub(super) fn log_thread_context_error(error: &SlackClientError) {
 
 const THREAD_HISTORY_PAGE_SIZE: u16 = 100;
 
+fn thread_replies_params(
+    channel: &str,
+    thread_ts: &str,
+    latest: &str,
+    cursor: Option<&str>,
+) -> Vec<(&'static str, Option<String>)> {
+    vec![
+        ("channel", Some(channel.to_string())),
+        ("ts", Some(thread_ts.to_string())),
+        ("cursor", cursor.map(str::to_string)),
+        ("limit", Some(THREAD_HISTORY_PAGE_SIZE.to_string())),
+        ("inclusive", Some(false.to_string())),
+        ("latest", Some(latest.to_string())),
+    ]
+}
+
 impl SlackFrontend {
     pub(super) fn mark_seen(&self, conversation: &str, before: &str) {
         self.last_seen
@@ -180,18 +221,17 @@ impl SlackFrontend {
         bot_id: &str,
     ) -> ClientResult<ThreadSnapshot> {
         let session = self.client.open_session(&self.bot_token);
-        let channel: SlackChannelId = conversation.into();
-        let latest: SlackTs = before.into();
-        let mut cursor = None;
+        let mut cursor: Option<String> = None;
         let mut accumulator = ThreadAccumulator::new(self.conversation_history);
 
         loop {
-            let mut request = SlackApiConversationsRepliesRequest::new(channel.clone(), thread_ts.into())
-                .with_latest(latest.clone())
-                .with_inclusive(false)
-                .with_limit(THREAD_HISTORY_PAGE_SIZE);
-            request.cursor = cursor.clone();
-            let response = session.conversations_replies(&request).await?;
+            let params = thread_replies_params(conversation, thread_ts, before, cursor.as_deref());
+            // Raw GET: `blocks` must stay untyped, or one unrepresentable block
+            // fails the whole page.
+            let response: ThreadRepliesPage = session
+                .http_session_api
+                .http_get("conversations.replies", &params, Some(&SLACK_TIER3_METHOD_CONFIG))
+                .await?;
             for message in &response.messages {
                 accumulator.absorb(message, thread_ts, bot_user_ids, bot_id, &self.user_map);
             }
@@ -199,7 +239,7 @@ impl SlackFrontend {
             let next_cursor = response
                 .response_metadata
                 .and_then(|metadata| metadata.next_cursor)
-                .filter(|next| !next.0.is_empty());
+                .filter(|next| !next.is_empty());
             if next_cursor.is_none() || next_cursor == cursor {
                 break;
             }
@@ -524,7 +564,7 @@ mod tests {
         user: Option<&str>,
         bot_id: Option<&str>,
         content: SlackMessageContent,
-    ) -> SlackHistoryMessage {
+    ) -> ThreadHistoryMessage {
         serde_json::from_value(serde_json::json!({
             "ts": ts,
             "user": user,
@@ -535,7 +575,7 @@ mod tests {
         .unwrap()
     }
 
-    fn text_history_message(ts: &str, user: &str, text: &str) -> SlackHistoryMessage {
+    fn text_history_message(ts: &str, user: &str, text: &str) -> ThreadHistoryMessage {
         history_message(
             ts,
             Some(user),
@@ -682,5 +722,126 @@ mod tests {
         accumulator.absorb(&message, "99.0", &[], "B_KIRO", &UserMap::empty());
 
         assert!(accumulator.finish().owned_by_bot);
+    }
+
+    /// Captured real `conversations.replies` wire payload for a thread whose bot
+    /// reply carries the live progress card. Reading it back must preserve the
+    /// answer and skip the card chrome.
+    #[test]
+    fn live_card_thread_preserves_complete_rich_text_in_order() {
+        let response: ThreadRepliesPage = serde_json::from_str(include_str!("fixtures/live_card_thread.json")).unwrap();
+        let users = UserMap::from_map(HashMap::from([
+            ("U_ALICE".to_string(), "alice".to_string()),
+            ("U_KIRO".to_string(), "Kiro".to_string()),
+        ]));
+        let mut accumulator = ThreadAccumulator::new(10);
+
+        for message in &response.messages {
+            accumulator.absorb(message, "1700000000.1", &["U_KIRO"], "B_KIRO", &users);
+        }
+        let snapshot = accumulator.finish();
+
+        assert!(snapshot.owned_by_bot);
+        assert_eq!(snapshot.context, vec![
+            "alice: <@U_KIRO> Which command runs the TUI end-to-end suite?",
+            concat!(
+                "Kiro: The command is:\n",
+                "`bun run test:e2e`\n\n",
+                "It builds the Rust binary first and exercises the terminal harness.\n",
+                "Source: <https://github.com/kiro-team/kiro-cli/blob/",
+                "fc05a6803a4122c9170cf6bc809b9ee7786cfabb/docs/testing.md|docs/testing.md>.\n",
+                "AI-generated; verify before acting."
+            ),
+            "alice: Does that build Rust first?"
+        ]);
+        // The rich_text answer was recovered, so the short accessibility fallback
+        // must not also be spliced in.
+        assert!(
+            !snapshot
+                .context
+                .iter()
+                .any(|entry| entry.contains("Short accessibility fallback"))
+        );
+    }
+
+    /// Guards the reason `ThreadRepliesPage` exists. If someone reverts the read
+    /// path to `slack-morphism`'s typed model, this documents why the whole page
+    /// is lost: `SlackBlock` is internally tagged with no catch-all, so a single
+    /// block it cannot represent fails every message in the response.
+    #[test]
+    fn typed_slack_blocks_cannot_parse_the_cards_the_bot_writes() {
+        let fixture = include_str!("fixtures/live_card_thread.json");
+        let raw: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        let bot_reply = &raw["messages"][1];
+
+        let typed = serde_json::from_value::<SlackHistoryMessage>(bot_reply.clone());
+        let error = typed
+            .expect_err("plan block is not representable by SlackBlock")
+            .to_string();
+        assert!(error.contains("unknown variant `plan`"), "unexpected error: {error}");
+
+        // `plan` is not the only offender: the feedback buttons Slack echoes back
+        // use `positive_button`/`negative_button`, while the crate models
+        // `positive`/`negative`.
+        let mut without_plan = bot_reply.clone();
+        without_plan["blocks"] = serde_json::Value::Array(
+            bot_reply["blocks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|block| block["type"] != "plan")
+                .cloned()
+                .collect(),
+        );
+        let error = serde_json::from_value::<SlackHistoryMessage>(without_plan)
+            .expect_err("context_actions feedback buttons are also unrepresentable")
+            .to_string();
+        assert!(error.contains("missing field `positive`"), "unexpected error: {error}");
+
+        // The untyped path used in production reads the same bytes successfully.
+        let page: ThreadRepliesPage = serde_json::from_str(fixture).unwrap();
+        assert_eq!(page.messages.len(), 3);
+    }
+
+    /// The feedback button is dead for the same reason, but one layer out of
+    /// reach: `slack-morphism` decodes the entire socket-mode frame in a single
+    /// `from_str::<SlackSocketModeEvent>` before dispatching to any callback, and
+    /// the clicked message is echoed back inside that frame. So the frame fails,
+    /// the interaction callback is never entered, and no amount of re-parsing
+    /// *inside* the callback can recover the click — the fix has to move the
+    /// boundary, not wrap it.
+    ///
+    /// Kept as an executable statement of the remaining bug so the next attempt
+    /// starts from the real failure point instead of the symptom.
+    ///
+    /// `SlackSocketModeEvent` itself is not publicly reachable (it lives behind
+    /// the crate's private `models` module), so this asserts on the `payload`
+    /// type that the frame parse funnels through — the same failure, one field in.
+    #[test]
+    fn typed_interaction_payload_rejects_a_click_on_the_bot_own_card() {
+        let frame: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/live_card_feedback_interaction.json")).unwrap();
+
+        let error = serde_json::from_value::<SlackInteractionEvent>(frame["payload"].clone())
+            .expect_err("the echoed card blocks are not representable by SlackBlock")
+            .to_string();
+
+        assert!(error.contains("unknown variant `plan`"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn thread_replies_params_carry_the_pagination_cursor() {
+        assert_eq!(thread_replies_params("C123", "170.1", "170.9", None), vec![
+            ("channel", Some("C123".into())),
+            ("ts", Some("170.1".into())),
+            ("cursor", None),
+            ("limit", Some("100".into())),
+            ("inclusive", Some("false".into())),
+            ("latest", Some("170.9".into())),
+        ]);
+        assert_eq!(
+            thread_replies_params("C123", "170.1", "170.9", Some("next-page"))[2],
+            ("cursor", Some("next-page".into()))
+        );
     }
 }
