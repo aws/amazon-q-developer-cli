@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Stray code fence rendered inside a streamed code block when the closing fence spanned two chunks"
+}

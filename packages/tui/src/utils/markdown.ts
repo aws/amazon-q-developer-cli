@@ -101,8 +101,14 @@ const getCodeBlockTailContext = (content: string): CodeBlockTailContext => {
   };
 };
 
-const isIncrementalCodeBlockDeltaSafe = (delta: string): boolean =>
-  !delta.includes('```');
+/**
+ * A fence is three backticks, so a delta carrying only one or two of them can
+ * still close a block opened earlier; test the joined tail to catch those splits.
+ */
+const isIncrementalCodeBlockDeltaSafe = (
+  delta: string,
+  previousRawContent = ''
+): boolean => !`${previousRawContent.slice(-2)}${delta}`.includes('```');
 
 const isPlainTextSegment = (segment: MarkdownSegment): boolean =>
   !!segment.text &&
@@ -175,7 +181,7 @@ export function tryAppendMarkdownDelta(
   const nextSegments = previousSegments.slice();
 
   if (lastSegment?.codeBlock && !lastSegment.codeBlock.isComplete) {
-    if (!isIncrementalCodeBlockDeltaSafe(delta)) {
+    if (!isIncrementalCodeBlockDeltaSafe(delta, previousRawContent)) {
       return null;
     }
 

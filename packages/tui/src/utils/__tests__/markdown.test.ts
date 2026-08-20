@@ -796,6 +796,19 @@ describe('parseMarkdown', () => {
 });
 
 describe('tryAppendMarkdownDelta', () => {
+  /** Consumes chunks the way the renderer does: try incremental, else reparse. */
+  const streamMarkdown = (chunks: string[]) => {
+    let content = chunks[0]!;
+    let segments = parseMarkdown(content);
+    for (const delta of chunks.slice(1)) {
+      segments =
+        tryAppendMarkdownDelta(segments, delta, content) ??
+        parseMarkdown(content + delta);
+      content += delta;
+    }
+    return segments;
+  };
+
   it('appends plain text delta to a text segment', () => {
     const base = parseMarkdown('Hello');
     const appended = tryAppendMarkdownDelta(base, ' world', 'Hello');
@@ -903,6 +916,71 @@ describe('tryAppendMarkdownDelta', () => {
     const content = '```ts\nconst x = 1;';
     const base = parseMarkdown(content);
     expect(tryAppendMarkdownDelta(base, '```', content)).toBeNull();
+  });
+
+  it.each([
+    ['a two-then-one split', '```ts\nconst x = 1;\n``', '`'],
+    ['a one-then-two split', '```ts\nconst x = 1;\n`', '``'],
+  ])(
+    'returns null when the closing fence straddles the delta boundary (%s)',
+    (_label, content, delta) => {
+      const base = parseMarkdown(content);
+      expect(tryAppendMarkdownDelta(base, delta, content)).toBeNull();
+    }
+  );
+
+  it.each([
+    ['two backticks then one', ['```ts\nconst x = 1;\n``', '`']],
+    ['one backtick then two', ['```ts\nconst x = 1;\n`', '``']],
+    [
+      'a fence arriving one character at a time',
+      ['```ts\nconst x = 1;\n', '`', '`', '`'],
+    ],
+  ])(
+    'closes the code block when the closing fence arrives split (%s)',
+    (_label, chunks) => {
+      expect(streamMarkdown(chunks)).toEqual([
+        {
+          text: '',
+          codeBlock: { code: 'const x = 1;', language: 'ts', isComplete: true },
+        },
+      ]);
+    }
+  );
+
+  it('keeps appending incrementally when trailing backticks are not a fence', () => {
+    const content = '```js\nconst t = ';
+    const delta = '`tpl`;';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, delta, content)).toEqual(
+      parseMarkdown(content + delta)
+    );
+  });
+
+  it('keeps appending incrementally when the joined tail has no fence', () => {
+    const content = '```js\nconst s = ``';
+    const delta = '; ok';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, delta, content)).toEqual(
+      parseMarkdown(content + delta)
+    );
+  });
+
+  it('reparses without losing code when the joined tail forms a non-closing fence', () => {
+    const content = '```js\nconst a = ``';
+    const delta = '`;';
+    const base = parseMarkdown(content);
+    expect(tryAppendMarkdownDelta(base, delta, content)).toBeNull();
+    expect(streamMarkdown([content, delta])).toEqual([
+      {
+        text: '',
+        codeBlock: {
+          code: 'const a = ```;',
+          language: 'js',
+          isComplete: false,
+        },
+      },
+    ]);
   });
 
   it('returns null when appending text directly after eof-closing fence', () => {
