@@ -145,6 +145,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
   const fg = rawFg === 'inherit' ? undefined : rawFg;
   const successHex = getColor('success').hex;
   const infoHex = getColor('info').hex;
+  const errorHex = getColor('error').hex;
   const rawMuted = getColor('muted').hex;
   const mutedHex = rawMuted === 'inherit' ? undefined : rawMuted;
   const brandHex = getColor('brand').hex;
@@ -243,6 +244,7 @@ export const ActivityTrayExpanded = React.memo(function ActivityTrayExpanded({
           fg={fg}
           successHex={successHex}
           infoHex={infoHex}
+          errorHex={errorHex}
           mutedHex={mutedHex}
           termWidth={termWidth}
         />
@@ -301,7 +303,7 @@ interface TaskListProps {
   tasks: Array<{
     id: string;
     subject: string;
-    status: 'pending' | 'completed';
+    status: 'pending' | 'running' | 'completed' | 'failed';
   }>;
   scrollOffset: number;
   maxVisible: number;
@@ -309,6 +311,7 @@ interface TaskListProps {
   fg: string | undefined;
   successHex: string;
   infoHex: string;
+  errorHex: string;
   mutedHex: string | undefined;
   termWidth: number;
 }
@@ -321,6 +324,7 @@ function TaskList({
   fg,
   successHex,
   infoHex,
+  errorHex,
   mutedHex,
   termWidth,
 }: TaskListProps) {
@@ -342,6 +346,7 @@ function TaskList({
           {
             successHex,
             infoHex,
+            errorHex,
             mutedHex,
           },
           glyphs,
@@ -361,7 +366,9 @@ function TaskList({
                   2,
                 getColor('muted')
               )
-            : getColor('primary')(task.subject);
+            : task.status === 'failed'
+              ? getColor('error')(`${task.subject} [failed]`)
+              : getColor('primary')(task.subject);
 
         return (
           <Box
@@ -485,15 +492,28 @@ function doneSubject(
 }
 
 function getStatusIcon(
-  status: 'pending' | 'completed',
+  status: 'pending' | 'running' | 'completed' | 'failed',
   isNext: boolean,
-  colors: { successHex: string; infoHex: string; mutedHex: string | undefined },
+  colors: {
+    successHex: string;
+    infoHex: string;
+    errorHex: string;
+    mutedHex: string | undefined;
+  },
   icons: { dotFilled: string; executing: string; dotEmpty: string },
   allowIcons: boolean
 ): { icon: string; color: string | undefined } {
   if (!allowIcons) return { icon: '', color: undefined };
   if (status === 'completed') {
     return { icon: icons.dotFilled, color: colors.successHex };
+  }
+  if (status === 'running') {
+    return { icon: icons.executing, color: colors.infoHex };
+  }
+  if (status === 'failed') {
+    // A filled dot in the error colour, so a failure reads as a state of its
+    // own rather than as a task that never started.
+    return { icon: icons.dotFilled, color: colors.errorHex };
   }
   if (isNext) {
     return { icon: icons.executing, color: colors.infoHex };

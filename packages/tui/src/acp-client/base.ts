@@ -2022,12 +2022,16 @@ export abstract class BaseAcpClient implements SessionClient {
         }
         // Turn boundaries must reach clients that did not submit the turn.
         if (meta?.kind === 'turn_start') {
-          this.broadcastStreamEvent({ type: AgentEventType.TurnStart });
+          emitSideEffect({
+            type: AgentEventType.TurnStart,
+            ...(sessionStateKey ? { sessionId: sessionStateKey } : {}),
+          });
           return null;
         }
         if (meta?.kind === 'turn_end') {
-          this.broadcastStreamEvent({
+          emitSideEffect({
             type: AgentEventType.TurnEnd,
+            ...(sessionStateKey ? { sessionId: sessionStateKey } : {}),
             ...(typeof meta.stopReason === 'string'
               ? { stopReason: meta.stopReason }
               : {}),

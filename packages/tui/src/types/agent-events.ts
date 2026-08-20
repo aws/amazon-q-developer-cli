@@ -107,6 +107,7 @@ export enum AgentEventType {
   ModelRefusal = 'model_refusal',
   SessionRosterDelta = 'session_roster_delta',
   SpecPhaseCheckpoint = 'spec_phase_checkpoint',
+  SpecTaskStatusChanged = 'spec_task_status_changed',
   WorkflowProgress = 'workflow_progress',
   TurnStart = 'turn_start',
   TurnEnd = 'turn_end',
@@ -697,6 +698,36 @@ export interface SpecPhaseCheckpointEvent {
 }
 
 /**
+ * Execution status as the agent reports it. `queued` and `yielded` are part of
+ * the same enum, so a client that assumes only terminal-or-running values will
+ * mishandle a batched run.
+ */
+export const SPEC_TASK_EXECUTION_STATUSES = [
+  'queued',
+  'running',
+  'succeed',
+  'failed',
+  'aborted',
+  'yielded',
+] as const;
+
+export type SpecTaskExecutionStatus =
+  (typeof SPEC_TASK_EXECUTION_STATUSES)[number];
+
+export interface SpecTaskStatusChange {
+  taskId: string;
+  executionStatus: SpecTaskExecutionStatus;
+  lastExecutionId: string;
+}
+
+export interface SpecTaskStatusChangedEvent {
+  type: AgentEventType.SpecTaskStatusChanged;
+  sessionId: string;
+  tasksFilePath: string;
+  changes: SpecTaskStatusChange[];
+}
+
+/**
  * The session's bound-repository set, as KAS reports it over the ACP wire
  * (`_meta.kiro.repositories` on a `session_info_update`). Pushed when the
  * sandbox attaches/detaches repos mid-session, so the cloud footer tracks the
@@ -810,10 +841,12 @@ export interface TurnSummaryEvent {
 
 export interface TurnStartEvent {
   type: AgentEventType.TurnStart;
+  sessionId?: string;
 }
 
 export interface TurnEndEvent {
   type: AgentEventType.TurnEnd;
+  sessionId?: string;
   stopReason?: string;
 }
 
@@ -946,6 +979,7 @@ export type AgentStreamEvent =
   | ModelRefusalEvent
   | SessionRosterDeltaEvent
   | SpecPhaseCheckpointEvent
+  | SpecTaskStatusChangedEvent
   | WorkflowProgressStreamEvent
   | SessionRepositoriesUpdateEvent
   | SystemNoticeEvent;

@@ -1,10 +1,4 @@
-/**
- * Tests for the task-run choices a tasks-phase checkpoint offers.
- *
- * The titles are matched exactly because a drifted title should leave the option
- * inert rather than run something the user didn't ask for — one of the two runs
- * rewrites tasks.md by promoting every optional task.
- */
+/** Tests task-scope parsing for the explicit `/spec run` confirmation. */
 import { describe, it, expect } from 'bun:test';
 import {
   RUN_REQUIRED_AND_OPTIONAL_TASKS,

@@ -1,7 +1,7 @@
 export interface TaskItem {
   id: string;
   subject: string;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'running' | 'completed' | 'failed';
 }
 
 /** Shape returned by the task tool backend (format_full_state). */

@@ -167,6 +167,7 @@ export class Kiro {
   ) => void;
   private turnSummaryHandler?: (event: AgentStreamEvent) => void;
   private initNotificationHandler?: (event: AgentStreamEvent) => void;
+  private specTaskStatusHandler?: (event: AgentStreamEvent) => void;
   private artifactWriteHandler?: (match: SpecArtifactPathMatch) => void;
   private artifactFinishHandler?: (match: SpecArtifactPathMatch) => void;
   /**
@@ -295,6 +296,17 @@ export class Kiro {
     this.questionHandler = handler;
   }
 
+  /**
+   * Register a handler for spec task progress.
+   *
+   * A task run is started by a command rather than a prompt, so no per-message
+   * stream handler is subscribed while it executes and its progress would
+   * otherwise reach no one.
+   */
+  onSpecTaskStatus(handler: (event: AgentStreamEvent) => void): void {
+    this.specTaskStatusHandler = handler;
+  }
+
   onSubagentListUpdate(
     handler: (subagents: any[], pendingStages?: any[]) => void
   ): void {
@@ -378,6 +390,40 @@ export class Kiro {
       );
     }
     return this.sessionClient.invokeSpec(request);
+  }
+
+  /**
+   * Scope task progress for a run to the session it executes on. Returns a
+   * disposer; call it when the run is no longer of interest.
+   *
+   * KAS-only: returns a no-op disposer on engines without spec runs.
+   */
+  watchSpecProgress(sessionId: string): () => void {
+    const client = this.sessionClient as
+      | { watchSpecProgress?: (id: string) => () => void }
+      | undefined;
+    return client?.watchSpecProgress?.(sessionId) ?? ((): void => {});
+  }
+
+  /**
+   * Observe a spec session's execution stream without switching to it.
+   * Returns a disposer; call it to stop observing.
+   *
+   * KAS-only: returns a no-op disposer on engines without session leases.
+   */
+  leaseSpecSession(sessionId: string): () => void {
+    const client = this.sessionClient as
+      | { leaseSpecSession?: (id: string) => () => void }
+      | undefined;
+    return client?.leaseSpecSession?.(sessionId) ?? ((): void => {});
+  }
+
+  /** Abort a run on a session this client observes rather than drives. */
+  cancelSession(sessionId: string): void {
+    const client = this.sessionClient as
+      | { cancelSession?: (id: string) => void }
+      | undefined;
+    client?.cancelSession?.(sessionId);
   }
 
   // ── KAS /context ext methods ─────────────────────────────────────────
@@ -859,6 +905,12 @@ export class Kiro {
           this.initNotificationHandler
         ) {
           this.initNotificationHandler(event);
+        }
+        if (
+          event.type === AgentEventType.SpecTaskStatusChanged &&
+          this.specTaskStatusHandler
+        ) {
+          this.specTaskStatusHandler(event);
         }
         // Forward approval requests from background sessions (e.g. /spawn)
         // so they surface in the UI even when no sendMessage() is active.

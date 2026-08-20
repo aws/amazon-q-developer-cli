@@ -58,7 +58,9 @@ import {
   type KiroMeta,
   type McpServerSnapshotEvent,
   SPEC_CHECKPOINT_PHASES,
+  SPEC_TASK_EXECUTION_STATUSES,
   type SpecCheckpointPhase,
+  type SpecTaskExecutionStatus,
 } from '../types/agent-events';
 import { InvokeSubagentPipelineAdapter } from '../utils/invoke-subagent-pipeline';
 import type {
@@ -317,6 +319,85 @@ function stringValue(value: unknown): string | undefined {
 }
 
 /**
+ * Whether a session-scoped notification belongs to a session this client shows.
+ *
+ * The session the client drives is too narrow a scope on its own: a spec task
+ * run executes on the spec's own session while the user stays in their chat, so
+ * its progress arrives tagged with a session id the client never sends on.
+ * Notifications for an unrelated session are still dropped.
+ */
+export function isWatchedSession(
+  notificationSessionId: string | undefined,
+  drivenSessionId: string | undefined,
+  observedSessionIds: ReadonlySet<string>
+): boolean {
+  if (!notificationSessionId) return false;
+  return (
+    notificationSessionId === drivenSessionId ||
+    observedSessionIds.has(notificationSessionId)
+  );
+}
+
+interface ParsedSpecTaskStatusNotification {
+  sessionId: string;
+  tasksFilePath: string;
+  changes: Array<{
+    taskId: string;
+    executionStatus: SpecTaskExecutionStatus;
+    lastExecutionId: string;
+  }>;
+}
+
+export function parseSpecTaskStatusNotification(
+  params: unknown
+): ParsedSpecTaskStatusNotification | null {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
+    return null;
+  }
+  const value = params as Record<string, unknown>;
+  if (
+    typeof value.sessionId !== 'string' ||
+    value.sessionId.length === 0 ||
+    typeof value.tasksFilePath !== 'string' ||
+    value.tasksFilePath.length === 0 ||
+    !Array.isArray(value.changes)
+  ) {
+    return null;
+  }
+
+  const changes: ParsedSpecTaskStatusNotification['changes'] = [];
+  for (const change of value.changes) {
+    if (!change || typeof change !== 'object' || Array.isArray(change)) {
+      continue;
+    }
+    const candidate = change as Record<string, unknown>;
+    if (
+      typeof candidate.taskId !== 'string' ||
+      candidate.taskId.length === 0 ||
+      !SPEC_TASK_EXECUTION_STATUSES.includes(
+        candidate.executionStatus as SpecTaskExecutionStatus
+      ) ||
+      typeof candidate.lastExecutionId !== 'string' ||
+      candidate.lastExecutionId.length === 0
+    ) {
+      continue;
+    }
+    changes.push({
+      taskId: candidate.taskId,
+      executionStatus: candidate.executionStatus as SpecTaskExecutionStatus,
+      lastExecutionId: candidate.lastExecutionId,
+    });
+  }
+  if (changes.length === 0) return null;
+
+  return {
+    sessionId: value.sessionId,
+    tasksFilePath: value.tasksFilePath,
+    changes,
+  };
+}
+
+/**
  * Whether a `_kiro/*` config push carries an explicit failure status
  * (`{status:'failed', error}` — e.g. the installed-powers scan threw).
  * Shared by the powers/steering/diagnostics handlers so the three cannot
@@ -411,6 +492,12 @@ export class KasAcpClient extends BaseAcpClient {
   };
   private pendingOAuthServerNames: Set<string> = new Set();
   private chatSessionStartedSessions = new Set<string>();
+  /**
+   * Sessions this client observes but does not drive. Notifications scoped to a
+   * session are accepted for these too, so a run watched on the spec's own
+   * session still reports.
+   */
+  private readonly observedSessions = new Set<string>();
   /** Correlates V3 ToolCall → ToolCallFinished into tool telemetry (KAS-only). */
   private readonly v3ToolCalls: TuiToolCallObserver;
   /** Fixed for this client's life: the extension subscribes once at
@@ -1614,6 +1701,26 @@ export class KasAcpClient extends BaseAcpClient {
           featureName: p.featureName,
           phase: p.phase,
           artifactPath: p.artifactPath,
+        });
+      }
+    );
+    this.kiroClient.onExtNotification(
+      '_kiro/spec/taskStatusChanged',
+      (params) => {
+        const notification = parseSpecTaskStatusNotification(params);
+        if (!notification) return;
+        if (
+          !isWatchedSession(
+            notification.sessionId,
+            this.sessionId,
+            this.observedSessions
+          )
+        ) {
+          return;
+        }
+        this.broadcastStreamEvent({
+          type: AgentEventType.SpecTaskStatusChanged,
+          ...notification,
         });
       }
     );
@@ -3106,6 +3213,53 @@ export class KasAcpClient extends BaseAcpClient {
    */
   async invokeSpec(request: SpecInvokeRequest): Promise<SpecInvokeResponse> {
     return this.kiroClient.sendExtMethod('_kiro/spec/invoke', request);
+  }
+
+  /**
+   * Scope task progress for a run to the session it executes on.
+   *
+   * Kept separate from watching the stream: progress has to outlive the surface
+   * that renders it, since the run continues after the user leaves and the tray
+   * is what carries it from there.
+   */
+  watchSpecProgress(sessionId: string): () => void {
+    this.observedSessions.add(sessionId);
+    return () => {
+      this.observedSessions.delete(sessionId);
+    };
+  }
+
+  /**
+   * Observe a spec session's execution stream without switching to it.
+   *
+   * Task execution runs on its own session (it needs the spec's conversation
+   * history as context), so its events never reach a client watching a
+   * different session. Leasing subscribes to that stream and routes it to the
+   * multi-session sink, where a surface can render it while the user's own
+   * session stays put.
+   */
+  leaseSpecSession(sessionId: string): () => void {
+    const lease = this.extensionRuntime.leaseSession(sessionId, {
+      onUpdate: async (notification) => {
+        if (notification.sessionId !== sessionId) return;
+        const sink = (event: AgentStreamEvent) =>
+          this.broadcastMultiSession(sessionId, event);
+        const event = this.convertAcpUpdateToEvent(
+          notification.update as AcpSessionUpdate,
+          sessionId,
+          sink
+        );
+        if (event) sink(event);
+      },
+      onPermission: (request) =>
+        this.handleKasPermissionRequest(request, sessionId),
+    });
+    return () => lease.dispose();
+  }
+
+  /** Abort a run on a session the client is observing rather than driving. */
+  cancelSession(sessionId: string): void {
+    this.kiroClient.cancel(sessionId);
   }
 
   async getCommandOptions(

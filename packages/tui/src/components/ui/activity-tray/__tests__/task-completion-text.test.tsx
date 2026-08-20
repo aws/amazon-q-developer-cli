@@ -138,6 +138,15 @@ describe('ActivityTrayExpanded task completion', () => {
     });
   });
 
+  it('marks a failed task in text', async () => {
+    const output = await renderTasks([
+      { id: '1', subject: 'Run deployment', status: 'failed' },
+    ]);
+
+    expect(output).toContain('Run deployment [failed]');
+    expect(output).not.toContain('[done]');
+  });
+
   it('leaves a pending task unmarked', async () => {
     const output = await renderTasks([
       { id: '1', subject: 'Wire up the parser', status: 'pending' },
