@@ -1,0 +1,11 @@
+#!/bin/sh
+# Post-checkout hook for kiro-cli: surface stale installed deps on branch
+# switches. Skips file checkouts (flag 0) — only branch changes can move the
+# dependency pin.
+
+[ "$3" = "1" ] || exit 0
+
+hooks_dir="$(dirname "$0")"
+"$hooks_dir/check-kas-freshness"
+
+exit 0

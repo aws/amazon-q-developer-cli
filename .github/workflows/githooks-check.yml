@@ -1,0 +1,22 @@
+name: "PR: Git Hooks Check"
+
+on:
+  pull_request:
+    paths:
+      - ".githooks/**"
+      - "scripts/test-kas-freshness.sh"
+      - "scripts/setup-hooks.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  hooks:
+    name: Git hooks regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the KAS freshness hooks
+        run: ./scripts/test-kas-freshness.sh

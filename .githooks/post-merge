@@ -1,0 +1,7 @@
+#!/bin/sh
+# Post-merge hook for kiro-cli: surface stale installed deps after pulls.
+
+hooks_dir="$(dirname "$0")"
+"$hooks_dir/check-kas-freshness"
+
+exit 0

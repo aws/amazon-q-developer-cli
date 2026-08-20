@@ -1,0 +1,52 @@
+#!/bin/sh
+# Warns when installed @kiro/* packages no longer match their package.json
+# pins. Warn-only: dependency bumps land on main faster than checkouts re-run
+# `bun install`, and a stale install silently changes what the TUI runs and
+# what tooling reads from node_modules. Never fails the git operation, and
+# never installs: `bun install` needs a live CodeArtifact token, which a git
+# pull must not block on.
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+pkg="$repo_root/packages/tui/package.json"
+[ -f "$pkg" ] || exit 0
+
+# The three KAS packages are pinned and bumped in lockstep.
+warnings=""
+for name in agent client acp-type-covenant; do
+    installed_json=""
+    for candidate in \
+        "$repo_root/packages/tui/node_modules/@kiro/$name/package.json" \
+        "$repo_root/node_modules/@kiro/$name/package.json"; do
+        if [ -f "$candidate" ]; then
+            installed_json="$candidate"
+            break
+        fi
+    done
+    # No install present (fresh worktree): nothing stale to warn about.
+    [ -n "$installed_json" ] || continue
+
+    pinned=$(sed -n 's/.*"@kiro\/'"$name"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$pkg" | head -1)
+    # Only exact pins are judged; a range pin needs semver logic this
+    # warn-only check should not grow.
+    pinned=${pinned#=}
+    case "$pinned" in
+        ''|*['^~ <>|*x']*) continue ;;
+    esac
+
+    actual=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$installed_json" | head -1)
+    [ -n "$actual" ] || continue
+
+    if [ "$pinned" != "$actual" ]; then
+        warnings="$warnings
+   @kiro/$name: installed $actual, pinned $pinned"
+    fi
+done
+
+if [ -n "$warnings" ]; then
+    echo ""
+    echo "⚠️  Stale KAS install (packages/tui/package.json pins have moved):$warnings"
+    echo "   Run 'bun install' from the repo root to sync."
+    echo ""
+fi
+
+exit 0
