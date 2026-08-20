@@ -1,15 +1,29 @@
 name: kiro-bot-release
 
-# Phase 5 of the kiro-help bot roadmap. Builds and publishes the bot binaries
-# into a single binary-carrier image in ECR, then writes the digest to SSM so
-# CodeBuild can rebuild the runtime image and ECS can roll the service.
+# Cross-compiles the kiro-bot binaries, then builds the FINAL runtime image here
+# and writes its digest to SSM at /kiro-help-bot/alpha/runtime-image-digest.
+# The CDK stacks read that parameter at deploy time and own the ECS cluster,
+# service, and task definition, so CloudFormation is the only writer of the
+# task-def family.
+#
+# Alpha is the only stage this workflow publishes. There is no prod: no prod
+# stack, no prod SSM parameter, and the publisher role's OIDC trust pins both
+# `sub` and `ref` to refs/heads/*, so a tag could not publish even if it fired.
 #
 # Triggers:
-#   - push to feature/kiro-bot or main, restricted to paths that affect the
-#     bot binaries — avoids rebuilding the world on unrelated kiro-cli changes.
-#   - tag push matching kiro-bot-v* — promotes the digest to /prod/.
+#   - push to main, restricted to paths that affect the bot binaries — avoids
+#     rebuilding the world on unrelated kiro-cli changes.
 #   - manual dispatch — this workflow revision fails explicitly; select a
 #     revision that implements the manual release jobs.
+
+# One release at a time per ref. Without this, two overlapping runs can push
+# images in one order and write the digest parameter in the other, leaving the
+# parameter — and therefore the next CloudFormation deploy — on the older image.
+# Never cancel-in-progress: a run cancelled between the ECR push and the SSM
+# write is exactly the state this prevents.
+concurrency:
+  group: kiro-bot-release-${{ github.ref }}
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:
@@ -26,9 +40,6 @@ on:
   push:
     branches:
       - main
-      - feature/kiro-bot
-    tags:
-      - 'kiro-bot-v*'
     paths:
       - 'crates/kiro-bot/**'
       - 'crates/kiro-knowledge-mcp/**'
@@ -40,6 +51,10 @@ on:
       # three-file allowlist to avoid the bot running on a stale binary.
       - 'crates/chat-cli/**'
       - 'crates/chat-cli-v2/**'
+      # This workflow now builds the runtime image itself, so a change to the
+      # workflow is a change to the release. Without this, workflow-only edits
+      # are untestable.
+      - '.github/workflows/kiro-bot-release.yml'
 
 permissions:
   id-token: write
@@ -48,8 +63,8 @@ permissions:
 env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT: '551670267384'
-  BINARIES_REPO: kiro-bot-binaries
-  PUBLISHER_ROLE_ARN: arn:aws:iam::551670267384:role/GitHubActionsKiroBotPublisher
+  RUNTIME_REPO: kiro-bot
+  PUBLISHER_ROLE_ARN: arn:aws:iam::551670267384:role/GitHubActionsKiroBotAlphaPublisher
   TARGET: aarch64-unknown-linux-gnu
 
 jobs:
@@ -123,7 +138,7 @@ jobs:
             -p kiro-mcp
       - name: Stage artifacts
         run: |
-          mkdir -p artifacts artifacts/agents
+          mkdir -p artifacts artifacts/agents artifacts/kiro-help
           cp target/${{ env.TARGET }}/release/kiro-bot           artifacts/
           cp target/${{ env.TARGET }}/release/chat_cli           artifacts/kiro-cli
           cp target/${{ env.TARGET }}/release/kiro-knowledge-mcp artifacts/
@@ -140,18 +155,24 @@ jobs:
           # runs. Ship the whole agents/ directory so any new prompt,
           # skill, or reference file is picked up without a workflow edit.
           cp -r crates/kiro-bot/agents/. artifacts/agents/
+          # Runtime config templates -> /etc/kiro-help/ in the runtime image.
+          # These stay un-substituted; docker/entrypoint.sh expands
+          # ${BOT_MEMBER_ID} and ${ALLOWED_CHANNEL_ID} at container start.
+          cp -r crates/kiro-bot/kiro-help/. artifacts/kiro-help/
+          # The commit the container git-fetches into its worktree. Must be a
+          # 40-char sha that exists on the remote: entrypoint.sh fetches it by
+          # exact sha and asserts rev-parse HEAD matches, so a local-only or
+          # force-pushed-away commit makes the container unbootable.
+          printf '%s\n' "$GITHUB_SHA" > artifacts/source-sha
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ env.TARGET }}
           path: artifacts/
 
-  publish-image:
-    name: Publish binary-carrier image
+  publish-runtime-image:
+    name: Publish runtime image
     runs-on: ubuntu-latest
     needs: [build-binaries]
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
-      stage: ${{ steps.stage.outputs.stage }}
     steps:
       - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
@@ -162,49 +183,58 @@ jobs:
         with:
           name: binaries-${{ env.TARGET }}
           path: ./artifacts
-      - name: Resolve target stage
-        id: stage
-        run: |
-          STAGE=alpha
-          if [[ "${GITHUB_REF}" == refs/tags/kiro-bot-v* ]]; then STAGE=prod; fi
-          echo "stage=$STAGE" >> $GITHUB_OUTPUT
+      # This runner is amd64 and the image is arm64. This Dockerfile runs
+      # apt-get, groupadd and chmod in the target image, so the kernel needs a
+      # registered handler for aarch64 binaries.
+      - uses: docker/setup-qemu-action@v3
+      # Provisions the docker-container driver. Two things need it: cross-arch
+      # RUN, and --provenance/--sbom, which the default `docker` driver rejects
+      # unless the daemon runs the containerd image store. This is the
+      # `docker buildx create --use` that build-runtime.sh had; CodeBuild also
+      # ran on a native arm64 image, which GitHub-hosted ubuntu-latest is not.
+      - uses: docker/setup-buildx-action@v3
       - name: Login to ECR
         run: |
           aws ecr get-login-password --region ${{ env.AWS_REGION }} \
             | docker login --username AWS --password-stdin \
               ${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-      - name: Build & push binary-carrier image
+      - name: Build & push runtime image
         id: push
         run: |
+          # Artifact download drops the exec bit. The Dockerfile's `RUN chmod
+          # 0555` is what actually sets the in-image mode, so this is belt and
+          # braces for anyone building from a downloaded artifact by hand.
           chmod +x artifacts/kiro-bot artifacts/kiro-cli artifacts/kiro-knowledge-mcp artifacts/kiro-github-mcp artifacts/kiro-mcp artifacts/kiro-taskei-mcp
-          cat > Dockerfile.carrier <<'EOF'
-          FROM scratch
-          COPY artifacts/kiro-bot              /usr/local/bin/kiro-bot
-          COPY artifacts/kiro-cli              /usr/local/bin/kiro-cli
-          COPY artifacts/kiro-knowledge-mcp    /usr/local/bin/kiro-knowledge-mcp
-          COPY artifacts/kiro-github-mcp       /usr/local/bin/kiro-github-mcp
-          COPY artifacts/kiro-mcp              /usr/local/bin/kiro-mcp
-          # Phase 1c-bundle deprecation alias — removed in Phase 2.
-          COPY artifacts/kiro-taskei-mcp       /usr/local/bin/kiro-taskei-mcp
-          # Agent files for kiro-help. The runtime Dockerfile copies them
-          # into /root/.kiro/agents/ so chat-cli-v2's disk-loader resolves
-          # `--agent kiro-help` when the bot launches the ACP worker.
-          COPY artifacts/agents/               /etc/kiro-help-agents/
-          EOF
-          IMAGE=${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.BINARIES_REPO }}
+          IMAGE=${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.RUNTIME_REPO }}
+          # The kiro-bot repo is IMMUTABLE, so the tag must be unique per run
+          # attempt or a re-run of the same commit fails on push.
+          TAG="alpha-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          # Context is the repo root: the Dockerfile needs both ./artifacts and
+          # crates/kiro-bot/docker/entrypoint.sh. Provenance and SBOM carry over
+          # from the CodeBuild build this replaces.
           docker buildx build --platform linux/arm64 \
-            --provenance=false \
             --push \
-            -t "$IMAGE:${GITHUB_SHA}" \
-            -f Dockerfile.carrier .
+            --provenance=mode=max \
+            --sbom=true \
+            --build-arg SOURCE_SHA="${GITHUB_SHA}" \
+            -t "$IMAGE:$TAG" \
+            -f crates/kiro-bot/docker/runtime.Dockerfile \
+            .
           DIGEST=$(aws ecr describe-images \
-            --repository-name ${{ env.BINARIES_REPO }} \
-            --image-ids imageTag=${GITHUB_SHA} \
+            --repository-name ${{ env.RUNTIME_REPO }} \
+            --image-ids imageTag="$TAG" \
             --query 'imageDetails[0].imageDigest' --output text)
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-      - name: Write SSM digest
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "::error title=Bad runtime digest::describe-images returned '$DIGEST'"
+            exit 1
+          }
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Write SSM runtime digest
+        # Read at deploy time by stack.ts via
+        # ssm.StringParameter.valueForStringParameter, so CloudFormation stays
+        # the only writer of the ECS task definition.
         run: |
           aws ssm put-parameter \
-            --name /kiro-help-bot/${{ steps.stage.outputs.stage }}/binary-image-digest \
+            --name /kiro-help-bot/alpha/runtime-image-digest \
             --value '${{ steps.push.outputs.digest }}' \
             --type String --overwrite

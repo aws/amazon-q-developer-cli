@@ -153,12 +153,23 @@ mod tests {
     use super::*;
     use crate::engine::core::Conversation;
 
-    /// Phase 6 Task 4: the kiro-help bot's Cedar policy, as committed under
-    /// crates/kiro-bot/kiro-help/policies/agents.cedar. We embed the same
-    /// text and parse it directly rather than going through the file-loading
+    /// The kiro-help bot's Cedar policy, as committed under
+    /// crates/kiro-bot/kiro-help/policies/agents.cedar. We embed the same text
+    /// and parse it directly rather than going through the file-loading
     /// constructor — that keeps the test self-contained without taking on a
     /// `tempfile` dev-dep just for one file write.
-    const KIRO_HELP_POLICY: &str = include_str!("../../kiro-help/policies/agents.cedar");
+    ///
+    /// It is a template, and the placeholder sits inside a Cedar string literal,
+    /// so the raw file parses fine — it just denotes a channel id nothing can
+    /// match. We substitute it exactly the way docker/entrypoint.sh does at
+    /// container start so the allow/deny tests below discriminate on the channel
+    /// rather than passing because no channel is allowed at all.
+    const KIRO_HELP_POLICY_TEMPLATE: &str = include_str!("../../kiro-help/policies/agents.cedar");
+    const TEST_CHANNEL_ID: &str = "C0B6ESS6CF9";
+
+    fn kiro_help_policy() -> String {
+        KIRO_HELP_POLICY_TEMPLATE.replace("${ALLOWED_CHANNEL_ID}", TEST_CHANNEL_ID)
+    }
 
     fn load(policy_text: &str) -> Authorizer {
         let policies = PolicySet::from_str(policy_text).expect("parse cedar policy");
@@ -173,12 +184,37 @@ mod tests {
 
     #[test]
     fn kiro_help_policy_parses() {
-        let _ = load(KIRO_HELP_POLICY);
+        let _ = load(&kiro_help_policy());
+    }
+
+    /// Both placeholders are the contract entrypoint.sh greps for; if someone
+    /// bakes a real id back into either file, the container refuses to start.
+    /// config.toml is checked here too because it is the likelier one to be
+    /// hand-edited, and nothing else in the crate reads the committed copy.
+    ///
+    /// Exactly once, not merely present: the entrypoint substitutes globally, so
+    /// a second copy of the token — in a comment, say — gets rewritten into a
+    /// bogus channel id in the deployed file. That is easy to reintroduce while
+    /// editing the header comment, so it is asserted rather than documented.
+    #[test]
+    fn kiro_help_config_keeps_the_substitution_placeholders() {
+        assert_eq!(
+            KIRO_HELP_POLICY_TEMPLATE.matches("${ALLOWED_CHANNEL_ID}").count(),
+            1,
+            "agents.cedar must contain the placeholder exactly once — entrypoint.sh substitutes globally"
+        );
+        assert_eq!(
+            include_str!("../../kiro-help/config.toml")
+                .matches("${BOT_MEMBER_ID}")
+                .count(),
+            1,
+            "config.toml must contain the placeholder exactly once — entrypoint.sh substitutes globally"
+        );
     }
 
     #[test]
     fn kiro_help_policy_allows_dms() {
-        let authz = load(KIRO_HELP_POLICY);
+        let authz = load(&kiro_help_policy());
         let convo = Conversation::Dm {
             channel: "D123".to_string(),
             user: "U_USER".to_string(),
@@ -191,17 +227,15 @@ mod tests {
     }
 
     #[test]
-    fn kiro_help_policy_allows_explicit_channels() {
-        let authz = load(KIRO_HELP_POLICY);
-        let beta = Conversation::Channel("C0KIROHELPBETA".to_string());
-        let prod = Conversation::Channel("C0KIROHELPPROD".to_string());
-        assert!(authz.can_use_bot("U_USER", &beta).unwrap());
-        assert!(authz.can_use_bot("U_USER", &prod).unwrap());
+    fn kiro_help_policy_allows_the_substituted_channel() {
+        let authz = load(&kiro_help_policy());
+        let allowed = Conversation::Channel(TEST_CHANNEL_ID.to_string());
+        assert!(authz.can_use_bot("U_USER", &allowed).unwrap());
     }
 
     #[test]
     fn kiro_help_policy_denies_unlisted_channels() {
-        let authz = load(KIRO_HELP_POLICY);
+        let authz = load(&kiro_help_policy());
         let other = Conversation::Channel("C_RANDOM".to_string());
         assert!(
             !authz.can_use_bot("U_USER", &other).unwrap(),
@@ -211,18 +245,18 @@ mod tests {
 
     #[test]
     fn kiro_help_policy_inherits_channel_access_for_threads() {
-        let authz = load(KIRO_HELP_POLICY);
+        let authz = load(&kiro_help_policy());
         // Threads share their parent channel's access (authz_id projects to
-        // 'channel:<id>'). Beta-channel thread is allowed; random thread is not.
-        let beta_thread = Conversation::Thread {
-            channel: "C0KIROHELPBETA".to_string(),
+        // 'channel:<id>'). Allowed-channel thread is permitted; random is not.
+        let allowed_thread = Conversation::Thread {
+            channel: TEST_CHANNEL_ID.to_string(),
             thread_ts: "1700000000.000".to_string(),
         };
         let random_thread = Conversation::Thread {
             channel: "C_RANDOM".to_string(),
             thread_ts: "1700000000.000".to_string(),
         };
-        assert!(authz.can_use_bot("U_USER", &beta_thread).unwrap());
+        assert!(authz.can_use_bot("U_USER", &allowed_thread).unwrap());
         assert!(!authz.can_use_bot("U_USER", &random_thread).unwrap());
     }
 }

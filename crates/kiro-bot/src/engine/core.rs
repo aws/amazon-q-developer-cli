@@ -1498,12 +1498,27 @@ mod tests {
     #[tokio::test]
     async fn access_denied_reply_delivery_failure_is_surfaced_and_retryable() {
         let coordinator = Arc::new(crate::engine::coordinator::NoopCoordinator::new());
-        let policy_path = concat!(env!("CARGO_MANIFEST_DIR"), "/kiro-help/policies/agents.cedar");
+        // agents.cedar is a template. Loaded raw it parses but allows no channel
+        // at all, which would make the denial below hold for the wrong reason —
+        // so substitute ${ALLOWED_CHANNEL_ID} the way docker/entrypoint.sh does,
+        // leaving C_NOT_ALLOWED denied because it is unlisted.
+        let template = include_str!("../../kiro-help/policies/agents.cedar");
+        let policy_dir = tempfile::tempdir().expect("tempdir");
+        let policy_path = policy_dir.path().join("agents.cedar");
+        std::fs::write(&policy_path, template.replace("${ALLOWED_CHANNEL_ID}", "C_ALLOWED")).expect("write policy");
         let (core, _work_receiver) = policy_reply_core(
             coordinator,
             Some(Arc::new(
-                Authorizer::new(policy_path, None, None).expect("load test policy"),
+                Authorizer::new(policy_path.to_str().expect("utf-8 path"), None, None).expect("load test policy"),
             )),
+        );
+        assert!(
+            core.authz
+                .as_ref()
+                .unwrap()
+                .can_use_bot("test-user", &Conversation::Channel("C_ALLOWED".into()))
+                .unwrap(),
+            "the substituted channel must be allowed, or the denial below proves nothing"
         );
         assert!(
             !core

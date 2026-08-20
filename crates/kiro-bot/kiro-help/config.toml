@@ -1,4 +1,8 @@
 name = "kiro-help"
+# The git worktree the container entrypoint clones at the embedded source-sha.
+# Without this the agent is rooted in the bot's own config dir, which
+# agents/kiro-help.json denies reads on ($KIRO_HOME/bots).
+working_directory = "/var/lib/kiro-cli"
 
 [rate_limit]
 max_prompts = 10
@@ -7,7 +11,10 @@ window_secs = 60
 [frontend]
 type = "slack"
 bot_name = "KiroHelp"
-bot_member_id = "U0B2T7JNXLL"
+# Substituted by docker/entrypoint.sh from the BOT_MEMBER_ID env var the CDK
+# stack injects per stage. Keep it a placeholder: the entrypoint hard-fails if
+# this literal is missing, and a baked-in id breaks @-mention detection.
+bot_member_id = "${BOT_MEMBER_ID}"
 conversation_history = 10
 
 [agent]

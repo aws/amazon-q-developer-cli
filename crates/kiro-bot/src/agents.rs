@@ -130,6 +130,64 @@ mod tests {
         );
     }
 
+    /// Every `mcpServers[].command` must be a binary the runtime image actually
+    /// installs, otherwise kiro-cli fails to spawn the server and the tool is
+    /// silently unavailable — `/healthz` still returns 200, so nothing catches it.
+    ///
+    /// This regressed once already: the CDK-owned Dockerfile deliberately did not
+    /// package `kiro-knowledge-mcp` while this file declared it, so the running
+    /// image could not start `search_kiro_knowledge` at all. The two repos
+    /// encoded opposite intents and nothing failed. This test makes the agent
+    /// definition the single source of truth.
+    #[test]
+    fn runtime_image_installs_every_declared_mcp_command() {
+        let dockerfile = include_str!("../docker/runtime.Dockerfile");
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../agents/kiro-help.json")).expect("valid agent JSON");
+
+        let servers = v["mcpServers"].as_object().expect("mcpServers must be an object");
+        assert!(
+            !servers.is_empty(),
+            "kiro-help.json must declare at least one MCP server"
+        );
+
+        // Every path in the `RUN chmod 0555` list, one per line. Matching the
+        // chmod list rather than the whole file is what makes this prove the
+        // binary is executable: `readonlyRootFilesystem` means a binary that was
+        // COPYed but left out of the chmod list cannot be fixed at runtime.
+        // Exact line equality also stops a declared `foo` from being satisfied
+        // by an installed `foo-bar`.
+        let chmod_list: Vec<&str> = dockerfile
+            .split("RUN chmod 0555")
+            .nth(1)
+            .expect("runtime.Dockerfile must chmod its binaries")
+            .lines()
+            .map(|line| line.trim().trim_end_matches('\\').trim())
+            // The `RUN chmod 0555 \` line itself has nothing left after trimming.
+            .skip_while(|line| line.is_empty())
+            .take_while(|line| line.starts_with('/'))
+            .collect();
+
+        for (name, server) in servers {
+            let command = server["command"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{name} needs a command"));
+            // Bare command name => resolved from PATH, so it must be installed.
+            let installed = format!("/usr/local/bin/{command}");
+            assert!(
+                dockerfile.contains(&format!("COPY artifacts/{command} ")),
+                "kiro-help.json declares MCP server {name:?} with command {command:?}, \
+                 but docker/runtime.Dockerfile never COPYs it to {installed}."
+            );
+            assert!(
+                chmod_list.contains(&installed.as_str()),
+                "kiro-help.json declares MCP server {name:?} with command {command:?}, \
+                 but {installed} is missing from runtime.Dockerfile's `RUN chmod 0555` list, \
+                 so it lands non-executable in a read-only root filesystem."
+            );
+        }
+    }
+
     /// Slack bot has no general-purpose shell or file-write capability.
     /// GitHub writes remain available only through the reaction-approval gate.
     #[test]
