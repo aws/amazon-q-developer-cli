@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Tool details now preserve cross-platform file names, timeout context, workflow identity, and session action labels"
+}

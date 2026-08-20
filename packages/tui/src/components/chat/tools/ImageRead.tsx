@@ -3,6 +3,7 @@ import { Box } from './../../../renderer.js';
 import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 import { getToolLabel } from '../../../types/tool-status.js';
@@ -46,7 +47,7 @@ export const ImageRead = React.memo(function ImageRead({
       const paths: string[] = parsed.paths ?? [];
       if (paths.length === 0) return undefined;
       if (paths.length === 1) {
-        return paths[0]!.split('/').pop() || paths[0];
+        return displayBasename(paths[0]!);
       }
       return `(${paths.length} images)`;
     } catch {

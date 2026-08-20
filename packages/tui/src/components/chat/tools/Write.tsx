@@ -9,6 +9,7 @@ import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { diffLines, type Change } from 'diff';
 import { getToolLabel } from '../../../types/tool-status.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { useToolDisplayPolicy } from '../../ui/VerbosityToolContext.js';
 
@@ -227,7 +228,7 @@ export const Write = React.memo<WriteProps>(function Write({
               parsedContent?.insertLine === undefined &&
               getColor('secondary')(` at L${diffStartLine}`)}
             {getColor('secondary')(
-              ` in ${displayPath?.split('/').pop() || displayPath}`
+              ` in ${displayPath ? displayBasename(displayPath) : displayPath}`
             )}
           </Text>
         )}

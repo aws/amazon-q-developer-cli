@@ -9,6 +9,7 @@ import {
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
@@ -87,7 +88,7 @@ export const Tool = React.memo(function Tool({
     if (!locations || locations.length === 0) return null;
 
     return locations.map((loc) => {
-      const fileName = loc.path.split('/').pop() || loc.path;
+      const fileName = displayBasename(loc.path);
       return loc.line ? `${fileName}:${loc.line}` : fileName;
     });
   }, [locations]);

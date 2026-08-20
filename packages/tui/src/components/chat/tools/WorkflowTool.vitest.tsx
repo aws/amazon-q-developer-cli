@@ -134,6 +134,19 @@ describe('WorkflowTool', () => {
     });
 
     expect(output).toContain('Workflow inspection failed');
+    expect(output).toContain('"wf-missing"');
     expect(output).toContain('Workflow was not found');
+  });
+
+  test('renders inspect workflow cancellation with its identity', async () => {
+    const output = await renderWorkflowTool({
+      name: 'inspect_workflow',
+      content: JSON.stringify({ workflowId: 'wf-cancelled' }),
+      isFinished: true,
+      result: { status: 'cancelled' },
+    });
+
+    expect(output).toContain('Workflow inspection cancelled');
+    expect(output).toContain('"wf-cancelled"');
   });
 });

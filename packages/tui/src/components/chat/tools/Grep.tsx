@@ -10,6 +10,7 @@ import {
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { expandTabs } from '../../../utils/string.js';
@@ -198,11 +199,6 @@ export const Grep = React.memo(function Grep({
     applyVerbosityOutputCap: true,
   });
 
-  // Extract filename from path
-  const getFileName = (path: string): string => {
-    return path.split('/').pop() || path;
-  };
-
   // Build secondary summary text (shown on second line)
   const getSecondarySummary = (): string | null => {
     if (!grepOutput || !isFinished) return null;
@@ -226,7 +222,7 @@ export const Grep = React.memo(function Grep({
     const summary = getSecondarySummary();
     if (summary) rows.push(summary);
     for (const f of results) {
-      rows.push(`${glyphs.arrow} ${getFileName(f.file)} (${f.count})`);
+      rows.push(`${glyphs.arrow} ${displayBasename(f.file)} (${f.count})`);
       for (const m of f.matches ?? []) rows.push(`  ${m}`);
     }
     if (grepOutput.truncated) rows.push('(results truncated)');
@@ -308,7 +304,7 @@ export const Grep = React.memo(function Grep({
             <Box key={i} flexDirection="column" marginLeft={2}>
               <Text>
                 {getColor('primary')(
-                  `${glyphs.arrow} ${getFileName(fileResult.file)}`
+                  `${glyphs.arrow} ${displayBasename(fileResult.file)}`
                 )}{' '}
                 {getColor('secondary')(`(${fileResult.count})`)}
               </Text>
@@ -338,7 +334,7 @@ export const Grep = React.memo(function Grep({
           <Box key={i} flexDirection="column" marginLeft={2}>
             <Text>
               {getColor('primary')(
-                `${glyphs.arrow} ${getFileName(fileResult.file)}`
+                `${glyphs.arrow} ${displayBasename(fileResult.file)}`
               )}{' '}
               {getColor('secondary')(`(${fileResult.count})`)}
             </Text>

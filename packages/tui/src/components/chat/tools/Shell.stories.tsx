@@ -195,9 +195,9 @@ export const Timeout = {
     </Card>
   ),
   parameters: certifyVisualStory(
-    'Command timed out',
+    'Process timed out after 30 seconds',
     {
-      visible: ['Bash sleep 60', 'Command timed out'],
+      visible: ['Bash sleep 60', 'Process timed out after 30 seconds'],
       hidden: ['undefined'],
     },
     ['timeout-error'],

@@ -9,6 +9,7 @@ import {
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
 import { FileList } from './FileList.js';
@@ -144,10 +145,7 @@ export const Glob = React.memo(function Glob({
   );
   const filePaths = globOutput?.filePaths || [];
 
-  const fileNames = useMemo(
-    () => filePaths.map((p) => p.split('/').pop() || p),
-    [filePaths]
-  );
+  const fileNames = useMemo(() => filePaths.map(displayBasename), [filePaths]);
   const outputVisible = useToolOutputVisible();
 
   const { expanded, expandHint, hiddenCount } = useExpandableOutput({

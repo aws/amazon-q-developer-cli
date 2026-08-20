@@ -9,6 +9,7 @@ import {
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
 import { clipChars } from '../../../lite/render.js';
@@ -105,7 +106,7 @@ export const Code = React.memo(function Code({
   const target = useMemo(() => {
     if (symbolName) return symbolName;
     if (pattern) return `"${pattern}"`;
-    if (filePath) return filePath.split('/').pop() || filePath;
+    if (filePath) return displayBasename(filePath);
     return operation || undefined;
   }, [symbolName, pattern, filePath, operation]);
 

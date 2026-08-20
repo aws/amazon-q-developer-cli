@@ -35,6 +35,10 @@ const ACTION_LABELS: Record<string, [string, string]> = {
   manage_group: ['Managing group', 'Managed group'],
   revive_session: ['Reviving session', 'Revived session'],
   register_pending_stages: ['Registering stages', 'Registered stages'],
+  wait_for_group: ['Waiting for group', 'Waited for group'],
+  cancel_group: ['Cancelling group', 'Cancelled group'],
+  group_last_activity: ['Checking group activity', 'Checked group activity'],
+  cancel_group_stage: ['Cancelling group stage', 'Cancelled group stage'],
 };
 
 /** Agent crew action labels */
@@ -65,7 +69,10 @@ export const SessionTool = React.memo(function SessionTool({
     />
   );
 
-  const action = useMemo(() => parseToolArg(content, 'action'), [content]);
+  const command = useMemo(
+    () => parseToolArg(content, 'command') ?? parseToolArg(content, 'action'),
+    [content]
+  );
   const target = useMemo(() => {
     if (isCrewTool) {
       const task = parseToolArg(content, 'task');
@@ -87,8 +94,8 @@ export const SessionTool = React.memo(function SessionTool({
 
   const [inProgressLabel, doneLabel] = isCrewTool
     ? CREW_LABELS
-    : action
-      ? (ACTION_LABELS[action] ?? [`Using ${action}`, `Used ${action}`])
+    : command
+      ? (ACTION_LABELS[command] ?? [`Using ${command}`, `Used ${command}`])
       : ['Using session tool', 'Used session tool'];
 
   const title = isFinished ? doneLabel : inProgressLabel;

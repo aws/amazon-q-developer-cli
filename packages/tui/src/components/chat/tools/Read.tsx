@@ -5,6 +5,7 @@ import { StatusBar } from '../status-bar/StatusBar.js';
 import { StatusInfo } from '../../ui/status/StatusInfo.js';
 import { useExpandableOutput } from '../../../hooks/useExpandableOutput.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
+import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput, ToolOutputHeader } from './ToolOutput.js';
 import { FileList } from './FileList.js';
@@ -152,7 +153,7 @@ export const Read = React.memo(function Read({
   }, [content]);
 
   const fileNames = useMemo(
-    () => ops.map((op) => op.path.split('/').pop() || op.path),
+    () => ops.map((op) => displayBasename(op.path)),
     [ops]
   );
   const outputVisible = useToolOutputVisible();

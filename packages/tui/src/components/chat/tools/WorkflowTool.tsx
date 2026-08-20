@@ -133,6 +133,7 @@ export const WorkflowTool = React.memo(function WorkflowTool({
       return (
         <StatusInfo
           title={`${glyphs.cross} Workflow inspection cancelled`}
+          target={displayName ? `"${displayName}"` : undefined}
           status="warning"
           useStatusColor
         />
@@ -143,6 +144,7 @@ export const WorkflowTool = React.memo(function WorkflowTool({
         <Box flexDirection="column">
           <StatusInfo
             title={`${glyphs.cross} Workflow inspection failed`}
+            target={displayName ? `"${displayName}"` : undefined}
             status="error"
             useStatusColor
           />

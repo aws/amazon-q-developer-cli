@@ -119,10 +119,10 @@ export const Shell = React.memo(function Shell({
 
   const errorMessage = useMemo(() => {
     if (result?.status === 'error') {
-      return isTimeoutError ? 'Command timed out' : result.error;
+      return result.error;
     }
     return null;
-  }, [result, isTimeoutError]);
+  }, [result]);
 
   // Unify output source: use result when available, otherwise liveOutput during execution.
   // Output is represented as `string[][]` (chunks of lines) so that per-flush append is
