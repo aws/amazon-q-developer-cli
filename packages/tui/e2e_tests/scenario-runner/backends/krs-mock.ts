@@ -318,6 +318,54 @@ class KrsMockHarness implements TestHarness {
   }
 }
 
+/** Where a scenario's `{{fixture:NAME}}` resolves to. */
+const FIXTURES_DIR = join(import.meta.dir, '../../fixtures');
+
+/**
+ * An agent config carrying a scenario's MCP servers, or null when it declares
+ * none. The agent is selected by name at launch, so the servers it names are
+ * the only ones the engine spawns.
+ */
+function mcpAgentConfig(
+  scenario: Scenario
+): { name: string; filePath: string; contents: string } | null {
+  const servers = scenario.mcpServers;
+  if (!servers || Object.keys(servers).length === 0) return null;
+
+  const resolved = Object.fromEntries(
+    Object.entries(servers).map(([name, spec]) => [
+      name,
+      {
+        ...spec,
+        command: resolveFixtures(spec.command),
+        ...(spec.args ? { args: spec.args.map(resolveFixtures) } : {}),
+      },
+    ])
+  );
+  const name = 'scenario_mcp';
+  return {
+    name,
+    filePath: `.kiro/agents/${name}.json`,
+    contents: JSON.stringify(
+      {
+        name,
+        description: 'Agent carrying the scenario-declared MCP servers.',
+        prompt: 'You are a test agent.',
+        tools: ['*'],
+        mcpServers: resolved,
+      },
+      null,
+      2
+    ),
+  };
+}
+
+function resolveFixtures(value: string): string {
+  return value.replace(/\{\{fixture:([^}]+)\}\}/g, (_, file: string) =>
+    join(FIXTURES_DIR, file)
+  );
+}
+
 export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
   if (engine !== 'kas') {
     // Only the KAS engine talks to KRS; v2 has its own client and its own
@@ -343,7 +391,12 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
       try {
         await server.loadTurns(scenario);
 
-        const testCase = await E2ETestCase.builder()
+        // A scenario's MCP servers ride on an agent config, which is where the
+        // engine reads them from. Absent, nothing is planted and the registry
+        // stays empty.
+        const mcpAgent = mcpAgentConfig(scenario);
+
+        const builder = E2ETestCase.builder()
           .withTestName(`scenario-${scenario.id}-krs-mock-${Date.now()}`)
           // A scenario's own size wins over the lane default: its assertions
           // encode a layout that only holds at that width.
@@ -381,8 +434,15 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
             KIRO_KAS_CONTROL_PLANE_ENDPOINT: server.endpoint,
             // Read by KAS ahead of every auth mode, so no login is needed.
             KIRO_API_KEY: server.apiKey,
-          })
-          .launch();
+          });
+
+        if (mcpAgent) {
+          builder
+            .withPrelaunchFile(mcpAgent.filePath, mcpAgent.contents)
+            .withCliArgs('--agent', mcpAgent.name);
+        }
+
+        const testCase = await builder.launch();
 
         return new KrsMockHarness(
           new LiveHarness(testCase),

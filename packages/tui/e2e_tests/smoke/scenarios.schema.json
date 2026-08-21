@@ -223,7 +223,10 @@
               "minimum": 10
             }
           },
-          "required": ["width", "height"],
+          "required": [
+            "width",
+            "height"
+          ],
           "additionalProperties": false,
           "description": "Terminal size for this scenario, overriding the lane default of 120x40. Layout-dependent assertions need it: a markdown table renders as a bordered grid or as stacked rows purely as a function of width"
         },
@@ -234,6 +237,34 @@
             "$ref": "krs-turns.schema.json#/$defs/Turn"
           },
           "description": "Scripted KRS turns, in queue order, that answer this scenario's prompts when it runs against the fake Kiro Runtime Service. A scenario without them cannot run on the krs-mock backend."
+        },
+        "mcpServers": {
+          "type": "object",
+          "description": "MCP servers to configure before launch, by server name. The engine spawns these for real. String values accept {{fixture:NAME}} for a checked-in helper program.",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     },

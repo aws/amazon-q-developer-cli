@@ -71,6 +71,9 @@ function interpolateScenarioValue(
     .replaceAll('{{scenarioId}}', ctx.scenarioId)
     .replace(/\{\{tmpFile:([^}]+)\}\}/g, (_, fileName: string) =>
       path.join(ctx.tempDir, fileName)
+    )
+    .replace(/\{\{fixture:([^}]+)\}\}/g, (_, fileName: string) =>
+      path.join(FIXTURES_DIR, fileName)
     );
 }
 
@@ -82,6 +85,9 @@ function captureFrame(harness: TestHarness, label: string): Frame {
     html: harness.getSnapshotHtml(),
   };
 }
+
+/** Checked-in helper programs a scenario can point a config at. */
+const FIXTURES_DIR = path.join(__dirname, '../fixtures');
 
 const DEFAULT_SCENARIOS_ROOT = path.join(__dirname, '../smoke/scenarios');
 

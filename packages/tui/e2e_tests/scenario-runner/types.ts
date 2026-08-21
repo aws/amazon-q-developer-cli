@@ -26,6 +26,15 @@ export interface Scenario {
    */
   terminal?: { width: number; height: number };
   /**
+   * MCP servers to configure before launch, by server name. The agent engine
+   * spawns these for real, so a journey can assert what a configured server
+   * puts on screen. Values accept `{{fixture:NAME}}` for a checked-in helper.
+   */
+  mcpServers?: Record<
+    string,
+    { command: string; args?: string[]; env?: Record<string, string> }
+  >;
+  /**
    * Scripted KRS turns answering this scenario's prompts, validated by
    * krs-turns.schema.json. Their absence is what makes a scenario unrunnable
    * against the fake Kiro Runtime Service.
