@@ -19,8 +19,13 @@ export type PasteSegment = {
 };
 export type ImageSegment = {
   type: 'image';
-  /** Base64-encoded image data */
-  base64: string;
+  /**
+   * Base64-encoded image data, for an image that exists only in the clipboard.
+   * Omitted for a path-based chip, whose bytes are read when the turn is sent.
+   */
+  base64?: string;
+  /** Absolute path, set when the chip stands for a file on disk. */
+  path?: string;
   mimeType: string;
   width: number;
   height: number;

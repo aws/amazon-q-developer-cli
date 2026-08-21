@@ -1090,10 +1090,10 @@ export const LiteLayout: React.FC<VariantLayoutProps> = ({
   const settlingItems = settlingItemsRef.current;
 
   const handleSubmit = useCallback(
-    (value: string) => {
+    (value: string, displayValue?: string, carriesAttachments?: boolean) => {
       const trimmed = value.trim();
       if (!trimmed) return;
-      handleUserInput(value);
+      handleUserInput(value, undefined, displayValue, carriesAttachments);
     },
     [handleUserInput]
   );

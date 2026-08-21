@@ -49,7 +49,9 @@
       "area": "ACP session",
       "description": "Send a prompt and process its response.",
       "evidence": [
-        "acp_integ_tests/thinking-display.test.ts#stores thinking text and duration on the model message"
+        "acp_integ_tests/thinking-display.test.ts#stores thinking text and duration on the model message",
+        "acp_integ_tests/image-attachment.test.ts#shows a chip instead of the path and sends the bytes with the turn",
+        "acp_integ_tests/image-attachment.test.ts#queues mid-turn rather than steering, then sends the bytes"
       ]
     },
     {

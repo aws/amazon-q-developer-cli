@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "Local image paths referenced in prompts are now attached to the model request in non-cloud sessions"
+}

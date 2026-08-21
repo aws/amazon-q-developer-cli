@@ -11,7 +11,8 @@ export interface PastedChipProps {
   type?: PastedContentType;
   lineCount?: number;
   charCount?: number;
-  // For future image support
+  /** File name, when the image is a file on disk rather than clipboard data. */
+  imageName?: string;
   imageWidth?: number;
   imageHeight?: number;
   imageSizeBytes?: number;
@@ -42,6 +43,7 @@ export const PastedChip = React.memo(function PastedChip({
   type = 'text',
   lineCount = 0,
   charCount = 0,
+  imageName,
   imageWidth,
   imageHeight,
   imageSizeBytes,
@@ -50,14 +52,16 @@ export const PastedChip = React.memo(function PastedChip({
   let label: string;
 
   if (type === 'image') {
-    // Format image info
+    // Dimensions need the decoded bytes, which a file-backed chip has not read
+    // yet; its name identifies it better than a size ever would.
     const dimensions =
       imageWidth && imageHeight
         ? `${imageWidth}${glyphs.times}${imageHeight}`
         : '';
     const size = imageSizeBytes ? formatBytes(imageSizeBytes) : '';
     const details = [dimensions, size].filter(Boolean).join(' ');
-    label = `pasted image${details ? ` (${details})` : ''}`;
+    const subject = imageName ?? 'pasted image';
+    label = `${subject}${details ? ` (${details})` : ''}`;
   } else {
     // Text content
     label =

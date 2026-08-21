@@ -557,7 +557,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
   ]);
 
   const handleSubmit = useCallback(
-    (value: string) => {
+    (value: string, displayValue?: string, carriesAttachments?: boolean) => {
       // Queue edit mode: replace the queued message in place
       if (editingQueueIndex != null) {
         const trimmed = value.trim();
@@ -582,7 +582,7 @@ export const InlineLayout: React.FC<VariantLayoutProps> = ({
         if (allowAnimations) triggerEasterEgg();
         return;
       }
-      handleUserInput(value);
+      handleUserInput(value, undefined, displayValue, carriesAttachments);
     },
     [
       editingQueueIndex,

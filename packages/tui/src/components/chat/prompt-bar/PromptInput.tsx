@@ -1,4 +1,5 @@
 import { Box, CURSOR_MARKER } from './../../../renderer.js';
+import { basename } from 'node:path';
 import React, {
   useEffect,
   useRef,
@@ -32,6 +33,10 @@ import {
 } from '../../ui/command-menu-utils.js';
 import { completePathAtCursor } from '../../../utils/path-completion.js';
 import { logger } from '../../../utils/logger.js';
+import {
+  resolveImagePath,
+  type ResolvedImagePath,
+} from '../../../utils/attachments.js';
 import { inputMetrics } from '../../../utils/inputMetrics.js';
 import {
   useCommandState,
@@ -131,7 +136,20 @@ export interface TriggerInfo {
 }
 
 export interface PromptInputProps {
-  onSubmit: (command: string) => void;
+  /**
+   * Receives the prompt for the model and, when they differ, the shorter form
+   * to echo in the transcript — an image chip stands for a path the user should
+   * not have to read back.
+   */
+  /**
+   * `carriesAttachments` marks a prompt whose chips carry file content, which
+   * only a full prompt can transport.
+   */
+  onSubmit: (
+    command: string,
+    displayCommand?: string,
+    carriesAttachments?: boolean
+  ) => void;
   isProcessing: boolean;
   triggerRules?: TriggerRule[];
   onTriggerDetected?: (trigger: TriggerInfo | null) => void;
@@ -160,7 +178,26 @@ export const buildContent = (segments: Segment[]): string => {
     if (s.type === 'text') return s.value;
     if (s.type === 'file') return ` @file:${s.filePath} `;
     if (s.type === 'paste') return s.content;
-    // Images are handled separately via extractImages
+    // A path-based image chip stands for its path: emitting it is what makes
+    // the file reachable, and removing the chip is what detaches it. A
+    // clipboard image has no path and rides alongside as image data.
+    if (s.type === 'image' && s.path) return ` ${s.path} `;
+    return '';
+  });
+  return parts.join('');
+};
+
+/**
+ * The same prompt rendered for the transcript, with image paths replaced by a
+ * short label. The user picked a chip, so echoing the raw path back reads as
+ * though their chip was ignored.
+ */
+export const buildDisplayContent = (segments: Segment[]): string => {
+  const parts = segments.map((s) => {
+    if (s.type === 'image' && s.path) return ` [image: ${basename(s.path)}] `;
+    if (s.type === 'text') return s.value;
+    if (s.type === 'file') return ` @file:${s.filePath} `;
+    if (s.type === 'paste') return s.content;
     return '';
   });
   return parts.join('');
@@ -689,10 +726,59 @@ export const PromptInput = React.memo(function PromptInput({
     }
   };
 
+  /**
+   * Insert an image chip for a file on disk. Synchronous on purpose: the
+   * keypress handler must leave the buffer final before it returns, so nothing
+   * the user types next lands against a stale cursor.
+   */
+  const insertImageChip = (image: ResolvedImagePath) => {
+    const segs = segmentsRef.current;
+    const cur = cursorRef.current;
+    const { segIdx, offset } = locateCursor(segs, cur);
+    const seg = segs[segIdx];
+    const chip: ImageSegment = {
+      type: 'image',
+      path: image.path,
+      mimeType: image.mimeType,
+      width: 0,
+      height: 0,
+      sizeBytes: image.sizeBytes,
+    };
+
+    pushUndo();
+    const newSegs =
+      seg?.type === 'text'
+        ? normalizeSegments([
+            ...segs.slice(0, segIdx),
+            { type: 'text', value: seg.value.slice(0, offset) },
+            chip,
+            { type: 'text', value: seg.value.slice(offset) },
+            ...segs.slice(segIdx + 1),
+          ])
+        : normalizeSegments([
+            ...segs.slice(0, offset === 0 ? segIdx : segIdx + 1),
+            chip,
+            ...segs.slice(offset === 0 ? segIdx : segIdx + 1),
+          ]);
+    setSegments(newSegs);
+    setCursor(cur + 1);
+    syncToStore(newSegs);
+  };
+
   const handlePaste = (pastedText: string) => {
     // Unescape shell-escaped file paths from drag-and-drop (e.g. macOS Finder)
     const unescaped = unescapeShellPath(pastedText);
     const normalized = normalizeLineEndings(unescaped);
+
+    // A pasted or dropped path to an image becomes a chip, so the prompt shows
+    // the file rather than its path. The path still reaches the model, and the
+    // bytes are read when the turn is sent.
+    const image = resolveImagePath(normalized);
+    if (image) {
+      insertImageChip(image);
+      return;
+    }
+
     const result = shouldCollapsePaste(normalized);
 
     if (result.shouldCollapse) {
@@ -1139,11 +1225,17 @@ export const PromptInput = React.memo(function PromptInput({
             if (slashMenuVisible || filePickerVisible || atMenuPromptsVisible)
               return;
             const content = buildContent(segments);
+            const display = buildDisplayContent(segments);
+            const hasImages = segments.some((s) => s.type === 'image');
             // Don't submit whitespace-only prompts, but preserve indentation
             // (e.g. pasted code) in the submitted content.
             if (content.trim()) {
               clearAll();
-              onSubmit(content);
+              onSubmit(
+                content,
+                display === content ? undefined : display,
+                hasImages
+              );
             }
             return;
           }
@@ -1155,10 +1247,15 @@ export const PromptInput = React.memo(function PromptInput({
           // own Enter handler selects the highlighted prompt.
           if (atMenuPromptsVisible) return;
           const content = buildContent(segments);
+          const display = buildDisplayContent(segments);
           const hasImages = segments.some((s) => s.type === 'image');
           if (content.trim() || hasImages) {
             clearAll();
-            onSubmit(content);
+            onSubmit(
+              content,
+              display === content ? undefined : display,
+              hasImages
+            );
           }
         }
       } else if (key.tab && !key.shift) {
@@ -1978,6 +2075,7 @@ export const PromptInput = React.memo(function PromptInput({
               )}
               <PastedChip
                 type="image"
+                imageName={seg.path ? basename(seg.path) : undefined}
                 imageWidth={seg.width}
                 imageHeight={seg.height}
                 imageSizeBytes={seg.sizeBytes}
@@ -1989,6 +2087,7 @@ export const PromptInput = React.memo(function PromptInput({
             <PastedChip
               key={i}
               type="image"
+              imageName={seg.path ? basename(seg.path) : undefined}
               imageWidth={seg.width}
               imageHeight={seg.height}
               imageSizeBytes={seg.sizeBytes}

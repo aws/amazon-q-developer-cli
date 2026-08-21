@@ -16,6 +16,7 @@ const {
   recordTuiSlashCommand,
   recordTuiAutonomousMode,
   recordTuiCloudAttach,
+  recordTuiLocalAttach,
   recordTuiCloudConfigDiagnostics,
   recordTuiCloudConfigSource,
   recordTuiCloudError,
@@ -792,6 +793,24 @@ describe('tool metrics', () => {
 });
 
 describe('cloud metrics', () => {
+  it('keeps local attachments off the cloud payload-cap series', () => {
+    // The cloud series tracks relay payload-cap rejections; local attachment is
+    // on by default, so mixing the two would change what the cloud one means.
+    recordTuiLocalAttach(
+      { kind: 'image', sizeBytes: 200 * 1024, version: '2.4.0' },
+      deps
+    );
+
+    expect(counterCalls.map((call) => call.name)).toEqual([
+      'kiro_cli_local_attach_total',
+    ]);
+    expect(counterCalls[0]?.attrs).toMatchObject({
+      version_full: '2.4.0',
+      attach_kind: 'image',
+    });
+    expect(counterCalls[0]?.attrs?.['attach_size_bucket']).toBeDefined();
+  });
+
   it('uses lifecycle names and version-only latency dimensions', () => {
     recordTuiCloudSession({ event: 'created', version: '2.4.0' }, deps);
     recordTuiCloudSessionReady(

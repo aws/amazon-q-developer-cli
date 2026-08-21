@@ -30,6 +30,7 @@ import {
 import { dedupeRepoResources } from '../utils/repo-multiselect';
 import {
   recordTuiCloudAttach,
+  recordTuiLocalAttach,
   recordTuiCloudConfigDiagnostics,
   recordTuiCloudRepoAttach,
   recordTuiConfigPanel,
@@ -438,7 +439,13 @@ import { workflowStore } from './workflow-store.js';
 import { hasBlockingCommandInteraction } from './ui-interaction.js';
 import { summarizeWorkflowRuns } from './workflow-view-model.js';
 import { expandFileReferences, readFileContent } from '../utils/file-search.js';
-import { collectCloudAttachments } from '../utils/cloud-attach.js';
+import {
+  collectAttachments,
+  mayReferenceImagePath,
+  noAttachments,
+  ALL_ATTACHMENT_KINDS,
+  IMAGE_ATTACHMENT_KINDS,
+} from '../utils/attachments.js';
 import { logger } from '../utils/logger.js';
 import {
   setTerminalProgressWarning,
@@ -1462,7 +1469,7 @@ interface BaseAppActions {
    * (re-queuing the same slash command is a valid action). No-op on
    * empty/whitespace-only input.
    */
-  queueMessage: (content: string) => void;
+  queueMessage: (content: string, carriesAttachments?: boolean) => void;
   /**
    * Clear staged steer content. With no argument, clears the WHOLE buffer
    * (legacy single-steer behavior). With `targetLine`, removes only that one
@@ -1897,7 +1904,11 @@ interface BaseAppActions {
   // Main orchestrator
   handleUserInput: (
     input: string,
-    source?: 'user' | 'queue' | 'internal'
+    source?: 'user' | 'queue' | 'internal',
+    /** Shorter form to echo in the transcript when it differs from `input`. */
+    displayInput?: string,
+    /** Set when chips in the prompt carry file content this input must keep. */
+    carriesAttachments?: boolean
   ) => Promise<void>;
 
   // Trust all tools acceptance
@@ -3577,10 +3588,9 @@ export const createAppStore = (props: AppStoreProps) => {
         }
       }
 
-      const shouldCollectCloudAttachments =
-        kiro.isCloudSessionActive?.() ?? false;
+      const isCloudSession = kiro.isCloudSessionActive?.() ?? false;
       // Scan only user-authored text; expanded @file bodies may contain unrelated paths.
-      const cloudAttachmentText =
+      const attachmentScanText =
         displayContent && displayContent !== content
           ? `${content}\n${displayContent}`
           : content;
@@ -3664,29 +3674,43 @@ export const createAppStore = (props: AppStoreProps) => {
       // for cancel + replay correctness (see app-store.test.ts).
       let eventHandler: StreamEventHandler | null = null;
       try {
-        const cloudAttachments = shouldCollectCloudAttachments
-          ? await collectCloudAttachments(
-              cloudAttachmentText,
-              abortController.signal
-            )
-          : { images: [], resources: [], blobs: [] };
+        // A cloud session carries documents and text in-band as well; every
+        // session carries referenced images so the model can see what the user
+        // pointed at. Ordinary prompts skip the scan entirely, which keeps this
+        // synchronous — path-shaped text such as a leading slash command would
+        // otherwise cost a filesystem probe per turn.
+        const kinds = isCloudSession
+          ? ALL_ATTACHMENT_KINDS
+          : IMAGE_ATTACHMENT_KINDS;
+        const worthScanning =
+          isCloudSession || mayReferenceImagePath(attachmentScanText);
+        const pathAttachments = worthScanning
+          ? await collectAttachments(attachmentScanText, {
+              kinds,
+              signal: abortController.signal,
+            })
+          : noAttachments();
         // One count per attached file; size buckets are the early-warning
-        // signal for relay payload-cap rejections before users hit them.
-        for (const img of cloudAttachments.images) {
-          recordTuiCloudAttach({
-            kind: 'image',
+        // signal for relay payload-cap rejections before users hit them. Local
+        // attachments report on their own metric so the cloud series, which
+        // tracks that relay cap, keeps meaning what it did.
+        for (const img of pathAttachments.images) {
+          const attach = {
+            kind: 'image' as const,
             sizeBytes: img.sizeBytes,
             version: telemetryVersion,
-          });
+          };
+          if (isCloudSession) recordTuiCloudAttach(attach);
+          else recordTuiLocalAttach(attach);
         }
-        for (const res of cloudAttachments.resources) {
+        for (const res of pathAttachments.resources) {
           recordTuiCloudAttach({
             kind: 'text',
             sizeBytes: Buffer.byteLength(res.text, 'utf8'),
             version: telemetryVersion,
           });
         }
-        for (const blob of cloudAttachments.blobs) {
+        for (const blob of pathAttachments.blobs) {
           recordTuiCloudAttach({
             kind:
               blob.mimeType === 'application/octet-stream'
@@ -3698,9 +3722,9 @@ export const createAppStore = (props: AppStoreProps) => {
             version: telemetryVersion,
           });
         }
-        const allImagesWithCloud = [
+        const outgoingImages = [
           ...allImages,
-          ...cloudAttachments.images.map(({ base64, mimeType }) => ({
+          ...pathAttachments.images.map(({ base64, mimeType }) => ({
             base64,
             mimeType,
           })),
@@ -3715,11 +3739,11 @@ export const createAppStore = (props: AppStoreProps) => {
           expandedContent,
           abortController.signal,
           eventHandler,
-          allImagesWithCloud.length > 0 ? allImagesWithCloud : undefined,
-          cloudAttachments.resources.length > 0
-            ? cloudAttachments.resources
+          outgoingImages.length > 0 ? outgoingImages : undefined,
+          pathAttachments.resources.length > 0
+            ? pathAttachments.resources
             : undefined,
-          cloudAttachments.blobs.length > 0 ? cloudAttachments.blobs : undefined
+          pathAttachments.blobs.length > 0 ? pathAttachments.blobs : undefined
         );
         eventHandler.flush();
         set({ _activeStreamHandler: null });
@@ -7238,7 +7262,7 @@ export const createAppStore = (props: AppStoreProps) => {
       }
     },
 
-    queueMessage: (content: string) => {
+    queueMessage: (content: string, carriesAttachments?: boolean) => {
       const trimmed = content.trim();
       if (!trimmed) return;
       const {
@@ -7297,8 +7321,12 @@ export const createAppStore = (props: AppStoreProps) => {
         return;
       }
 
-      // Steering mode: send to backend via ACP
-      if (activeInterruptMode === InterruptMode.STEER) {
+      // Steering mode: send to backend via ACP. Steering carries text only, so
+      // a prompt whose chips carry file content waits in the local queue
+      // instead — draining it as a full prompt is what reads the files and
+      // sends their bytes. Steering it would deliver a bare path and nothing
+      // the model can open.
+      if (activeInterruptMode === InterruptMode.STEER && !carriesAttachments) {
         kiro.steerMessage(sessionId, trimmed).catch((err) => {
           logger.error('queueMessage: steerMessage failed', err);
           get().showTransientAlert({
@@ -9391,9 +9419,15 @@ export const createAppStore = (props: AppStoreProps) => {
 
     // Main orchestrator
     // LINT-DEBT(complexity): pre-existing at gate adoption; Async method 'handleUserInput' has a complexity of 52. Maximum allowed is 30.; refactor before extending
-    // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 72 to the 30 allowed.; refactor before extending
-    // eslint-disable-next-line complexity, sonarjs/cognitive-complexity
-    handleUserInput: async (input: string, source = 'user') => {
+    // eslint-disable-next-line complexity
+    handleUserInput: async (
+      input: string,
+      source = 'user',
+      displayInput?: string,
+      carriesAttachments?: boolean
+      // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 72 to the 30 allowed.; refactor before extending
+      // eslint-disable-next-line sonarjs/cognitive-complexity
+    ) => {
       const trimmed = input.trim();
       const hasPendingImages = get().pendingImages.length > 0;
       if (!trimmed && !hasPendingImages) return;
@@ -9500,7 +9534,10 @@ export const createAppStore = (props: AppStoreProps) => {
           await runWhileProcessing('status', 'Failed to read goal status');
           return;
         }
-        if (trimmed.startsWith('/')) {
+        // A prompt carrying an attachment chip leads with the chip's absolute
+        // path, which the command parser would read as a command name — so it
+        // queues as a message, exactly as it would when no turn is running.
+        if (trimmed.startsWith('/') && !carriesAttachments) {
           const allCommands = selectVisibleSlashCommands(state);
           const matchedCommand = resolveSlashCommandForDispatch(trimmed, {
             kasCommands: state.kasCommands,
@@ -9576,7 +9613,7 @@ export const createAppStore = (props: AppStoreProps) => {
           });
           return;
         }
-        state.queueMessage(trimmed);
+        state.queueMessage(trimmed, carriesAttachments);
         // Same incomplete-clear reason as the slash branch above:
         // clearInput leaves commandInputValue populated, so the visible
         // input keeps the just-queued chat message and the user's next
@@ -9664,8 +9701,12 @@ export const createAppStore = (props: AppStoreProps) => {
         selectVisibleSlashCommands(state)
       );
 
-      // Handle slash commands via command registry
-      if (routed.startsWith('/')) {
+      // Handle slash commands via command registry. A composed prompt carrying
+      // an attachment chip is a message rather than a command: its content
+      // leads with the chip's absolute path, which the command parser would
+      // read as a command name and strip the leading slash from, breaking the
+      // path before anything can attach the file.
+      if (routed.startsWith('/') && !displayInput) {
         // Rewritten @prompts always end in a message send, which records
         // history itself; recording here too would double-add since the
         // history dedupe only collapses consecutive identical entries.
@@ -9872,7 +9913,11 @@ export const createAppStore = (props: AppStoreProps) => {
       }
 
       // Handle regular prompts
-      await state.sendMessage(trimmed);
+      await state.sendMessage(
+        trimmed,
+        undefined,
+        displayInput?.trim() || undefined
+      );
     },
   }));
 

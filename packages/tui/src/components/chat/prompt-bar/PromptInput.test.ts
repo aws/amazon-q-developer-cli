@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { buildContent } from './PromptInput.js';
+import { buildContent, buildDisplayContent } from './PromptInput.js';
 import type { Segment } from '../../../utils/input-editing.js';
 
 // Helpers (mirror those in input-editing.test.ts)
@@ -102,5 +102,80 @@ describe('buildContent', () => {
     expect(buildContent([text('\tindented with tab')])).toBe(
       '\tindented with tab'
     );
+  });
+});
+
+const pathImage = (filePath: string): Segment => ({
+  type: 'image',
+  path: filePath,
+  mimeType: 'image/png',
+  width: 0,
+  height: 0,
+  sizeBytes: 100,
+});
+
+const clipboardImage = (): Segment => ({
+  type: 'image',
+  base64: 'AAAA',
+  mimeType: 'image/png',
+  width: 1,
+  height: 1,
+  sizeBytes: 1,
+});
+
+describe('image chips: what the model sees vs what the user sees', () => {
+  it('sends the path so the send-time scan can attach the file', () => {
+    const segments: Segment[] = [
+      text('describe'),
+      pathImage('/tmp/shot.png'),
+      text('please'),
+    ];
+    expect(buildContent(segments)).toBe('describe /tmp/shot.png please');
+  });
+
+  it('shows a name instead of the path', () => {
+    const segments: Segment[] = [
+      text('describe'),
+      pathImage('/tmp/shot.png'),
+      text('please'),
+    ];
+    expect(buildDisplayContent(segments)).toBe(
+      'describe [image: shot.png] please'
+    );
+  });
+
+  it('removing the chip removes the path, which is what detaches the image', () => {
+    // No bookkeeping detaches an image: the path leaving the content does.
+    const withChip: Segment[] = [text('describe'), pathImage('/tmp/shot.png')];
+    const withoutChip: Segment[] = [text('describe')];
+    expect(buildContent(withChip)).toContain('/tmp/shot.png');
+    expect(buildContent(withoutChip)).not.toContain('/tmp/shot.png');
+  });
+
+  it('leaves a clipboard image out of the content, as it has no path', () => {
+    const segments: Segment[] = [
+      text('look: '),
+      clipboardImage(),
+      text('thanks'),
+    ];
+    expect(buildContent(segments)).toBe('look: thanks');
+    expect(buildDisplayContent(segments)).toBe('look: thanks');
+  });
+
+  it('display and model forms agree when no image is present', () => {
+    // The submit sites only pass a display form when it differs, so these
+    // matching is what keeps ordinary prompts unchanged.
+    const segments: Segment[] = [text('just a question')];
+    expect(buildDisplayContent(segments)).toBe(buildContent(segments));
+  });
+
+  it('keeps whitespace in surrounding text intact', () => {
+    const segments: Segment[] = [
+      text('see  '),
+      pathImage('/a/b/c.png'),
+      text('  now'),
+    ];
+    expect(buildContent(segments)).toBe('see   /a/b/c.png   now');
+    expect(buildDisplayContent(segments)).toBe('see   [image: c.png]   now');
   });
 });

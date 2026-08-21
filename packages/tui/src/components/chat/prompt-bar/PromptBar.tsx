@@ -21,7 +21,16 @@ interface PromptBarProps {
   header?: PromptBarHeader;
   subHeader?: React.ReactNode;
   children?: React.ReactNode;
-  onSubmit: (command: string) => void;
+  /**
+   * Receives the prompt for the model and, when they differ, the shorter form
+   * to echo in the transcript — an image chip stands for a path the user should
+   * not have to read back.
+   */
+  onSubmit: (
+    command: string,
+    displayCommand?: string,
+    carriesAttachments?: boolean
+  ) => void;
   isProcessing: boolean;
   triggerRules?: Array<{ key: string; type: 'start' | 'inline' }>;
   onTriggerDetected?: (trigger: any) => void;

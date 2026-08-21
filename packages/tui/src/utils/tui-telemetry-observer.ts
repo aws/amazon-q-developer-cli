@@ -492,6 +492,29 @@ export function attachSizeBucket(bytes: number): AttachSizeBucket {
   return 'over_5m';
 }
 
+export function recordTuiLocalAttach(
+  args: {
+    kind: AttachKind;
+    sizeBytes: number;
+    version: string;
+    engine?: Engine;
+  },
+  deps?: TuiTelemetryDeps
+): void {
+  if (suppressedInTest(deps)) return;
+  counterFn(deps)(
+    'kiro_cli_local_attach_total',
+    1,
+    {
+      version_full: args.version,
+      attach_kind: args.kind,
+      attach_size_bucket: attachSizeBucket(args.sizeBytes),
+      agent_engine: args.engine ?? DEFAULT_ENGINE,
+    },
+    TUI_SCOPE
+  );
+}
+
 export function recordTuiCloudAttach(
   args: {
     kind: AttachKind;
