@@ -24,11 +24,15 @@ sort: "lastUpdatedDate desc"
 
 ## Search by keyword
 
+`TaskeiListTasks` silently ignores `title:`/`name:` terms in `filter` (verified: every keyword returns the identical unfiltered page). Filter on status only, then match keywords locally over the returned titles:
+
 ```
 @builder-mcp/TaskeiListTasks
 roomId: "0205a00e-4757-425d-bde0-e06884dce83e"
-filter: "labels:9486ec82-fc33-43bf-92c5-066b139bfe1c AND NOT status:Closed AND title:KEYWORD"
+filter: "labels:9486ec82-fc33-43bf-92c5-066b139bfe1c AND NOT status:Closed"
 ```
+
+Then filter the results yourself (case-insensitive substring over `title`).
 
 ## Get task details
 
