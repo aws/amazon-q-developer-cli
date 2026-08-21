@@ -5,6 +5,7 @@ import { StatusBar, useStatusBar } from '../status-bar/StatusBar.js';
 import { useTheme } from '../../../hooks/useThemeContext.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { normalizeLineEndings } from '../../../utils/string.js';
+import { sanitizeUntrustedText } from '../../../utils/sanitize-terminal-content.js';
 import type { StatusType } from '../../../types/componentTypes.js';
 
 const HEAD_LINES = 5;
@@ -61,7 +62,7 @@ function ShellOutputContent({
   const [expanded, setExpanded] = useState(false);
 
   const lines = useMemo(
-    () => normalizeLineEndings(content).split('\n'),
+    () => normalizeLineEndings(sanitizeUntrustedText(content)).split('\n'),
     [content]
   );
   const tailLines = Math.max(5, termHeight - 10);

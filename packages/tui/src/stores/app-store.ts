@@ -4,6 +4,10 @@ import { access } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { Kiro } from '../kiro';
 import { chalk } from '../utils/color.js';
+import {
+  sanitizeToolResultError,
+  sanitizeUntrustedText,
+} from '../utils/sanitize-terminal-content.js';
 import type { TerminalColor } from '../types/themeTypes';
 import { kiroSafe } from '../theme/kiroSafe';
 import { createContext, useContext } from 'react';
@@ -4005,7 +4009,11 @@ export const createAppStore = (props: AppStoreProps) => {
         toolOutputBuffers.clear();
         set((state) => {
           const newLiveOutputs = new Map(state.liveOutputs);
-          for (const [id, text] of buffers) {
+          for (const [id, raw] of buffers) {
+            if (!raw) continue;
+            // Streamed chunks reach both render stacks from here, so this is
+            // the one place that has to neutralize them.
+            const text = sanitizeUntrustedText(raw);
             if (!text) continue;
             const newLines = text.split('\n');
             if (newLines.length > 0 && newLines[newLines.length - 1] === '')
@@ -4772,7 +4780,9 @@ export const createAppStore = (props: AppStoreProps) => {
                     status: wasDeniedByUser
                       ? ToolUseStatus.Rejected
                       : toolMsg.status,
-                    result,
+                    // Sanitized after live output is attached above, so the
+                    // streamed bytes folded into the error are covered too.
+                    result: sanitizeToolResultError(result),
                     ...(fromHistory ? {} : { finishTime: Date.now() }),
                     denial:
                       deriveToolDenial(event.meta?.kiro) ?? toolMsg.denial,

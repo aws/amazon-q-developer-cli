@@ -8,6 +8,7 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { sanitizeUntrustedText } from '../../../utils/sanitize-terminal-content.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
@@ -88,7 +89,10 @@ export const Glob = React.memo(function Glob({
       (Array.isArray(obj.filePaths) || typeof obj.totalFiles === 'number');
     const rawText = hasStructured
       ? null
-      : (text ?? (obj && typeof obj.message === 'string' ? obj.message : null));
+      : (text ??
+        (obj && typeof obj.message === 'string'
+          ? sanitizeUntrustedText(obj.message)
+          : null));
     if (rawText) {
       const parts = rawText.split(/^---$/m);
       if (parts.length >= 2) {
@@ -129,11 +133,14 @@ export const Glob = React.memo(function Glob({
 
     return {
       filePaths: Array.isArray(obj.filePaths)
-        ? (obj.filePaths as string[])
+        ? (obj.filePaths as string[]).map(sanitizeUntrustedText)
         : [],
       totalFiles: typeof obj.totalFiles === 'number' ? obj.totalFiles : 0,
       truncated: obj.truncated === true,
-      message: typeof obj.message === 'string' ? obj.message : undefined,
+      message:
+        typeof obj.message === 'string'
+          ? sanitizeUntrustedText(obj.message)
+          : undefined,
     };
   }, [result]);
 

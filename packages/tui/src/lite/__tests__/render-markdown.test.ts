@@ -508,8 +508,10 @@ describe('markdown scoping', () => {
 describe('renderShellOutputBlock', () => {
   // Empty/blank input → '' so the live region can gate on truthiness; otherwise
   // each source line gets the `! ` gutter, mid-output blanks are preserved
-  // (programs pad), trailing blanks trimmed (live buffers end with \n), and
-  // embedded PTY escapes pass through untouched.
+  // (programs pad), and trailing blanks trimmed (live buffers end with \n).
+  // Embedded escapes no longer pass through: the block removes the families
+  // that outlive their text (OSC/DCS, cursor/erase CSI) and keeps SGR. Tab, NL
+  // and CR still pass through for the terminal to act on.
   test.each<{ name: string; input: string; expected: string[] }>([
     { name: 'empty string → ""', input: '', expected: [''] },
     { name: 'blank spaces → ""', input: '   ', expected: [''] },
@@ -553,11 +555,22 @@ describe('renderShellOutputBlock', () => {
     expect(themed).toContain('<<! >>hello');
   });
 
-  test('preserves embedded ANSI escapes from the PTY untouched', () => {
-    // CLIs emit colored prompts and cursor-positioning escapes; the gutter
-    // composes color + content with no normalization in between.
+  test('preserves embedded SGR color from the PTY', () => {
+    // CLIs emit colored output; color is the one escape family kept so the
+    // gutter still shows it.
     const colored = '\x1b[32mOK\x1b[0m';
     expect(renderShellOutputBlock(colored)).toContain(colored);
+  });
+
+  test('removes a cursor-positioning escape while keeping the text', () => {
+    const out = stripAnsi(renderShellOutputBlock('a\x1b[2Jb'));
+    expect(out).toBe('! ab');
+  });
+
+  test('passes CR progress frames through for the terminal to overwrite', () => {
+    const progress =
+      'Resolving deltas:  33% (1/3)\rResolving deltas: 100% (3/3), done.';
+    expect(stripAnsi(renderShellOutputBlock(progress))).toContain(progress);
   });
 });
 

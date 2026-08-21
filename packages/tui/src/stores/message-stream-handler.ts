@@ -13,6 +13,7 @@ import {
   type ToolDiff,
 } from '../types/agent-events.js';
 import { isHistoryOnlyAssistantMessagePrefix } from '../utils/history-only-assistant-messages.js';
+import { sanitizeToolResultError } from '../utils/sanitize-terminal-content.js';
 import { MessageRole, type MessageType } from './app-store.js';
 
 export function createMessageStreamHandler(
@@ -232,7 +233,7 @@ export function createMessageStreamHandler(
             ...msg,
             diff,
             isFinished: true,
-            result: event.result,
+            result: sanitizeToolResultError(event.result),
           };
           return next;
         });

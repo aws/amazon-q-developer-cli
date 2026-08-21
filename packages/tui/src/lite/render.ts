@@ -3,6 +3,7 @@
  * lite TUI.
  */
 import { chalk } from '../utils/color.js';
+import { sanitizeUntrustedText } from '../utils/sanitize-terminal-content.js';
 import { highlight } from 'cli-highlight';
 import { diffLines } from 'diff';
 import {
@@ -682,7 +683,7 @@ export function renderShellOutputBlock(
   const brandFn = theme?.brand ?? brand;
   const gutter = brandFn('! ');
   // Drop only trailing blanks — leading blanks can be meaningful.
-  const lines = content.split('\n');
+  const lines = sanitizeUntrustedText(content).split('\n');
   while (lines.length > 0 && !lines[lines.length - 1]?.trim()) {
     lines.pop();
   }
@@ -1117,7 +1118,7 @@ export function renderReadToolCall(
   if (result?.output == null) return out.join('\n');
   const text =
     typeof result.output === 'string'
-      ? result.output
+      ? sanitizeUntrustedText(result.output)
       : unwrapToolOutputAsText(result.output);
   if (!text.trim()) return out.join('\n');
 
@@ -1300,7 +1301,7 @@ export function renderVerboseOutput(
     if (!errText && result.output != null) {
       errText =
         typeof result.output === 'string'
-          ? result.output
+          ? sanitizeUntrustedText(result.output)
           : unwrapToolOutputAsText(result.output);
     }
     if (errText.trim().length === 0) return '';
@@ -1312,7 +1313,7 @@ export function renderVerboseOutput(
   if (result.output == null) return '';
   const unwrapped: UnwrappedToolOutput =
     typeof result.output === 'string'
-      ? { kind: 'text', value: result.output }
+      ? { kind: 'text', value: sanitizeUntrustedText(result.output) }
       : unwrapToolOutput(result.output);
 
   // Structured envelope → key:value tree (same green success tint as text
@@ -1577,7 +1578,7 @@ type UnwrappedToolOutput =
  */
 // LINT-DEBT(sonarjs/cognitive-complexity): pre-existing at gate adoption; Refactor this function to reduce its Cognitive Complexity from 34 to the 30 allowed.; refactor before extending
 // eslint-disable-next-line sonarjs/cognitive-complexity
-function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
+function unwrapToolOutputImpl(output: unknown): UnwrappedToolOutput {
   if (output == null || typeof output !== 'object') {
     return { kind: 'text', value: safeJson(output, 1_000_000) };
   }
@@ -1646,6 +1647,18 @@ function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
 
   // Genuine unknown — surface the parsed object so the caller pretty-prints.
   return { kind: 'json', value: output };
+}
+
+/**
+ * Sanitizing wrapper: neutralizes hostile control sequences in any text
+ * payload (shell/file/tool output) while preserving SGR color. JSON payloads
+ * are left as-is — safeJson escapes control bytes when the caller stringifies.
+ */
+function unwrapToolOutput(output: unknown): UnwrappedToolOutput {
+  const r = unwrapToolOutputImpl(output);
+  return r.kind === 'text'
+    ? { kind: 'text', value: sanitizeUntrustedText(r.value) }
+    : r;
 }
 
 /** Text-only form of unwrapToolOutput; JSON envelopes become a compact

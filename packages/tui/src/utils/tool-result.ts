@@ -1,4 +1,5 @@
 import type { ToolResult } from '../stores/app-store.js';
+import { sanitizeUntrustedText } from './sanitize-terminal-content.js';
 
 export const MAX_RETAINED_TOOL_OUTPUT_LINES = 1000;
 
@@ -32,14 +33,15 @@ export function unwrapResultOutput(result: ToolResult | undefined): {
   if (!result || result.status !== 'success') return { obj: null, text: null };
 
   const raw = result.output;
-  if (typeof raw === 'string') return { obj: null, text: raw };
+  if (typeof raw === 'string')
+    return { obj: null, text: sanitizeUntrustedText(raw) };
 
   if (raw && typeof raw === 'object') {
     const obj = raw as Record<string, unknown>;
     if ('items' in obj && Array.isArray(obj.items) && obj.items.length > 0) {
       const first = obj.items[0] as Record<string, unknown>;
       if ('Text' in first && typeof first.Text === 'string') {
-        return { obj: null, text: first.Text };
+        return { obj: null, text: sanitizeUntrustedText(first.Text) };
       }
       if ('Json' in first && typeof first.Json === 'object') {
         return { obj: first.Json as Record<string, unknown>, text: null };
@@ -59,8 +61,10 @@ export function extractResultText(
   const { obj, text } = unwrapResultOutput(result);
   if (text) return text;
   if (!obj) return null;
-  if ('text' in obj && typeof obj.text === 'string') return obj.text;
-  if ('content' in obj && typeof obj.content === 'string') return obj.content;
+  if ('text' in obj && typeof obj.text === 'string')
+    return sanitizeUntrustedText(obj.text);
+  if ('content' in obj && typeof obj.content === 'string')
+    return sanitizeUntrustedText(obj.content);
   return null;
 }
 
@@ -97,16 +101,17 @@ export function extractResultBodyItems(
 ): string[] {
   if (!result || result.status !== 'success') return [];
   const raw = result.output;
-  if (typeof raw === 'string') return [raw];
+  if (typeof raw === 'string') return [sanitizeUntrustedText(raw)];
   if (!raw || typeof raw !== 'object') return [];
   const o = raw as Record<string, unknown>;
   if (Array.isArray(o.items)) {
     return o.items
       .map(itemText)
-      .filter((t): t is string => typeof t === 'string');
+      .filter((t): t is string => typeof t === 'string')
+      .map(sanitizeUntrustedText);
   }
   const text = itemText(o);
-  return text == null ? [] : [text];
+  return text == null ? [] : [sanitizeUntrustedText(text)];
 }
 
 export function extractResultBodyText(

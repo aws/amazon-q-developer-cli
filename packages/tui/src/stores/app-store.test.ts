@@ -566,6 +566,33 @@ describe('Stream handler dispose (cancel race hardening)', () => {
     expect(msgs[0]?.role).toBe(MessageRole.User);
   });
 
+  it('sanitizes streamed tool output before it becomes live output', async () => {
+    const store = createStore();
+    store.setState({
+      messages: [
+        { id: 't1', role: MessageRole.ToolUse, name: 'bash', content: '{}' },
+      ],
+    });
+
+    const handler = store.getState().createStreamEventHandler();
+    const ESC = '\x1b';
+    handler({
+      type: AgentEventType.ToolCallUpdate,
+      id: 't1',
+      content: {
+        type: ContentType.Text,
+        // Erase-screen CSI and an OSC 52 clipboard write must not survive;
+        // SGR color must, and CR passes through untouched.
+        text: `${ESC}[2J${ESC}[31mred${ESC}[0m${ESC}]52;c;x\x07\n33%\r100%\n`,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const liveOutput = store.getState().liveOutputs.get('t1') ?? [];
+    expect(liveOutput.flat()).toEqual([`${ESC}[31mred${ESC}[0m`, '33%\r100%']);
+  });
+
   it('tool output buffers are cleared on dispose', async () => {
     const store = createStore();
     store.setState({

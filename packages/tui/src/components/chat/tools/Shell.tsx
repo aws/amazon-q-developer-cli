@@ -8,6 +8,7 @@ import {
   MAX_RETAINED_TOOL_OUTPUT_LINES,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { sanitizeUntrustedText } from '../../../utils/sanitize-terminal-content.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { ToolMeta } from './ToolMeta.js';
 import { ToolOutput } from './ToolOutput.js';
@@ -189,7 +190,9 @@ export const Shell = React.memo(function Shell({
       }
 
       if (!outputStr) return { outputChunks: [], exitCode: code };
-      const lines = normalizeLineEndings(outputStr).split('\n');
+      const lines = normalizeLineEndings(
+        sanitizeUntrustedText(outputStr)
+      ).split('\n');
       return {
         outputChunks: lines.length > 0 ? [lines] : [],
         exitCode: code,

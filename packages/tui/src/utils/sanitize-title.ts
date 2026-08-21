@@ -1,23 +1,15 @@
 /**
  * Strip terminal escape sequences and C0 controls from untrusted display
- * text. The renderer's own sanitizer removes dangerous CSI only; transcript
- * bytes can also carry OSC (incl. OSC 52 clipboard writes), DCS/SOS/PM/APC
- * strings, and bare ESC finals like `ESC c` (full reset), all of which must
- * never reach the terminal from session titles or search snippets.
+ * text. Transcript bytes can carry OSC (incl. OSC 52 clipboard writes),
+ * DCS/SOS/PM/APC strings, and bare ESC finals like `ESC c` (full reset), none
+ * of which may reach the terminal from session titles or search snippets.
+ *
+ * Unlike the styled-output path, nothing is preserved here: this text is
+ * non-styled metadata, so SGR is dropped along with everything else.
  */
-const TERMINAL_ESCAPES_RE = new RegExp(
-  [
-    // CSI: ESC [ params intermediates final
-    '\\x1b\\[[0-?]*[ -/]*[@-~]',
-    // OSC: ESC ] ... terminated by BEL or ST (or end of string)
-    '\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)?',
-    // DCS / SOS / PM / APC strings, terminated by ST (or end of string)
-    '\\x1b[PX^_][^\\x1b]*(?:\\x1b\\\\)?',
-    // Two-byte sequences (ESC c, ESC 7, ESC (B, ...) and any stray ESC
-    '\\x1b[ -/]?[0-~]?',
-  ].join('|'),
-  'g'
-);
+import { buildEscapeRegExp } from './terminal-escape-grammar.js';
+
+const TERMINAL_ESCAPES_RE = buildEscapeRegExp();
 
 // LINT-DEBT(no-control-regex): pre-existing suppression accepted at gate adoption; matching C0 control characters is the purpose of this sanitizer regex
 // eslint-disable-next-line no-control-regex

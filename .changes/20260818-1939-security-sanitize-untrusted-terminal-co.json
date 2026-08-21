@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Output from tools and shell commands can no longer corrupt the UI with terminal escape sequences"
+}

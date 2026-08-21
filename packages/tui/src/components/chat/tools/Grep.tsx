@@ -9,6 +9,7 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { sanitizeUntrustedText } from '../../../utils/sanitize-terminal-content.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
@@ -111,7 +112,10 @@ export const Grep = React.memo(function Grep({
         Array.isArray(obj.results));
     const rawText = hasStructured
       ? null
-      : (text ?? (obj && typeof obj.message === 'string' ? obj.message : null));
+      : (text ??
+        (obj && typeof obj.message === 'string'
+          ? sanitizeUntrustedText(obj.message)
+          : null));
     if (rawText) {
       // Drop the "You searched for … results:" header line if present. Strip
       // only the first line (colon-safe): a query containing ":" (e.g. "TODO:")
@@ -162,10 +166,19 @@ export const Grep = React.memo(function Grep({
       results: Array.isArray(obj.results)
         ? (obj.results as GrepFileResult[]).map((r) => ({
             ...r,
-            matches: r.matches?.map(expandTabs),
+            file:
+              typeof r.file === 'string'
+                ? sanitizeUntrustedText(r.file)
+                : r.file,
+            matches: r.matches?.map((mm) =>
+              expandTabs(sanitizeUntrustedText(mm))
+            ),
           }))
         : undefined,
-      message: typeof obj.message === 'string' ? obj.message : undefined,
+      message:
+        typeof obj.message === 'string'
+          ? sanitizeUntrustedText(obj.message)
+          : undefined,
     };
   }, [result]);
 

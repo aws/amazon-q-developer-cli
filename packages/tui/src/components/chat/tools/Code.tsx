@@ -8,6 +8,7 @@ import {
   parseToolArg,
   unwrapResultOutput,
 } from '../../../utils/tool-result.js';
+import { sanitizeUntrustedText } from '../../../utils/sanitize-terminal-content.js';
 import { formatToolParams } from '../../../utils/tool-params.js';
 import { displayBasename } from '../../../utils/display-path.js';
 import { ToolMeta } from './ToolMeta.js';
@@ -130,7 +131,9 @@ export const Code = React.memo(function Code({
     if (Array.isArray(obj.symbols)) {
       return (obj.symbols as any[])
         .slice(0, effectivePreview)
-        .map((s) => `${glyphs.arrow} ${s.name || s}`);
+        .map(
+          (s) => `${glyphs.arrow} ${sanitizeUntrustedText(String(s.name || s))}`
+        );
     }
 
     // find_references — show count
@@ -142,12 +145,14 @@ export const Code = React.memo(function Code({
     if (Array.isArray(obj.documentSymbols)) {
       return (obj.documentSymbols as any[])
         .slice(0, effectivePreview)
-        .map((s) => `${glyphs.arrow} ${s.name || s}`);
+        .map(
+          (s) => `${glyphs.arrow} ${sanitizeUntrustedText(String(s.name || s))}`
+        );
     }
 
     // Fallback: try text fields
     if (typeof obj.text === 'string') {
-      return normalizeLineEndings(obj.text as string)
+      return normalizeLineEndings(sanitizeUntrustedText(obj.text as string))
         .split('\n')
         .filter((l) => l.trim())
         .slice(0, effectivePreview);
