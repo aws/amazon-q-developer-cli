@@ -1,6 +1,7 @@
 {
+  "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "MCP journeys. Each declares its own servers, which the engine spawns for real: the fixture at e2e_tests/fixtures/stub-mcp-server.mjs is a hand-rolled stdio MCP server whose wire behaviour is fixed by that file, so a tool count or a status is the same on every run. That is what makes these assertable -- a real MCP server would drift with its own releases. The fixture's mode argument selects the behaviour a journey needs: two tools, no tools, or a process that refuses to start.",
+  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one.",
   "scenarios": [
     {
       "id": "mcp-panel-reports-a-running-server",
@@ -13,7 +14,7 @@
         "waitForText:ask a question",
         "type:/mcp",
         "enter",
-        "waitForText:running",
+        "waitForText:\u25cf running",
         "frame:mcp-panel"
       ],
       "verify": [
@@ -21,7 +22,7 @@
         "screen.contains:stubby",
         "screen.contains:local",
         "screen.contains:2 tools",
-        "screen.notContains:failed",
+        "screen.notContains:\u2717 failed",
         "screen.notContains:0 tools"
       ],
       "observe": "The tool count is the load-bearing assertion: reading the config is enough to name the server and call it local, but '2 tools' only appears once the client has spawned the process, completed the initialize handshake and read the tools/list reply. A server that is configured but never reached still lists, as the failed-server journey shows, so the name alone proves nothing about the connection. '0 tools' is asserted absent because that is what the same row shows when the handshake does not complete.",
@@ -71,14 +72,14 @@
         "waitForText:ask a question",
         "type:/mcp",
         "enter",
-        "waitForText:failed",
+        "waitForText:\u2717 failed",
         "frame:mcp-panel"
       ],
       "verify": [
         "screen.contains:1 configured",
         "screen.contains:brokenserver",
         "screen.contains:0 tools",
-        "screen.notContains:running"
+        "screen.notContains:\u25cf running"
       ],
       "observe": "A broken server must stay visible, because a user debugging one needs to see it and its state; silently omitting it is the failure this guards. What catches a server that starts anyway is the wait for 'failed', which expires -- the absent 'running' is a backstop for a row that reports both, and is safe to assert only because the one configured server here is the broken one. '0 tools' is the durable half: a failed server cannot have advertised any.",
       "engine": [
@@ -134,7 +135,6 @@
         "screen.contains:@stubby/stub_echo",
         "screen.contains:@stubby/stub_ping",
         "screen.contains:Echo a sentinel back for scenario assertions.",
-        "screen.contains:mcp",
         "screen.contains:builtin",
         "screen.notContains:@emptyone/"
       ],
@@ -360,6 +360,65 @@
         },
         {
           "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "mcp-oauth-server-is-reported-as-auth-required",
+      "name": "A remote server demanding OAuth is reported as needing auth, with a way to do it",
+      "category": "mcp",
+      "description": "A remote MCP server that requires OAuth on every request -- asserts the panel separates 'needs authentication' from both healthy and failed, and offers the authenticate affordance rather than leaving the user to guess",
+      "docRef": "/docs/cli/reference/slash-commands#mcp",
+      "priority": "p0",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/mcp",
+        "enter",
+        "waitForText:\u26a0 auth-required",
+        "frame:mcp-panel"
+      ],
+      "verify": [
+        "screen.contains:needsauth",
+        "screen.contains:Enter to authenticate",
+        "screen.notContains:\u25cf running",
+        "screen.notContains:\u2717 failed"
+      ],
+      "observe": "OAuth applies only to the remote transport, so this server is a real HTTP listener that rejects unauthenticated requests. The value is in the three-way distinction: both 'running' and 'failed' are asserted absent, because a server awaiting authorization is neither, and collapsing it into either is what leaves a user staring at a server that will never work or hunting a failure that is not one. 'Enter to authenticate' is asserted because a state the user cannot act on is only half the surface. Dropping the server's OAuth requirement flips the row to running, which fails the gate and the negative together.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "mcpServers": {
+        "needsauth": {
+          "remote": true,
+          "args": [
+            "--config",
+            "{{fixture:mcp-remote-tools.jsonl}}",
+            "--transport",
+            "http",
+            "--oauth"
+          ]
+        }
+      },
+      "turns": [
+        {
+          "name": "unused-no-prompt-is-sent",
           "times": 0,
           "respond": {
             "events": [

@@ -193,7 +193,8 @@ class KrsMockHarness implements TestHarness {
     private readonly inner: LiveHarness,
     private readonly server: MockKrsProcess,
     private readonly exchangePath: string,
-    turns: readonly unknown[]
+    turns: readonly unknown[],
+    private readonly stopMcpServers?: () => void
   ) {
     this.stickyTurnNames = stickyTurnNames(turns);
   }
@@ -295,8 +296,9 @@ class KrsMockHarness implements TestHarness {
     try {
       await this.inner.cleanup();
     } finally {
-      // Always release the port, even if the TUI teardown throws.
+      // Always release the ports, even if the TUI teardown throws.
       this.server.stop();
+      this.stopMcpServers?.();
     }
   }
 
@@ -326,22 +328,48 @@ const FIXTURES_DIR = join(import.meta.dir, '../../fixtures');
  * none. The agent is selected by name at launch, so the servers it names are
  * the only ones the engine spawns.
  */
-function mcpAgentConfig(
+async function mcpAgentConfig(
   scenario: Scenario
-): { name: string; filePath: string; contents: string } | null {
+): Promise<{
+  name: string;
+  filePath: string;
+  contents: string;
+  stopAll: () => void;
+} | null> {
   const servers = scenario.mcpServers;
   if (!servers || Object.keys(servers).length === 0) return null;
 
-  const resolved = Object.fromEntries(
-    Object.entries(servers).map(([name, spec]) => [
-      name,
-      {
-        ...spec,
-        command: resolveFixtures(spec.command),
-        ...(spec.args ? { args: spec.args.map(resolveFixtures) } : {}),
-      },
-    ])
-  );
+  const tempDir = mkdtempSync(join(tmpdir(), `kiro-mcp-${scenario.id}-`));
+  const stops: Array<() => void> = [];
+  const entries: Array<[string, Record<string, unknown>]> = [];
+  try {
+    for (const [name, spec] of Object.entries(servers)) {
+      if (spec.remote) {
+        const { url, stop } = await spawnRemoteMcpServer(
+          name,
+          { args: spec.args?.map(resolveFixtures) },
+          tempDir
+        );
+        stops.push(stop);
+        const { remote: _remote, command: _c, args: _a, ...rest } = spec;
+        entries.push([name, { ...rest, url }]);
+        continue;
+      }
+      entries.push([
+        name,
+        {
+          ...spec,
+          ...(spec.command ? { command: resolveFixtures(spec.command) } : {}),
+          ...(spec.args ? { args: spec.args.map(resolveFixtures) } : {}),
+          ...(spec.url ? { url: resolveFixtures(spec.url) } : {}),
+        },
+      ]);
+    }
+  } catch (error) {
+    for (const stop of stops) stop();
+    throw error;
+  }
+
   const name = 'scenario_mcp';
   return {
     name,
@@ -352,17 +380,76 @@ function mcpAgentConfig(
         description: 'Agent carrying the scenario-declared MCP servers.',
         prompt: 'You are a test agent.',
         tools: ['*'],
-        mcpServers: resolved,
+        mcpServers: Object.fromEntries(entries),
       },
       null,
       2
     ),
+    stopAll: () => {
+      for (const stop of stops) stop();
+    },
   };
 }
 
 function resolveFixtures(value: string): string {
   return value.replace(/\{\{fixture:([^}]+)\}\}/g, (_, file: string) =>
     join(FIXTURES_DIR, file)
+  );
+}
+
+/**
+ * A remote MCP server the scenario asked for, spawned for the run.
+ *
+ * Hosted MCP servers are reached over HTTP, and OAuth only applies to that
+ * transport, so a journey covering either needs a real listener rather than a
+ * stdio child. The port is chosen by the OS and read back from a file, so
+ * concurrent scenarios cannot collide on a fixed one.
+ */
+async function spawnRemoteMcpServer(
+  name: string,
+  spec: { args?: string[] },
+  tempDir: string
+): Promise<{ url: string; stop: () => void }> {
+  const bin = resolveMockMcpBinary();
+  const portFile = join(tempDir, `mcp-port-${name}`);
+  const child = spawn(bin, [...(spec.args ?? []), '--port-file', portFile], {
+    stdio: 'ignore',
+    detached: false,
+  });
+  const stop = () => {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Already gone; nothing to release.
+    }
+  };
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (existsSync(portFile)) {
+      const port = readFileSync(portFile, 'utf8').trim();
+      if (port) return { url: `http://127.0.0.1:${port}/mcp`, stop };
+    }
+    if (child.exitCode !== null) {
+      stop();
+      throw new Error(
+        `remote MCP server "${name}" exited with ${child.exitCode} before binding`
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  stop();
+  throw new Error(`remote MCP server "${name}" never reported a port`);
+}
+
+function resolveMockMcpBinary(): string {
+  const fromEnv = process.env.MOCK_MCP_BIN;
+  if (fromEnv && existsSync(fromEnv)) return fromEnv;
+  for (const profile of ['debug', 'release']) {
+    const candidate = join(REPO_ROOT, 'target', profile, 'mock-mcp-server');
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(
+    'mock-mcp-server not found: build it (cargo build -p mock-mcp-server) or set MOCK_MCP_BIN'
   );
 }
 
@@ -388,13 +475,15 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
       }
 
       const server = await MockKrsProcess.start();
+      // Declared out here so the catch below can release any server it spawned.
+      let mcpAgent: Awaited<ReturnType<typeof mcpAgentConfig>> = null;
       try {
         await server.loadTurns(scenario);
 
         // A scenario's MCP servers ride on an agent config, which is where the
         // engine reads them from. Absent, nothing is planted and the registry
         // stays empty.
-        const mcpAgent = mcpAgentConfig(scenario);
+        mcpAgent = await mcpAgentConfig(scenario);
 
         const builder = E2ETestCase.builder()
           .withTestName(`scenario-${scenario.id}-krs-mock-${Date.now()}`)
@@ -448,10 +537,12 @@ export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
           new LiveHarness(testCase),
           server,
           exchangePath(scenario, opts, testCase.getTuiLogPath()),
-          scenario.turns
+          scenario.turns,
+          mcpAgent?.stopAll
         );
       } catch (error) {
         server.stop();
+        mcpAgent?.stopAll();
         throw error;
       }
     },

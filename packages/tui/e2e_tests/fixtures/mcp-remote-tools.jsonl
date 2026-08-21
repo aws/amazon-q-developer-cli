@@ -1,0 +1,5 @@
+// Tool catalogue for the remote/OAuth MCP journeys, served by mock-mcp-server.
+// One JSON object per line: a `tool` declares what tools/list advertises, a
+// `response` fixes what tools/call answers so an assertion can name it.
+{"type":"tool","name":"remote_echo","description":"Echo a sentinel back from a remote MCP server.","input_schema":{"type":"object","properties":{"value":{"type":"string"}}}}
+{"type":"response","tool":"remote_echo","response":{"echoed":"REMOTE-MCP-OK"}}

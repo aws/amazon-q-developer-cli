@@ -29,10 +29,27 @@ export interface Scenario {
    * MCP servers to configure before launch, by server name. The agent engine
    * spawns these for real, so a journey can assert what a configured server
    * puts on screen. Values accept `{{fixture:NAME}}` for a checked-in helper.
+   *
+   * A local server carries `command`; a remote one carries `url` instead, which
+   * is the transport hosted servers use and the only one OAuth applies to.
    */
   mcpServers?: Record<
     string,
-    { command: string; args?: string[]; env?: Record<string, string> }
+    {
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+      url?: string;
+      headers?: Record<string, string>;
+      type?: string;
+      oauthScopes?: string[];
+      /**
+       * Spawn the checked-in mock MCP server over HTTP and configure this entry
+       * with the URL it bound. `args` are passed to it; the port is assigned by
+       * the OS, so nothing here names one.
+       */
+      remote?: boolean;
+    }
   >;
   /**
    * Scripted KRS turns answering this scenario's prompts, validated by

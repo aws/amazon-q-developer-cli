@@ -896,6 +896,12 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo build -p mock-krs-server --release
 
+      - name: Build mock MCP server
+        # Rides the same lane: MCP journeys point a scenario's configured server
+        # at this binary, including the HTTP transport OAuth needs.
+        if: runner.os == 'Linux'
+        run: cargo build -p mock-mcp-server --release
+
       - name: Build Twinki workspace dependency
         run: bun run build
         working-directory: packages/twinki/packages/twinki
@@ -912,6 +918,7 @@ jobs:
             ${{ steps.binary-id.outputs.binary-path }}
             ${{ steps.binary-id.outputs.binary-path }}.rc-binary-manifest.json
             target/release/mock-krs-server
+            target/release/mock-mcp-server
             packages/tui/dist/tui.js
             packages/twinki/packages/twinki/dist/
           retention-days: 7
@@ -1477,6 +1484,7 @@ jobs:
           KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
           KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/release/chat_cli
           MOCK_KRS_BIN: ${{ github.workspace }}/target/release/mock-krs-server
+          MOCK_MCP_BIN: ${{ github.workspace }}/target/release/mock-mcp-server
           SCENARIO_RUNNER_RETRIES: ${{ needs.resolve.outputs.scenario_runner_retries }}
           # Instrument the TUI through the real Rust->bun launch. Per-scenario
           # lcov lands under this base dir; the drift step merges it.
@@ -1487,6 +1495,7 @@ jobs:
           # file modes. chat_cli gets its execute bit back from verify-bundle;
           # the fake KRS server has no manifest to hang that on, so do it here.
           chmod +x "$MOCK_KRS_BIN"
+          chmod +x "$MOCK_MCP_BIN"
           mkdir -p verification-results/krs-mock
           bun packages/tui/e2e_tests/smoke/run-smoke.ts \
             --backend krs-mock \

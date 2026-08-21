@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global process */
 /**
  * A deterministic stdio MCP server for scenario coverage.
  *
