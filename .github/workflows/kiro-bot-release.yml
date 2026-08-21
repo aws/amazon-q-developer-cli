@@ -107,13 +107,7 @@ jobs:
         with:
           toolchain: 1.92.0
           targets: ${{ env.TARGET }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          # Distinct cache slot for the cross-compile target dir so it doesn't
-          # churn against the host-target cache in `test`, and persists even
-          # when the build step itself fails.
-          shared-key: arm64-build
-          cache-on-failure: true
+      # Do not cache this cross-compile: cache save exceeds runner disk capacity.
       - name: Install zig (cross-toolchain)
         uses: mlugg/setup-zig@v1
         # Pin to a Zig release that's still on the official mirror network.
@@ -125,6 +119,10 @@ jobs:
       - name: Install cargo-zigbuild
         run: cargo install cargo-zigbuild
       - name: Build
+        # Strip release debuginfo: runtime images do not consume it.
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: '0'
+          CARGO_PROFILE_RELEASE_STRIP: symbols
         run: |
           cargo zigbuild --release --target ${{ env.TARGET }} \
             --no-default-features \
