@@ -1,0 +1,97 @@
+name: Model Sanity
+
+# Run on demand when a model is newly available, against a pinned model id on
+# both engines. Not scheduled: a launch is an event, and a cron run would mostly
+# re-test a model that nothing changed about.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model id to pin (exactly as the backend reports it, e.g. claude-opus-5)"
+        type: string
+        required: true
+      engine:
+        description: "Engine to test"
+        type: choice
+        required: true
+        default: "all"
+        options:
+          - all
+          - v2
+          - kas
+
+concurrency:
+  group: model-sanity-${{ inputs.model }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # codeartifact-login assumes its role over GitHub OIDC, which needs this to
+  # mint a token; without it bun install cannot resolve the @kiro packages.
+  id-token: write
+
+jobs:
+  sanity:
+    name: Model sanity (${{ inputs.model }}/${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ${{ inputs.engine == 'all' && fromJSON('["v2","kas"]') || fromJSON(format('["{0}"]', inputs.engine)) }}
+    env:
+      TERM: xterm-256color
+      COLORTERM: truecolor
+      FORCE_COLOR: '3'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: cargo-model-sanity-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Build chat_cli
+        run: cargo build -p chat_cli
+
+      # Every leg needs this: @kiro/agent, @kiro/client and
+      # @kiro/acp-type-covenant all resolve from CodeArtifact during bun install.
+      - uses: ./.github/actions/codeartifact-login
+        continue-on-error: true
+
+      - run: bun install
+      - run: bun run build
+        working-directory: packages/twinki/packages/twinki
+      - run: bun run build
+        working-directory: packages/tui
+
+      - name: Run model sanity scenarios
+        env:
+          KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
+          KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/debug/chat_cli
+          KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+        run: |
+          bun packages/tui/e2e_tests/smoke/run-smoke.ts \
+            --backend live \
+            --engine "${{ matrix.engine }}" \
+            --category model-sanity \
+            --model "${{ inputs.model }}" \
+            --format tap \
+            --output-dir model-sanity-results/${{ matrix.engine }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-sanity-${{ matrix.engine }}
+          path: model-sanity-results/${{ matrix.engine }}/
+          retention-days: 14
+          if-no-files-found: warn

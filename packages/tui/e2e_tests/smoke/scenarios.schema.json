@@ -81,7 +81,8 @@
             "context-management",
             "settings",
             "accessibility",
-            "mcp"
+            "mcp",
+            "model-sanity"
           ],
           "description": "Grouping category for the scenario"
         },

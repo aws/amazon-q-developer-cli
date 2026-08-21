@@ -112,6 +112,13 @@ export interface RunOptions {
   parallel?: number;
   outputDir?: string;
   fixturesDir?: string;
+  /**
+   * Model id to pin every scenario to. Only the live backend can honour it —
+   * the mocks replay fixtures and never reach a model. Left unset, a scenario
+   * runs on whatever the account defaults to, which makes a lane meant to
+   * qualify one specific model meaningless.
+   */
+  model?: string;
 }
 
 export interface ScenarioResult {

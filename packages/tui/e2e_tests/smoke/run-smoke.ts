@@ -62,6 +62,7 @@ interface CliOptions {
   backend: ScenarioBackendId;
   backendExplicit: boolean;
   engine: Engine;
+  model: string | undefined;
   fixturesDir: string;
   format: 'tap' | 'summary';
   scenarios: string[];
@@ -91,6 +92,7 @@ function parseCliArgs(): CliOptions {
       category: { type: 'string', short: 'c', multiple: true, default: [] },
       tag: { type: 'string', short: 't', multiple: true, default: [] },
       priority: { type: 'string', short: 'p', multiple: true, default: [] },
+      model: { type: 'string', default: undefined },
       timeout: { type: 'string', default: undefined },
       'capture-frames': { type: 'boolean', default: undefined },
       'no-capture-frames': { type: 'boolean', default: false },
@@ -161,10 +163,21 @@ function parseCliArgs(): CliOptions {
     process.exit(RUNNER_ERROR);
   }
 
+  const model = (values.model as string) ?? process.env.SMOKE_MODEL;
+
+  // Silently ignoring this would report a pass for a model that never ran.
+  if (model && backend !== 'live') {
+    console.error(
+      `error: --model requires backend "live" (got "${backend}"); the mocks replay fixtures and never reach a model`
+    );
+    process.exit(RUNNER_ERROR);
+  }
+
   return {
     backend,
     backendExplicit,
     engine,
+    model,
     fixturesDir:
       (values['fixtures-dir'] as string) ??
       process.env.SMOKE_FIXTURES_DIR ??
@@ -404,6 +417,8 @@ Options:
   -c, --category <name>       Filter by category (repeatable)
   -t, --tag <tag>             Filter by tag (repeatable)
   -p, --priority <p0|p1|p2>   Filter by priority (repeatable)
+      --model <id>            Pin every scenario to this model id; requires
+                              --backend live (env: SMOKE_MODEL)
       --timeout <ms>          Per-scenario timeout in ms (default: 120000, env: SMOKE_TIMEOUT)
       --capture-frames        Capture terminal frames as evidence (default: true)
       --no-capture-frames     Disable frame capture
@@ -460,6 +475,7 @@ async function main(): Promise<void> {
     timeout: cli.timeoutExplicit ? cli.timeout : undefined,
     captureFrames: cli.captureFrames,
     outputDir: cli.outputDir,
+    model: cli.model,
   };
 
   const report = await runWithRetries(runOpts, cli.retries);

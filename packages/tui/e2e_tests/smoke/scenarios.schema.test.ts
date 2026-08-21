@@ -56,7 +56,7 @@ describe('scenario corpus', () => {
   it('has the schema constraints wired', () => {
     expect(corpus.length).toBeGreaterThan(0);
     expect(requiredFields).toContain('priority');
-    expect(categoryEnum.length).toBe(17);
+    expect(categoryEnum.length).toBe(18);
   });
 
   it('carries every schema-required field on every scenario', () => {

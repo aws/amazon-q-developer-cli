@@ -145,6 +145,13 @@ pub mod env_var {
         /// Test mode for ACP integration tests
         KIRO_TEST_MODE = "KIRO_TEST_MODE",
 
+        /// Opt a test-mode run out of the mock API client so prompts reach the
+        /// real service. The mock registry answers with an empty stream when
+        /// nothing is queued, which a live run would wait on forever. Suppresses
+        /// the agent IPC server and telemetry capture along with the registry,
+        /// since both are owned by the same test-mode block.
+        KIRO_TEST_LIVE_API = "KIRO_TEST_LIVE_API",
+
         /// Override database path for testing
         KIRO_TEST_DB_PATH = "KIRO_TEST_DB_PATH",
 

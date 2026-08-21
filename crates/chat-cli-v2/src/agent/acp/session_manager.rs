@@ -66,7 +66,10 @@ use crate::cli::chat::legacy::model::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::consts::env_var::KIRO_TEST_MODE;
+use crate::util::consts::env_var::{
+    KIRO_TEST_LIVE_API,
+    KIRO_TEST_MODE,
+};
 
 /// Metadata about an available agent configuration.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -289,16 +292,17 @@ impl SessionManagerBuilder {
                 };
 
             // In test mode, spawn IpcServer and MockResponseRegistry
-            let (mock_registry, telemetry_event_store) = if std::env::var(KIRO_TEST_MODE).is_ok() {
-                let registry = MockResponseRegistryHandle::spawn();
-                let capture = TelemetryEventStore::default();
-                if let Err(e) = IpcServer::spawn(registry.clone(), capture.clone()) {
-                    error!("Failed to spawn IPC server: {}", e);
-                }
-                (Some(registry), Some(capture))
-            } else {
-                (None, None)
-            };
+            let (mock_registry, telemetry_event_store) =
+                if std::env::var(KIRO_TEST_MODE).is_ok() && std::env::var(KIRO_TEST_LIVE_API).is_err() {
+                    let registry = MockResponseRegistryHandle::spawn();
+                    let capture = TelemetryEventStore::default();
+                    if let Err(e) = IpcServer::spawn(registry.clone(), capture.clone()) {
+                        error!("Failed to spawn IPC server: {}", e);
+                    }
+                    (Some(registry), Some(capture))
+                } else {
+                    (None, None)
+                };
 
             // Fetch MCP and web tools governance in a single GetProfile call for enterprise/API key users.
             // Skip for non-enterprise, non-API-key users (Builder ID, social auth) and test mode —

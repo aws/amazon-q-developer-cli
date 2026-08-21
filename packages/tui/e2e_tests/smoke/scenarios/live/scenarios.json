@@ -51,6 +51,123 @@
         "smoke"
       ],
       "priority": "p1"
+    },
+    {
+      "id": "model-sanity-turn",
+      "name": "model answers a turn",
+      "category": "model-sanity",
+      "description": "A newly launched model completes one plain turn without erroring",
+      "steps": [
+        "prompt:Reply with the words alpha and omega joined by a hyphen, and nothing else.",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:alpha-omega"
+      ],
+      "observe": "The joined pair renders; it appears nowhere in the prompt, so only a reply can put it on screen",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "model-sanity"
+      ],
+      "priority": "p1"
+    },
+    {
+      "id": "model-sanity-tool-call",
+      "name": "model calls a tool",
+      "category": "model-sanity",
+      "description": "A newly launched model emits a tool call whose result reaches the transcript",
+      "steps": [
+        "prompt:Read the file probe.txt in this directory and reply with the exact token it contains.",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:model-sanity-probe-token"
+      ],
+      "observe": "A tool card renders and the token from the file appears in the reply",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "model-sanity"
+      ],
+      "priority": "p1"
+    },
+    {
+      "id": "model-sanity-followup",
+      "name": "session survives a second turn",
+      "category": "model-sanity",
+      "description": "A second turn still dispatches after the first completes",
+      "steps": [
+        "prompt:Reply with the words alpha and one joined by a hyphen, and nothing else.",
+        "waitForIdle",
+        "prompt:Reply with the words beta and two joined by a hyphen, and nothing else.",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:alpha-one",
+        "screen.contains:beta-two"
+      ],
+      "observe": "Both replies render, so the first turn was not swallowed and the second was not diverted onto the queue",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "model-sanity"
+      ],
+      "priority": "p1"
+    },
+    {
+      "id": "model-sanity-shell",
+      "name": "model drives a shell command",
+      "category": "model-sanity",
+      "description": "A newly launched model runs a shell command whose output reaches the transcript",
+      "steps": [
+        "prompt:Use a shell command to print the contents of the file probe.txt in this directory.",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:model-sanity-probe-token"
+      ],
+      "observe": "A shell tool card renders and the file's token appears in its output",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "model-sanity"
+      ],
+      "priority": "p1"
+    },
+    {
+      "id": "model-sanity-edit",
+      "name": "model edits a file accurately",
+      "category": "model-sanity",
+      "description": "A newly launched model applies a single-word replacement to an existing file",
+      "steps": [
+        "prompt:In the file probe.txt in this directory, replace the word probe with the word edited.",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:model-sanity-edited-token"
+      ],
+      "observe": "An edit tool card renders and the rewritten token appears on screen; the token proves the file was read back, not that bytes changed on disk",
+      "engine": [
+        "v2",
+        "kas"
+      ],
+      "tags": [
+        "model-sanity"
+      ],
+      "priority": "p1"
     }
   ]
 }

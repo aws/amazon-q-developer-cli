@@ -883,10 +883,15 @@ export class E2ETestCaseBuilder {
     return this;
   }
 
-  /** KAS-engine run: no Rust agent IPC to wait for (see skipAgentIpc). */
-  withKasEngine(): E2ETestCaseBuilder {
+  /** Runs that never bring up the agent IPC server, so nothing waits on it. */
+  withoutAgentIpc(): E2ETestCaseBuilder {
     this.options.skipAgentIpc = true;
     return this;
+  }
+
+  /** KAS-engine run: the agent is out of process, so no Rust agent IPC exists. */
+  withKasEngine(): E2ETestCaseBuilder {
+    return this.withoutAgentIpc();
   }
 
   async launch(): Promise<E2ETestCase> {
