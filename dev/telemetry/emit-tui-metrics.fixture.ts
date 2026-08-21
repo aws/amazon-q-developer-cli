@@ -6,8 +6,12 @@
 
 import {
   forceFlushMetrics,
+  recordTuiAutonomousMode,
+  recordTuiCloudAttach,
   recordTuiCloudConfigDiagnostics,
   recordTuiCloudConfigSource,
+  recordTuiCloudError,
+  recordTuiCloudRepoAttach,
   recordTuiCloudSession,
   recordTuiCloudSessionReady,
   recordTuiConfigPanel,
@@ -178,6 +182,37 @@ async function main(): Promise<void> {
       recordTuiCloudSessionReady({
         durationSeconds: 12,
         version: VERSION,
+      })
+    ),
+    step('kiro_cli_autonomous_mode_total', () =>
+      recordTuiAutonomousMode({
+        event: 'enabled',
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_cloud_repo_attach_total', () =>
+      recordTuiCloudRepoAttach({
+        event: 'submitted',
+        repoCount: 2,
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_cloud_error_total', () =>
+      recordTuiCloudError({
+        op: 'session_new',
+        kind: 'version_skew',
+        version: VERSION,
+        engine: 'v3',
+      })
+    ),
+    step('kiro_cli_cloud_attach_total', () =>
+      recordTuiCloudAttach({
+        kind: 'image',
+        sizeBytes: 48 * 1024,
+        version: VERSION,
+        engine: 'v3',
       })
     ),
     step('successful user turn', () =>

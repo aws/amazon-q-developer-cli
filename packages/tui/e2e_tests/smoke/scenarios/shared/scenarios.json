@@ -55,6 +55,9 @@
       "description": "Inside the cloud_config rollout, /config opens the consolidated config category table and ESC closes it",
       "docRef": "/docs/cli/reference/slash-commands",
       "priority": "p1",
+      "tags": [
+        "smoke"
+      ],
       "env": {
         "KIRO_ENABLED_FEATURES": "[\"cloud_config\"]"
       },

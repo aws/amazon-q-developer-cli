@@ -111,6 +111,24 @@ Legend: ✅ covered by this change · ▶ covered when the named open PR merges 
 | —           | pink/white checkmark mismatch in /repo                    | CLI fixed #3656                           | ✅ e2e repo-picker accent assertion                   |
 | —           | /spec reads local .kiro/specs in cloud (scope mismatch)   | CLI gated (runSpec refusal)               | ✅ e2e (cloud-spec.test.ts, pre-fed spec + local control) + KR S17 + smoke | gate message on every form; seeded feature never renders; nothing crosses the BFF wire |
 
+## Cloud config (config-as-cloud-replica)
+
+Cloud config rides the same mock-BFF harness. Telemetry: the three metrics
+(`kiro_cli_config_panel_total`, `kiro_cli_cloud_config_diagnostic_total`,
+`kiro_cli_cloud_config_source_total`) are schema-cataloged, emitted from
+`tui-telemetry-observer.ts` (unit-tested), and asserted end-to-end by the
+PR Telemetry workflow (`dev/telemetry/validate-metrics-e2e.sh`).
+
+| Surface                                                                  | Tier(s)             | Where                                                        |
+| ------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------ |
+| /config category table + ESC lifecycle, rollout + engine gating          | integ               | integ_tests/config-panel.test.ts                              |
+| /config in local sessions (rollout on, env seam)                         | e2e + smoke         | config-command.test.ts; shared scenario `config-panel` (tag `smoke`) |
+| /config in cloud sessions: relayed cloud config + cloud Source (steering)| e2e + smoke         | cloud-config-panel.test.ts; knight-rider-smoke.sh + KR S19    |
+| /mcp Source column shows relayed cloud servers                           | e2e                 | cloud-config-panel.test.ts t2                                 |
+| Diagnostics + per-session source dedupe telemetry                        | unit                | tui-telemetry-observer.test.ts                                |
+| Known gap: /config hooks row `-` in v3 (KAS lacks per-session initial hooks push) | — (fix pending) | tracked with the kiro-agent hooks-initial-push fix         |
+| Local v3 cloud-config endpoint (launch.rs resolves + exports CLOUD_CONFIG_ENDPOINT, rollout-gated, trusted-host validated — #4223) | unit (rust) | launch.rs endpoint-resolution/override/gating tests; the full local pull path (launcher → KAS replica fetch → cloud Source in a local session) has no e2e yet — local e2e still drives the env seam |
+
 ## Open-PR-gated scenarios (add when each merges)
 
 - #3689 hide+refuse /rewind → un-gate bug 18/27 e2e

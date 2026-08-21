@@ -310,6 +310,50 @@ if start_kr "--cloud"; then
 fi
 end_cloud_session
 
+# ── /config cloud-config panel (mock only) ──────────────────────────────────
+# Cloud config is the config-as-cloud-replica surface: with the BFF relaying
+# cloud config (MOCK_BFF_CLOUD_CONFIG=1), /config must open the category
+# table and the steering page must list the relayed documents, each carrying
+# a cloud Source on its own row — never a raw error.
+# Mock-only: the production sandbox's cloud-config contents aren't
+# deterministic, so prod runs keep the /config surface covered by the
+# never-raw-error sweep above.
+if [ "$MODE" = "mock" ]; then
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT MOCK_BFF_CLOUD_CONFIG=1 exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+  # The mock serves cloud-config frames on the LoadSession downlink only, so
+  # resume the canned empty space (as the E2E does) instead of creating anew.
+  EMPTY_ID="aaaaaaa2-0002-4002-8002-000000000002"
+  if start_kr "--cloud --resume-id $EMPTY_ID"; then
+    wait_scr "ask a question" 60
+    type_text "/config"; enter
+    if wait_scr "Category" 20; then pass "/config category table opens"; else fail "/config category table opens"; fi
+    # In a cloud session every config row must carry a cloud Source; pin it on
+    # the steering row itself — the ☁ footer chip also reads "Cloud", so a
+    # screen-wide match would pass vacuously.
+    if scr_dump | grep -i "steering" | grep -qi "cloud"; then pass "category table steering row carries cloud source"; else fail "category table steering row carries cloud source"; fi
+    if grepscr "Internal error"; then fail "/config never raw-errors"; else pass "/config never raw-errors"; fi
+    frame "config-table"
+    curl -s -X POST "$KR/escape" >/dev/null; sleep 1
+    type_text "/config steering"; enter
+    if wait_scr "team-conventions" 20; then pass "steering lists first relayed cloud doc"; else fail "steering lists first relayed cloud doc"; fi
+    if wait_scr "api-guidelines" 10; then pass "steering lists second relayed cloud doc"; else fail "steering lists second relayed cloud doc"; fi
+    if scr_dump | grep -i "team-conventions" | grep -qi "cloud"; then pass "steering doc row carries cloud source"; else fail "steering doc row carries cloud source"; fi
+    if grepscr "Internal error"; then fail "steering page never raw-errors"; else pass "steering page never raw-errors"; fi
+    frame "config-steering"
+  fi
+  stop_kr
+  # Restore the plain BFF for the remaining sections.
+  kill "$BFF_PID" 2>/dev/null; wait "$BFF_PID" 2>/dev/null
+  kill_stale_listener "$BFF_PORT"
+  ( cd "$TUI_DIR" && MOCK_BFF_PORT=$BFF_PORT exec bun e2e_tests/cloud/mock-bff.mjs >>/tmp/mock-bff-smoke.log 2>&1 ) &
+  BFF_PID=$!
+  sleep 2
+fi
+
 # ── /spec cloud gate with seeded local specs ────────────────────────────────
 # /spec reads the LOCAL .kiro/specs tree, not the sandbox clone, so it must
 # refuse in a cloud session — and the seeded local spec must never leak onto

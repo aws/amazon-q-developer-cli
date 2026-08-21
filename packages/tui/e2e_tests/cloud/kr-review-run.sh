@@ -490,6 +490,36 @@ if start_kr "--cloud --resume-id $BANANA_ID"; then
 fi
 stop_kr
 
+# ── S19 /config cloud-config panel (config-as-cloud-replica surface) ────────
+# With the BFF relaying cloud config, /config must open the category table
+# and the steering page must list the relayed documents, each carrying a
+# cloud Source on its own row — never a raw error.
+scenario "S19" "/config renders relayed cloud config with cloud Source" "cloud config launch"
+start_bff MOCK_BFF_CLOUD_CONFIG=1
+# The mock serves cloud-config frames on the LoadSession downlink only, so
+# resume the canned empty space instead of creating a new session.
+if start_kr "--cloud --resume-id $EMPTY_ID"; then
+  wait_scr "ask a question" 60
+  type_text "/config"; enter
+  if wait_scr "Category" 20; then pass "/config category table opens"; else fail "/config category table opens"; fi
+  # In a cloud session every config row must carry a cloud Source; pin it on
+  # the steering row itself — the ☁ footer chip also reads "Cloud", so a
+  # screen-wide match would pass vacuously.
+  if scr_dump | grep -i "steering" | grep -qi "cloud"; then pass "category table steering row carries cloud source"; else fail "category table steering row carries cloud source"; fi
+  frame "config-table"
+  esc
+  type_text "/config steering"; enter
+  if wait_scr "team-conventions" 20; then pass "steering lists first relayed cloud doc"; else fail "steering lists first relayed cloud doc"; fi
+  if wait_scr "api-guidelines" 10; then pass "steering lists second relayed cloud doc"; else fail "steering lists second relayed cloud doc"; fi
+  if scr_dump | grep -i "team-conventions" | grep -qi "cloud"; then pass "steering doc row carries cloud source"; else fail "steering doc row carries cloud source"; fi
+  no_error_check
+  frame "config-steering"
+fi
+stop_kr
+# Restore the plain BFF so a scenario appended later never silently inherits
+# the cloud-config payloads from the ambient server.
+start_bff
+
 # ════════════════════════════════════════════════════════════════════════════
 say ""
 if [ "$FAILS" -eq 0 ]; then say "ALL SCENARIOS PASS"; else say "$FAILS CHECK(S) FAILED"; fi
