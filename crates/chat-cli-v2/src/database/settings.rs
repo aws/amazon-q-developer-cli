@@ -250,8 +250,10 @@ pub enum Setting {
         message = "Disable inheriting default resources — global/workspace steering, skills, and project marker files like AGENTS.md — in custom (user-defined) agents (boolean, default: false)"
     )]
     ChatDisableInheritingDefaultResources,
-    #[strum(message = "Disable auto-migration prompt for V2 agent configs on V3 engine launch (boolean)")]
-    ChatDisableAutoAgentUpgrade,
+    #[strum(
+        message = "Auto-upgrade V2 agent configs to the V3 format on launch: true (upgrade silently), false (never). Unset prompts once. (boolean)"
+    )]
+    ChatEnableAutoAgentUpgrade,
 }
 
 impl Setting {
@@ -339,7 +341,7 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultInterruptBehavior => "chat.defaultInterruptBehavior",
             Self::ChatKeybindingsToggleInterruptBehavior => "chat.keybindings.toggleInterruptBehavior",
             Self::ChatDisableInheritingDefaultResources => "chat.disableInheritingDefaultResources",
-            Self::ChatDisableAutoAgentUpgrade => "chat.disableAutoAgentUpgrade",
+            Self::ChatEnableAutoAgentUpgrade => "chat.enableAutoAgentUpgrade",
             #[cfg(feature = "voice")]
             Self::VoiceServerUrl => "voice.serverUrl",
             #[cfg(feature = "voice")]
@@ -449,7 +451,7 @@ impl TryFrom<&str> for Setting {
             "chat.defaultInterruptBehavior" => Ok(Self::ChatDefaultInterruptBehavior),
             "chat.keybindings.toggleInterruptBehavior" => Ok(Self::ChatKeybindingsToggleInterruptBehavior),
             "chat.disableInheritingDefaultResources" => Ok(Self::ChatDisableInheritingDefaultResources),
-            "chat.disableAutoAgentUpgrade" => Ok(Self::ChatDisableAutoAgentUpgrade),
+            "chat.enableAutoAgentUpgrade" => Ok(Self::ChatEnableAutoAgentUpgrade),
             #[cfg(feature = "voice")]
             "voice.serverUrl" => Ok(Self::VoiceServerUrl),
             #[cfg(feature = "voice")]

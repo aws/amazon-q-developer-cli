@@ -114,12 +114,6 @@ export enum Feature {
 	 */
 	RemoteChangelog = "remote_changelog",
 	/**
-	 * Auto-upgrade of V2-only agent configs to the universal format when
-	 * launching the V3/KAS engine. Internal nightly only for now; the launcher
-	 * only runs the migration prompt/scan when this is enabled.
-	 */
-	AutoAgentUpgrade = "auto_agent_upgrade",
-	/**
 	 * Consolidated `/config` panel and cloud/local source labels on config
 	 * listings (`/mcp` Source column). Ramped to all internal users on every
 	 * channel; external users stay dark.

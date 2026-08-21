@@ -82,12 +82,6 @@
     "treatment_percent": 100,
     "channel": "stable"
   },
-  "auto_agent_upgrade": {
-    "description": "Auto-upgrade V2-only agent configs to the universal format on V3 engine launch. Internal nightly only for now; widen segment/channel once the migration has soaked.",
-    "treatment_percent": 100,
-    "segment": "internal",
-    "channel": "nightly"
-  },
   "session_dashboard": {
     "description": "Session dashboard preview: the /sessions browser, --sessions flag, and --resume-picker dashboard routing (v3). Nightly-only for now; widen channel once it soaks. Dial treatment_percent to 0 to kill-switch.",
     "treatment_percent": 100,

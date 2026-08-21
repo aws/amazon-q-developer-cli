@@ -115,21 +115,9 @@ pub async fn launch(options: LaunchOptions, os: &Os, telemetry_name: String) -> 
     run_kas_gc_on_startup(os, agent_engine, !non_interactive).await;
 
     if agent_engine == AgentEngine::Kas
-        && crate::rollout::rollout().is_enabled(crate::rollout::Feature::AutoAgentUpgrade)
+        && auto_migrate::resolve_auto_upgrade_consent(!non_interactive, &os.database).await
     {
-        let target_agent = agent.clone().or_else(|| {
-            os.database
-                .settings
-                .get_string(crate::database::settings::Setting::ChatDefaultAgent)
-        });
-        let disable = auto_migrate::auto_migrate_agent_configs(!non_interactive, target_agent.as_deref(), &os.database);
-        if disable
-            && let Ok(path) = crate::util::paths::PathResolver::new(&os.env, &os.fs)
-                .workspace()
-                .settings_path()
-        {
-            auto_migrate::persist_disable_setting(&path);
-        }
+        auto_migrate::upgrade_agent_configs();
     }
 
     let mut cli_session_completion_emitted = false;
