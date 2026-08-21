@@ -24,6 +24,30 @@ const extractTitleWrites = (raw: string): string[] => {
 };
 /* eslint-enable no-control-regex */
 
+/**
+ * Poll the PTY buffer until an OSC title matching `predicate` arrives.
+ * Resolves as soon as the condition is met (typically <50ms) instead of
+ * burning a fixed sleep. Throws with a clear message on timeout.
+ */
+async function waitForOscTitle(
+  testCase: E2ETestCase,
+  ptyOutput: string[],
+  predicate: (titles: string[]) => boolean,
+  description: string,
+  timeoutMs = 5000
+): Promise<void> {
+  const start = Date.now();
+  while (!predicate(extractTitleWrites(ptyOutput.join('')))) {
+    if (Date.now() - start > timeoutMs) {
+      const titles = extractTitleWrites(ptyOutput.join(''));
+      throw new Error(
+        `OSC title never matched: ${description} (got ${JSON.stringify(titles)})`
+      );
+    }
+    await testCase.sleepMs(50);
+  }
+}
+
 describe('chat.terminalTitle', () => {
   let testCase: E2ETestCase | null = null;
 
@@ -56,6 +80,14 @@ describe('chat.terminalTitle', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Title set:', 5000);
 
+    // OSC arrives in a separate PTY chunk after the visible text on CI runners
+    await waitForOscTitle(
+      testCase,
+      ptyOutput,
+      (titles) => titles.some((t) => t.includes('verify-osc')),
+      'verify-osc title'
+    );
+
     // Verify an actual OSC 0 sequence was emitted with our title
     const titlesAfterSet = extractTitleWrites(ptyOutput.join(''));
     expect(titlesAfterSet.some((t) => t.includes('verify-osc'))).toBe(true);
@@ -65,6 +97,14 @@ describe('chat.terminalTitle', () => {
     await testCase.sleepMs(100);
     await testCase.pressEnter();
     await testCase.waitForText('Title cleared', 5000);
+
+    // Poll for the cwd-based title to arrive
+    await waitForOscTitle(
+      testCase,
+      ptyOutput,
+      (titles) => titles.some((t) => t.startsWith('kiro: ')),
+      'cwd-based kiro: title'
+    );
 
     // Verify the cwd-based title was re-emitted
     const allTitles = extractTitleWrites(ptyOutput.join(''));
@@ -93,6 +133,14 @@ describe('chat.terminalTitle', () => {
 
     // The effect handler should show a success toast
     await testCase.waitForText('Title set:', 5000);
+
+    // Poll for the OSC sequence to arrive
+    await waitForOscTitle(
+      testCase,
+      ptyOutput,
+      (titles) => titles.some((t) => t === 'kiro: custom label'),
+      'custom label title'
+    );
 
     // Verify the OSC sequence was emitted with our custom title
     const titles = extractTitleWrites(ptyOutput.join(''));
@@ -134,10 +182,21 @@ describe('chat.terminalTitle', () => {
     await testCase.pressEnter();
     await testCase.waitForText('Title cleared', 5000);
 
+    // Poll for the reverted title to arrive
+    await waitForOscTitle(
+      testCase,
+      ptyOutput,
+      (titles) => {
+        const last = titles[titles.length - 1];
+        return last !== undefined && last !== 'kiro: my override' && last.startsWith('kiro: ');
+      },
+      'reverted kiro: title (not the override)'
+    );
+
     // The most recent OSC title should no longer be the override,
     // but should still be a valid "kiro: ..." title
-    const titles = extractTitleWrites(ptyOutput.join(''));
-    const lastTitle = titles[titles.length - 1];
+    const allTitles = extractTitleWrites(ptyOutput.join(''));
+    const lastTitle = allTitles[allTitles.length - 1];
     expect(lastTitle).not.toBe('kiro: my override');
     expect(lastTitle!.startsWith('kiro: ')).toBe(true);
 
