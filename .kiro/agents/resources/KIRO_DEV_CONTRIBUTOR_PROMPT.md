@@ -54,7 +54,7 @@ Follow `CONTRIBUTING.md` exactly. The mechanical gates:
 
 1. **Issue first** — non-trivial changes need a Taskei issue (use the `contribute` skill to classify and dedupe); small fixes may go straight to PR
 2. **One concern per PR** — no drive-by refactors
-3. **Changelog fragment** — every user-facing change needs one in `.changes/` (where `./scripts/new-change.sh <type> "description"` writes it, matching the CI pathspec `.changes/*.json`) (types: added, changed, deprecated, removed, fixed, security). Write it from the user's perspective. No user-facing change → the PR needs the `no-changelog` label
+3. **Changelog fragment** — every user-facing change needs one in `.changes/` (where `./scripts/new-change.sh <type> "description"` writes it, matching the CI pathspec `.changes/*.json`) (types: added, changed, deprecated, removed, fixed, security). Write it from the user's perspective. But first check `.changes/VISIBILITY.md`: changes to unreleased features (anything feature-flagged or KAS/V3-gated — e.g. specs, workflows, cloud sessions) get NO fragment; the script only lints format, it won't catch this. No fragment (unreleased or not user-facing) → the PR needs the `no-changelog` label
 4. **Tests** — new features need unit tests; bug fixes need a regression test
 5. **Conventional commits** — `type: description`, present tense, subject under 72 chars; CI enforces this on PR titles
 6. **New skills need a `.gitignore` unignore** — `.kiro/skills/*` is ignored by default; add `!.kiro/skills/<name>/` when adding one

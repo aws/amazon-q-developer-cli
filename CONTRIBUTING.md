@@ -201,8 +201,11 @@ It generates the filename, slug, and validates the entry for you.
 - Write from the user's perspective — what changed for them, not what you did in the code
 - Keep it to one sentence
 - No PR with user-facing changes will be merged without a fragment
+- See `.changes/GUIDELINES.md` and `.changes/VISIBILITY.md` for the full rules
 
 **No user-facing changes?** Add the `no-changelog` label to your PR to skip this check.
+
+**Unreleased features never get fragments.** If your change is to a feature that has not shipped to customers (anything behind a feature flag, or KAS/V3-gated surfaces such as specs, workflows, and cloud sessions), do not create a fragment — use the `no-changelog` label. The feature gets one changelog entry when it launches, not a trickle of entries while it is being built. Note that `new-change.sh` only validates format; it will not catch this.
 
 ## Test Coverage
 
