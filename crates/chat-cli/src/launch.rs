@@ -720,12 +720,41 @@ pub(crate) fn apply_kas_bff_endpoint_env(cmd: &mut tokio::process::Command, reso
 
 /// Whether this process is an instrumented coverage run: KIRO_COVERAGE=1 plus
 /// the wrapper and output dir the instrumented spawn needs. Conjunctive on
-/// purpose, so the launch arm and the shutdown path agree — a graceful SIGTERM
-/// wait only makes sense for a child that is actually writing lcov.
+/// purpose, so the launch arm and the shutdown grace agree.
 fn is_coverage_run() -> bool {
     std::env::var("KIRO_COVERAGE").ok().as_deref() == Some("1")
         && std::env::var_os("KIRO_COVERAGE_WRAPPER").is_some()
         && std::env::var_os("KIRO_COVERAGE_DIR").is_some()
+}
+
+/// Grace period for the TUI child to shut itself down after SIGTERM. Kept short
+/// so a wedged child can't stall shutdown past the launcher's exit deadline.
+#[cfg(unix)]
+const TUI_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+/// Longer grace for instrumented runs, which write lcov only on a clean exit.
+#[cfg(unix)]
+const COVERAGE_SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
+
+/// Terminate the TUI child, giving it a chance to run its own shutdown first.
+///
+/// SIGKILL alone would skip the child's signal handlers, orphaning the detached
+/// agent process group the child owns. Escalates only if SIGTERM doesn't land.
+#[cfg(unix)]
+async fn stop_child(child: &mut tokio::process::Child, grace: Duration) {
+    use nix::sys::signal::{
+        Signal,
+        kill,
+    };
+    use nix::unistd::Pid;
+    if let Some(pid) = child.id() {
+        if let Err(err) = kill(Pid::from_raw(pid as i32), Signal::SIGTERM) {
+            tracing::warn!(%err, "failed to SIGTERM the TUI child; forcing shutdown");
+        } else if tokio::time::timeout(grace, child.wait()).await.is_ok() {
+            return;
+        }
+    }
+    let _ = child.kill().await;
 }
 
 /// Launch the interactive TUI. Extracts embedded assets and spawns bun with the TUI JS bundle.
@@ -1007,27 +1036,14 @@ async fn launch_acp_interactive(
             SignalKind,
             signal,
         };
-        // Coverage runs need the bun child to exit gracefully: `bun test
-        // --coverage` writes lcov only on a clean shutdown, so forward SIGTERM
-        // and give it a moment before falling back to SIGKILL.
-        let coverage_run = is_coverage_run();
-        async fn stop_child(child: &mut tokio::process::Child, graceful: bool) {
-            if graceful && let Some(pid) = child.id() {
-                use nix::sys::signal::{
-                    Signal,
-                    kill,
-                };
-                use nix::unistd::Pid;
-                let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
-                if tokio::time::timeout(Duration::from_secs(10), child.wait())
-                    .await
-                    .is_ok()
-                {
-                    return;
-                }
-            }
-            let _ = child.kill().await;
-        }
+        // SIGKILL would skip the child's own shutdown handlers, orphaning the
+        // detached agent process group it owns; escalate only if SIGTERM
+        // doesn't land.
+        let shutdown_grace = if is_coverage_run() {
+            COVERAGE_SHUTDOWN_GRACE
+        } else {
+            TUI_SHUTDOWN_GRACE
+        };
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sighup = signal(SignalKind::hangup())?;
         loop {
@@ -1042,17 +1058,17 @@ async fn launch_acp_interactive(
                     break;
                 }
                 _ = sigterm.recv() => {
-                    stop_child(&mut child, coverage_run).await;
+                    stop_child(&mut child, shutdown_grace).await;
                     status = None;
                     break;
                 }
                 _ = sighup.recv() => {
-                    stop_child(&mut child, coverage_run).await;
+                    stop_child(&mut child, shutdown_grace).await;
                     status = None;
                     break;
                 }
                 _ = tokio::signal::ctrl_c() => {
-                    stop_child(&mut child, coverage_run).await;
+                    stop_child(&mut child, shutdown_grace).await;
                     status = None;
                     break;
                 }
@@ -2060,6 +2076,63 @@ mod tests {
         accumulate_final_text(&mut buf, &mut truncated, "ghi", 4);
         assert_eq!(buf, "abcd");
         assert!(truncated);
+    }
+
+    /// Spawn a shell that reacts to SIGTERM per `trap_body`, then blocks.
+    #[cfg(unix)]
+    fn spawn_trapping_child(trap_body: &str) -> tokio::process::Child {
+        tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("trap '{trap_body}' TERM; while :; do sleep 0.05; done"))
+            .kill_on_drop(true)
+            .spawn()
+            .expect("failed to spawn test child")
+    }
+
+    /// A child that shuts itself down on SIGTERM must be allowed to do so: this
+    /// is what lets the TUI tear down its own agent process group instead of
+    /// leaking it. Asserted via the exit status, since a SIGKILLed child never
+    /// reaches its handler.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stop_child_lets_the_child_exit_on_its_own() {
+        let mut child = spawn_trapping_child("exit 7");
+        // Let the shell install its trap before signalling.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        stop_child(&mut child, TUI_SHUTDOWN_GRACE).await;
+
+        let status = child.wait().await.expect("child should be reaped");
+        assert_eq!(
+            status.code(),
+            Some(7),
+            "child should have run its own SIGTERM handler, got {status:?}"
+        );
+    }
+
+    /// A child that ignores SIGTERM must still be killed, so shutdown can't hang.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stop_child_escalates_when_sigterm_is_ignored() {
+        use std::os::unix::process::ExitStatusExt as _;
+
+        let mut child = spawn_trapping_child("");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let started = std::time::Instant::now();
+        stop_child(&mut child, TUI_SHUTDOWN_GRACE).await;
+        let elapsed = started.elapsed();
+
+        let status = child.wait().await.expect("child should be reaped");
+        assert_eq!(
+            status.signal(),
+            Some(nix::sys::signal::Signal::SIGKILL as i32),
+            "child ignoring SIGTERM should be SIGKILLed, got {status:?}"
+        );
+        assert!(
+            elapsed >= TUI_SHUTDOWN_GRACE,
+            "escalation should wait out the grace period, waited {elapsed:?}"
+        );
     }
 
     #[test]

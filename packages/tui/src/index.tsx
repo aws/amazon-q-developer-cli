@@ -165,6 +165,17 @@ let titleSyncedForSession: string | undefined;
 // writes to stdout, creating an infinite loop that leaks ~200 MB/s until OOM.
 process.stdout.on('error', (err) => {
   logger.error('[tui] stdout error, exiting:', String(err));
+  // This path exits without running any signal handler, so signal the agent
+  // here or its detached process group is orphaned. Guarded because the
+  // listener is registered before the agent exists.
+  try {
+    kiro.close();
+  } catch (closeErr) {
+    logger.error(
+      '[tui] agent close failed in stdout breaker:',
+      String(closeErr)
+    );
+  }
   process.exit(1);
 });
 
