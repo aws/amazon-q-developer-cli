@@ -27,6 +27,8 @@ export interface ScrollableBoxProps {
    * "user scrolled up" latch so subsequent growth keeps following.
    */
   scrollToEndKey?: string | number;
+  /** Clamp renderer text selection to this viewport so drags cannot bleed into adjacent panes. */
+  selectionScope?: boolean;
   children: React.ReactNode;
 }
 
@@ -36,6 +38,7 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
   autoScroll = true,
   isActive = true,
   scrollToEndKey,
+  selectionScope = false,
   children,
 }) => {
   const [scrollTop, setScrollTop] = useState(0);
@@ -177,6 +180,7 @@ export const ScrollableBox: React.FC<ScrollableBoxProps> = ({
         overflow="hidden"
         flexDirection="column"
         scrollTop={clampedScrollTop}
+        selectionScope={selectionScope || undefined}
       >
         <Box ref={contentRef} flexDirection="column" flexShrink={0}>
           {children}

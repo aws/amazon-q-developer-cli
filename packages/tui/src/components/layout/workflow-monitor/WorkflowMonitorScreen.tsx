@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, type StoreApi } from 'zustand';
-import { Box, Split, Tabs, Text, useFullscreen } from '../../../renderer.js';
+import {
+  Box,
+  Split,
+  Tabs,
+  Text,
+  useFullscreen,
+  useSelectionCopy,
+} from '../../../renderer.js';
 import { useKeypress } from '../../../hooks/useKeypress.js';
 import { useTerminalSize } from '../../../hooks/useTerminalSize.js';
 import { useAllowIcons, useGlyphs } from '../../../hooks/useGlyphs.js';
@@ -151,6 +158,23 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
   // native terminal text-selection can turn it off with `m` and have that stick.
   const [mouseModeEnabled, setMouseModeEnabled] = useState(() =>
     readBoolSetting(Settings.WORKFLOW_MONITOR_MOUSE, true)
+  );
+  const [copiedFlash, setCopiedFlash] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useSelectionCopy(
+    (text) => {
+      if (!text.replace(/\n+$/g, '')) return;
+      setCopiedFlash(true);
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = setTimeout(() => setCopiedFlash(false), 1600);
+    },
+    { isActive: mouseModeEnabled }
+  );
+  useEffect(
+    () => () => {
+      if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    },
+    []
   );
   const [activeView, setActiveView] = useState<'workflows' | 'agents'>(
     'workflows'
@@ -672,9 +696,13 @@ export const WorkflowMonitorScreen = React.memo(function WorkflowMonitorScreen({
         </Box>
         {mouseModeEnabled && (
           <Text>
-            {getColor('info').bold(
-              `${allowIcons ? `${glyphs.dotFilled} ` : ''}MOUSE ON`
-            )}
+            {copiedFlash
+              ? getColor('success').bold(
+                  `COPIED${allowIcons ? ` ${glyphs.checkmark}` : ''}`
+                )
+              : getColor('info').bold(
+                  `${allowIcons ? `${glyphs.dotFilled} ` : ''}MOUSE ON`
+                )}
           </Text>
         )}
       </Box>

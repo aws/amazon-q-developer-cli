@@ -302,7 +302,9 @@ export const AppContainer: React.FC = () => {
   // The renderer has already written OSC 52 by this point, so only the native
   // clipboard tools are needed here.
   useSelectionCopy((text) => {
-    copyToSystemClipboard(text, { osc52Fallback: false, blocking: false });
+    const cleaned = text.replace(/\n+$/g, '');
+    if (!cleaned) return;
+    copyToSystemClipboard(cleaned, { osc52Fallback: false, blocking: false });
   });
 
   const { Layout, ApprovalPrompt, StatusLine, ActivityTray } =

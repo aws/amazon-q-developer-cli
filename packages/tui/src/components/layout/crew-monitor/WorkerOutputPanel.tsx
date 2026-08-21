@@ -65,6 +65,7 @@ export const WorkerOutputPanel = React.memo(function WorkerOutputPanel({
         autoScroll={true}
         isActive={scrollActive}
         scrollToEndKey={scrollToEndKey}
+        selectionScope
       >
         {selectedSession ? (
           <SessionOutput
