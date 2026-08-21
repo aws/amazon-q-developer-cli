@@ -415,6 +415,30 @@ metrics:
     temporality: delta
     attributes: [version_full, agent_engine, mcp_server_source, mcp_server_name]
     cloudwatch_dimensions: [version_full, agent_engine, mcp_server_source]
+  - name: kiro_cli_acp_method_invocations_total
+    description: Supported inbound ACP extension request attempts counted before parameter decoding, grouped in EMF by client and method. For completed-request success rate divide by kiro_cli_acp_method_outcome_total, not this counter.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, session_interface, agent_engine, acp_method, acp_client_name]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine]
+  - name: kiro_cli_acp_method_outcome_total
+    description: Terminal outcomes of supported inbound ACP extension requests grouped in EMF by client and method. Unknown means a claimed request was abandoned without a response.
+    kind: counter
+    unit: "1"
+    priority: P1
+    temporality: delta
+    attributes: [version_full, session_interface, agent_engine, acp_method, acp_client_name, acp_method_outcome]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, acp_method_outcome]
+  - name: kiro_cli_acp_method_duration_ms
+    description: End-to-end dispatch duration of supported inbound ACP extension requests, split by terminal outcome.
+    kind: histogram
+    unit: ms
+    priority: P1
+    temporality: delta
+    attributes: [version_full, session_interface, agent_engine, acp_method, acp_client_name, acp_method_outcome]
+    cloudwatch_dimensions: [version_full, session_interface, agent_engine, acp_method_outcome]
   - name: kiro_cli_user_turns
     description: User prompts that reached a terminal success, failure, or cancellation.
     dashboard: true

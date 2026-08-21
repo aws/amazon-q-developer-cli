@@ -194,6 +194,7 @@ pub struct SpawnOrchestratedResult {
 #[derive(Clone, Default)]
 pub struct SessionManagerBuilder {
     os: Option<Os>,
+    acp_connection_context: crate::telemetry::AcpConnectionContext,
     local_mcp_path: Option<PathBuf>,
     global_mcp_path: Option<PathBuf>,
     trust_all_tools: bool,
@@ -204,6 +205,11 @@ pub struct SessionManagerBuilder {
 impl SessionManagerBuilder {
     pub fn os(mut self, os: Os) -> Self {
         self.os = Some(os);
+        self
+    }
+
+    pub(crate) fn acp_connection_context(mut self, context: crate::telemetry::AcpConnectionContext) -> Self {
+        self.acp_connection_context = context;
         self
     }
 
@@ -236,6 +242,7 @@ impl SessionManagerBuilder {
         let (tx, mut session_rx) = mpsc::channel::<SessionManagerRequest>(25);
         let Self {
             os,
+            acp_connection_context,
             local_mcp_path,
             global_mcp_path,
             trust_all_tools,
@@ -545,6 +552,7 @@ impl SessionManagerBuilder {
                 agent_configs,
                 agent_config_errors,
                 os,
+                acp_connection_context,
                 local_mcp_path,
                 global_mcp_path,
                 session_manager_handle_clone,
@@ -639,8 +647,8 @@ pub struct SessionManager {
     trust_all_tools: bool,
     /// Specific tools to trust for new sessions (from --trust-tools CLI flag)
     trust_tools: Option<Vec<String>>,
-    /// ACP client identity from InitializeRequest, propagated to all sessions
-    acp_client_info: Option<crate::telemetry::AcpClientInfo>,
+    /// ACP client identity learned once per connection.
+    acp_connection_context: crate::telemetry::AcpConnectionContext,
     /// Telemetry event store for recording events in test scenarios.
     /// Shared with the IPC server so tests can drain and assert on events. `None` in production.
     telemetry_event_store: Option<TelemetryEventStore>,
@@ -706,6 +714,7 @@ impl SessionManager {
         agent_configs: Vec<LoadedAgentConfig>,
         agent_config_errors: Vec<AgentConfigLoadError>,
         os: Os,
+        acp_connection_context: crate::telemetry::AcpConnectionContext,
         local_mcp_path: Option<PathBuf>,
         global_mcp_path: Option<PathBuf>,
         session_manager_handle: SessionManagerHandle,
@@ -724,6 +733,7 @@ impl SessionManager {
             sessions: HashMap::new(),
             agent_configs,
             os,
+            acp_connection_context,
             local_mcp_path,
             global_mcp_path,
             session_manager_handle,
@@ -734,7 +744,6 @@ impl SessionManager {
             code_intelligence: HashMap::new(),
             trust_all_tools,
             trust_tools,
-            acp_client_info: None,
             telemetry_event_store,
             permission_store: PermissionStore::new(),
             orchestrated_sessions: HashMap::new(),
@@ -1436,7 +1445,7 @@ impl SessionManager {
                     .web_tools_enabled(self.web_tools_enabled)
                     .mcp_enabled(self.mcp_enabled)
                     .mandatory_mcp_names(self.mandatory_mcp_names.clone())
-                    .acp_client_info(self.acp_client_info.clone())
+                    .acp_client_info(self.acp_connection_context.client_info())
                     .telemetry_event_store(self.telemetry_event_store.clone())
                     .legacy_session_exporter(Arc::clone(&self.legacy_session_exporter))
                     .session_injected_mcp_servers(converted_mcp_servers)
@@ -1572,17 +1581,7 @@ impl SessionManager {
                 }
             },
             SessionManagerRequestData::GetSessionHandle { resp_sender } => {
-                let maybe_session = self
-                    .sessions
-                    .get(&session_id)
-                    .ok_or(sacp::util::internal_error("No session found with id"));
-                match maybe_session {
-                    Ok(handle) => {
-                        let handle_to_give = handle.clone();
-                        _ = resp_sender.send(Ok(handle_to_give));
-                    },
-                    Err(e) => _ = resp_sender.send(Err(e)),
-                }
+                _ = resp_sender.send(self.sessions.get(&session_id).cloned());
             },
             SessionManagerRequestData::TerminateSession => {
                 if let Some(handle) = self.sessions.remove(&session_id) {
@@ -1683,7 +1682,7 @@ impl SessionManager {
                 // SDK user-agent interceptor, none of which are touched here. The sanitize+stamp
                 // lives in `stamp_acp_client_name`; telemetry below still receives the RAW name.
                 stamp_acp_client_name(&self.os.env, &name);
-                self.acp_client_info = Some(crate::telemetry::AcpClientInfo::new(name, version));
+                self.acp_connection_context.initialize(name, version);
                 _ = resp_sender.send(Ok(()));
             },
             SessionManagerRequestData::ListSessions { cwd, resp_sender } => {
@@ -3063,7 +3062,7 @@ pub(crate) enum SessionManagerRequestData {
         resp_sender: oneshot::Sender<Result<StartSessionResult, sacp::Error>>,
     },
     GetSessionHandle {
-        resp_sender: oneshot::Sender<Result<AcpSessionHandle, sacp::Error>>,
+        resp_sender: oneshot::Sender<Option<AcpSessionHandle>>,
     },
     TerminateSession,
     Shutdown {
@@ -3283,6 +3282,15 @@ impl SessionManagerHandle {
     }
 
     pub async fn get_session_handle(&self, session_id: &SessionId) -> Result<AcpSessionHandle, sacp::Error> {
+        self.find_session_handle(session_id)
+            .await?
+            .ok_or_else(|| sacp::util::internal_error("No session found with id"))
+    }
+
+    pub(crate) async fn find_session_handle(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<Option<AcpSessionHandle>, sacp::Error> {
         let (resp_sender, rx) = oneshot::channel();
         self.tx
             .send(SessionManagerRequest {
@@ -3292,7 +3300,7 @@ impl SessionManagerHandle {
             .await
             .map_err(|_e| sacp::util::internal_error("Failed to send session request"))?;
         rx.await
-            .map_err(|_e| sacp::util::internal_error("Failed to receive session response"))?
+            .map_err(|_e| sacp::util::internal_error("Failed to receive session response"))
     }
 
     pub async fn terminate_session(&self, session_id: &SessionId) {

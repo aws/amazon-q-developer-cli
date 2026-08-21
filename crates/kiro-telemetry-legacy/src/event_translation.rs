@@ -791,6 +791,8 @@ pub fn event_to_metric_datum(event: Event) -> Option<MetricDatum> {
             )
         },
         EventType::ContextUsagePercentage { .. }
+        | EventType::AcpMethodInvoked { .. }
+        | EventType::AcpMethodCompleted { .. }
         | EventType::MeteringEvent { .. }
         | EventType::EmptyResponseRetry { .. }
         | EventType::AutomaticRetryCompleted { .. }
@@ -869,6 +871,36 @@ pub fn event_to_otel_metric_records(event: &Event) -> Vec<MetricRecord> {
                 .collect()
         },
         EventType::StartupFailure { .. } => Vec::new(),
+        EventType::AcpMethodInvoked { method } => vec![metric::record_acp_method_invocation(
+            event_session_interface(event),
+            engine,
+            method,
+            event.acp_client_name.as_deref(),
+        )],
+        EventType::AcpMethodCompleted {
+            method,
+            outcome,
+            duration,
+        } => {
+            let session_interface = event_session_interface(event);
+            let client = event.acp_client_name.as_deref();
+            let mut records = vec![metric::record_acp_method_outcome(
+                session_interface,
+                engine,
+                method,
+                client,
+                *outcome,
+            )];
+            records.extend(metric::record_acp_method_duration_ms(
+                duration.as_secs_f64() * 1000.0,
+                session_interface,
+                engine,
+                method,
+                client,
+                *outcome,
+            ));
+            records
+        },
         EventType::DailyHeartbeat { install_method } => vec![metric::record_daily_heartbeat(
             metric::ReleaseChannel::from_version(env!("CARGO_PKG_VERSION")),
             current_os_type(),
@@ -1451,6 +1483,52 @@ mod tests {
         assert_eq!(attribute(record, "session_interface"), Some("interactive_cli"));
         assert_eq!(attribute(record, "agent_mode"), Some("spec"));
         assert_eq!(attribute(record, "agent_engine"), Some("v1"));
+    }
+
+    #[test]
+    fn acp_method_invocation_carries_client_and_method_attributes() {
+        let mut event = Event::new(EventType::AcpMethodInvoked {
+            method: "_kiro.dev/settings/list".to_string(),
+        });
+        event.set_engine(metric::Engine::V2);
+        event.set_session_interface(metric::SessionInterface::ExternalAcp);
+        event.acp_client_name = Some("Sugarmaker".to_string());
+
+        let record = event_to_otel_metric_record(&event).unwrap();
+
+        assert_eq!(record.name, "kiro_cli_acp_method_invocations_total");
+        assert_eq!(attribute(&record, "session_interface"), Some("external_acp"));
+        assert_eq!(attribute(&record, "agent_engine"), Some("v2"));
+        assert_eq!(attribute(&record, "acp_method"), Some("_kiro.dev/settings/list"));
+        assert_eq!(attribute(&record, "acp_client_name"), Some("Sugarmaker"));
+    }
+
+    #[test]
+    fn acp_method_completion_emits_outcome_counter_and_duration_histogram() {
+        let mut event = Event::new(EventType::AcpMethodCompleted {
+            method: "_kiro.dev/commands/execute".to_string(),
+            outcome: metric::AcpMethodOutcome::Fault,
+            duration: std::time::Duration::from_millis(250),
+        });
+        event.set_engine(metric::Engine::V2);
+        event.set_session_interface(metric::SessionInterface::ExternalAcp);
+        event.acp_client_name = Some("Sugarmaker".to_string());
+
+        let records = event_to_otel_metric_records(&event);
+        assert_eq!(records.len(), 2);
+
+        let outcome = &records[0];
+        assert_eq!(outcome.name, "kiro_cli_acp_method_outcome_total");
+        assert_eq!(attribute(outcome, "session_interface"), Some("external_acp"));
+        assert_eq!(attribute(outcome, "agent_engine"), Some("v2"));
+        assert_eq!(attribute(outcome, "acp_method_outcome"), Some("fault"));
+        assert_eq!(attribute(outcome, "acp_method"), Some("_kiro.dev/commands/execute"));
+        assert_eq!(attribute(outcome, "acp_client_name"), Some("Sugarmaker"));
+
+        let duration = &records[1];
+        assert_eq!(duration.name, "kiro_cli_acp_method_duration_ms");
+        assert_eq!(attribute(duration, "acp_method_outcome"), Some("fault"));
+        assert_eq!(attribute(duration, "acp_method"), Some("_kiro.dev/commands/execute"));
     }
 
     #[test]

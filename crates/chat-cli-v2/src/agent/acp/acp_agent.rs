@@ -209,11 +209,11 @@ pub enum AcpSessionRequest {
         query: String,
         respond_to: oneshot::Sender<Result<Summary, InternalPromptError>>,
     },
-    /// Lightweight wake — sends a prompt and waits for turn to end.
+    /// Lightweight wake — sends a prompt and reports whether the agent accepted it.
     /// Unlike InternalPrompt, does NOT require a Summary tool call.
     Wake {
         message: String,
-        respond_to: oneshot::Sender<eyre::Result<()>>,
+        respond_to: oneshot::Sender<Result<(), agent::protocol::AgentError>>,
     },
     /// Swap to a different agent configuration (e.g., switching modes).
     SwapAgent {
@@ -391,10 +391,13 @@ impl AcpSessionHandle {
 
     /// Lightweight wake — sends a prompt without requiring Summary response.
     /// Use this for interactive chat with persistent sessions.
-    pub async fn wake_session(&self, message: String) -> eyre::Result<()> {
-        let (respond_to, rx) = oneshot::channel::<eyre::Result<()>>();
-        self.tx.send(AcpSessionRequest::Wake { message, respond_to }).await?;
-        rx.await?
+    pub async fn wake_session(&self, message: String) -> Result<(), agent::protocol::AgentError> {
+        let (respond_to, rx) = oneshot::channel();
+        self.tx
+            .send(AcpSessionRequest::Wake { message, respond_to })
+            .await
+            .map_err(|_error| agent::protocol::AgentError::Channel)?;
+        rx.await.map_err(|_error| agent::protocol::AgentError::Channel)?
     }
 
     /// Swap to a different agent configuration
@@ -2569,8 +2572,7 @@ impl AcpSession {
                             content: vec![agent::protocol::ContentChunk::Text(message)],
                             should_continue_turn: None,
                         })
-                        .await
-                        .map_err(|e| eyre::eyre!("Wake send_prompt error: {e:?}"));
+                        .await;
                     let _ = respond_to.send(result);
                 });
             },
@@ -4727,9 +4729,11 @@ pub async fn execute(
     let resolver = PathResolver::new(os);
     let local_mcp_path = resolver.workspace().mcp_config().ok();
     let global_mcp_path = resolver.global().mcp_config().ok();
+    let acp_connection_context = crate::telemetry::AcpConnectionContext::default();
 
     let session_manager_handle = SessionManager::builder()
         .os(os.clone())
+        .acp_connection_context(acp_connection_context.clone())
         .local_mcp_path(local_mcp_path)
         .global_mcp_path(global_mcp_path)
         .trust_all_tools(args.trust_all_tools)
@@ -4761,6 +4765,7 @@ pub async fn execute(
     // response processing. The TLDR; is the request path and response path are _not_ done on the
     // same task.
     let (stdin_reader, stdin_closed) = super::stdin_reader::StdinReader::new();
+    let acp_method_telemetry = crate::telemetry::AcpMethodTelemetry::new(&os.telemetry, acp_connection_context);
     let serve_future = AgentToClient.builder()
         .name("kiro-cli-agent")
         .on_receive_request(
@@ -4893,151 +4898,11 @@ pub async fn execute(
             },
             sacp::on_receive_request!(),
         )
-        // Handle command execution via typed request
-        .on_receive_request(
-            {
-                let session_tx = session_manager_handle.clone();
-                async move |request: super::schema::CommandExecuteRequest, request_cx, _cx| {
-                    let session_id = sacp::schema::SessionId::new(request.session_id);
-                    match session_tx.get_session_handle(&session_id).await {
-                        Ok(handle) => {
-                            tokio::spawn(async move {
-                                let result = handle.execute_command(request.command).await;
-                                if let Err(e) = request_cx.respond(result.into()) {
-                                    tracing::error!("Failed to send command response: {}", e);
-                                }
-                            });
-                            Ok(())
-                        }
-                        Err(e) => request_cx.respond_with_error(e),
-                    }
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-
-        // Handle command options via typed request
-        .on_receive_request(
-            {
-                let session_tx = session_manager_handle.clone();
-                async move |request: super::schema::CommandOptionsRequest, request_cx, _cx| {
-                    let session_id = sacp::schema::SessionId::new(request.session_id);
-                    match session_tx.get_session_handle(&session_id).await {
-                        Ok(handle) => {
-                            let opts = handle.get_command_options(request.command, request.partial).await;
-                            request_cx.respond(opts.into())
-                        }
-                        Err(e) => request_cx.respond_with_error(e),
-                    }
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // TODO: Replace with native sacp on_receive_request handler once sacp
-        // adds ListSessionsRequest / ListSessionsResponse support. The wire
-        // format matches the ACP session/list RFD and agent-client-protocol-schema >= 0.11.
-        .on_receive_request(
-            {
-                let session_manager = session_manager_handle.clone();
-                async move |request: super::schema::ListSessionsRequest, request_cx, _cx| {
-                    let entries = super::commands::chat::list_sessions(&session_manager, request.cwd).await?;
-                    request_cx.respond(super::schema::ListSessionsResponse {
-                        sessions: entries,
-                        next_cursor: None,
-                    })
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // Handle session terminate
-        .on_receive_request(
-            {
-                let session_tx = session_manager_handle.clone();
-                async move |request: super::schema::TerminateSessionRequest, request_cx, _cx| {
-                    let session_id = sacp::schema::SessionId::new(request.session_id);
-                    session_tx.terminate_session(&session_id).await;
-                    request_cx.respond(super::schema::TerminateSessionResponse {})?;
-                    Ok(())
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // Handle settings/list
-        .on_receive_request(
-            {
-                let os = os.clone();
-                async move |_request: super::schema::SettingsListRequest, request_cx, _cx| {
-                    request_cx.respond(super::schema::SettingsListResponse(os.database.settings.map().clone()))
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // Handle settings/set — performs a locked read-modify-write on the
-        // global settings file so the TUI can safely write settings without
-        // racing with the Rust backend.
-        .on_receive_request(
-            {
-                let os = os.clone();
-                async move |request: super::schema::SettingsSetRequest, request_cx, _cx| {
-                    use crate::database::settings::Setting;
-                    let key = Setting::try_from(request.key.as_str())
-                        .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
-                    // Write through the shared settings store: updates the value the
-                    // backend reads in-memory and atomically persists it to disk.
-                    os.database
-                        .settings
-                        .set(key, request.value, None)
-                        .await
-                        .map_err(|e| sacp::util::internal_error(format!("{e}")))?;
-                    request_cx.respond(super::schema::SettingsSetResponse {})
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // Handle _session/steer
-        .on_receive_request(
-            {
-                let session_tx = session_manager_handle.clone();
-                async move |request: super::schema::SessionSteerRequest, request_cx, _cx| {
-                    let target = sacp::schema::SessionId::new(request.session_id);
-                    let handle = session_tx.get_session_handle(&target).await?;
-                    match handle.get_agent_handle().await {
-                        Some(agent) => {
-                            agent.steer_message(request.message).await
-                                .map_err(|e| sacp::util::internal_error(e.to_string()))?;
-                        }
-                        None => {
-                            return Err(sacp::util::internal_error("agent not available"));
-                        }
-                    }
-                    request_cx.respond(super::schema::SessionSteerResponse { queued: true })?;
-                    Ok(())
-                }
-            },
-            sacp::on_receive_request!(),
-        )
-        // Handle _session/steer/clear
-        .on_receive_request(
-            {
-                let session_tx = session_manager_handle.clone();
-                async move |request: super::schema::SessionSteerClearRequest, request_cx, _cx| {
-                    let target = sacp::schema::SessionId::new(request.session_id);
-                    let handle = session_tx.get_session_handle(&target).await?;
-                    match handle.get_agent_handle().await {
-                        Some(agent) => {
-                            agent.clear_steering().await
-                                .map_err(|e| sacp::util::internal_error(e.to_string()))?;
-                        }
-                        None => {
-                            return Err(sacp::util::internal_error("agent not available"));
-                        }
-                    }
-                    request_cx.respond(super::schema::SessionSteerClearResponse { cleared: true })?;
-                    Ok(())
-                }
-            },
-            sacp::on_receive_request!(),
-        )
+        .with_handler(super::extension_request::ExtensionRequestHandler::new(
+            session_manager_handle.clone(),
+            os.clone(),
+            acp_method_telemetry,
+        ))
         // Telemetry notification: mode changed in the TUI.
         .on_receive_notification(
             {
@@ -5133,69 +4998,15 @@ pub async fn execute(
                         let Dispatch::Request(req, req_cx) = message else {
                             return Ok(sacp::Handled::Yes);
                         };
-                        let request: sacp::schema::SetSessionModelRequest = serde_json::from_value(req.params().clone())
-                            .map_err(|e| sacp::util::internal_error(format!("Invalid request: {}", e)))?;
+                        let request: sacp::schema::SetSessionModelRequest =
+                            serde_json::from_value(req.params().clone())
+                                .map_err(|e| sacp::util::internal_error(format!("Invalid request: {}", e)))?;
                         let handle = session_tx.get_session_handle(&request.session_id).await?;
                         handle
                             .set_model(request.model_id.0.to_string())
                             .await
                             .map_err(sacp::util::internal_error)?;
                         req_cx.respond(serde_json::json!({}))?;
-                        return Ok(sacp::Handled::Yes);
-                    }
-
-
-                    // Handle _session/spawn ext method from TUI
-                    use super::extensions::methods;
-                    if method == methods::SESSION_SPAWN {
-                        let Dispatch::Request(req, req_cx) = message else {
-                            return Ok(sacp::Handled::Yes);
-                        };
-                        #[derive(serde::Deserialize)]
-                        #[serde(rename_all = "camelCase")]
-                        struct SpawnRequest {
-                            session_id: String,
-                            task: String,
-                            name: Option<String>,
-                            agent_name: Option<String>,
-                        }
-                        let params: SpawnRequest = serde_json::from_value(req.params().clone())
-                            .map_err(|e| sacp::util::internal_error(format!("Invalid _session/spawn params: {}", e)))?;
-                        let parent_session_id = SessionId::new(params.session_id);
-                        let result = session_tx
-                            .spawn_orchestrated_session(
-                                &parent_session_id,
-                                params.agent_name.unwrap_or_else(|| "kiro_default".to_string()),
-                                params.task,
-                                params.name,
-                                None,
-                                None,
-                                true, // TUI-spawned sessions are persistent — stay alive for follow-up
-                            )
-                            .await
-                            .map_err(|e| sacp::util::internal_error(format!("Spawn failed: {}", e)))?;
-                        req_cx.respond(serde_json::json!({ "sessionId": result.session_id, "name": result.name }))?;
-                        return Ok(sacp::Handled::Yes);
-                    }
-                    if method == methods::MESSAGE_SEND {
-                        let Dispatch::Request(req, req_cx) = message else {
-                            return Ok(sacp::Handled::Yes);
-                        };
-                        #[derive(serde::Deserialize)]
-                        #[serde(rename_all = "camelCase")]
-                        struct MessageSendRequest {
-                            session_id: String,
-                            content: String,
-                        }
-                        if let Ok(params) = serde_json::from_value::<MessageSendRequest>(req.params().clone()) {
-                            let target = sacp::schema::SessionId::new(params.session_id);
-                            if let Ok(handle) = session_tx.get_session_handle(&target).await {
-                                tokio::spawn(async move {
-                                    let _ = handle.wake_session(params.content).await;
-                                });
-                            }
-                        }
-                        req_cx.respond(serde_json::json!({ "ok": true }))?;
                         return Ok(sacp::Handled::Yes);
                     }
 

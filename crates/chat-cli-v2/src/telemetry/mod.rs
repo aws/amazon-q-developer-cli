@@ -2,6 +2,7 @@
 //! V2-specific helpers from [`host_config`]. Real implementation lives in
 //! the submodules and the kiro-telemetry-{host,observer,legacy} crates.
 
+mod acp_method;
 pub mod cli_helpers;
 pub mod cognito;
 pub mod core;
@@ -10,6 +11,11 @@ pub mod host_config;
 pub mod legacy_sink;
 pub mod metadata_provider;
 
+pub(crate) use acp_method::{
+    AcpConnectionContext,
+    AcpMethodTelemetry,
+    RequestObservation,
+};
 #[cfg(feature = "voice")]
 #[allow(unused_imports)]
 pub use host_config::send_voice_input;

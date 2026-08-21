@@ -2,6 +2,7 @@ pub mod acp_agent;
 pub mod acp_client;
 mod acp_provider;
 pub mod commands;
+mod extension_request;
 pub mod extensions;
 pub mod goal;
 pub mod mcp_conversion;

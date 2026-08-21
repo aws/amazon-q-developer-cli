@@ -191,6 +191,23 @@ pub fn catalog_metric_records() -> Vec<MetricRecord> {
             Some("postgres"),
         ),
         record_mcp_tools_token_count_estimate(128, engine, McpServerSource::Global, Some("postgres")),
+        record_acp_method_invocation(interface, engine, "_kiro.dev/settings/list", Some("acp-test-client")),
+        record_acp_method_outcome(
+            interface,
+            engine,
+            "_kiro.dev/settings/list",
+            Some("acp-test-client"),
+            AcpMethodOutcome::Success,
+        ),
+        record_acp_method_duration_ms(
+            10.0,
+            interface,
+            engine,
+            "_kiro.dev/settings/list",
+            Some("acp-test-client"),
+            AcpMethodOutcome::Success,
+        )
+        .expect("positive duration"),
         record_user_turn(interface, mode, engine),
         record_goal_outcome(engine, GoalOutcome::Completed),
         record_telemetry_export_dropped(1, ExportDropReason::PermanentRejection).expect("positive drop count"),

@@ -296,6 +296,40 @@ pub struct SessionSteerClearResponse {
     pub cleared: bool,
 }
 
+/// Request to spawn a persistent orchestrated session from the TUI.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
+#[request(method = "_session/spawn", response = SessionSpawnResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSpawnRequest {
+    pub session_id: String,
+    pub task: String,
+    pub name: Option<String>,
+    pub agent_name: Option<String>,
+}
+
+/// Response containing the spawned session identity.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionSpawnResponse {
+    pub session_id: String,
+    pub name: String,
+}
+
+/// Request to wake a session with a follow-up message.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcRequest)]
+#[request(method = "_message/send", response = MessageSendResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageSendRequest {
+    pub session_id: String,
+    pub content: String,
+}
+
+/// Response acknowledging delivery of a session message.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonRpcResponse)]
+pub struct MessageSendResponse {
+    pub ok: bool,
+}
+
 /// Process health telemetry payload sent from TUI every 60s.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

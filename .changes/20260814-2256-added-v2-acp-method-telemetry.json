@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "V2 ACP telemetry now reports per-client extension method invocation counts, terminal outcomes, and latency for utilization and reliability analysis"
+}

@@ -79,6 +79,13 @@ const ONE_SHOT_EXPORT_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 /// so these instruments get a dedicated second-scale ladder instead.
 const SECONDS_LATENCY_BOUNDARIES: &[f64] = &[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0];
 
+/// Explicit boundaries for ACP method latencies recorded in **milliseconds**.
+/// The SDK's default ms ladder tops out at 10 000 ms, but extension commands
+/// can run for minutes, so their tail needs buckets well past 10 s.
+const ACP_METHOD_MS_BOUNDARIES: &[f64] = &[
+    10.0, 50.0, 100.0, 250.0, 500.0, 1_000.0, 2_500.0, 5_000.0, 10_000.0, 30_000.0, 60_000.0, 120_000.0, 300_000.0,
+];
+
 /// Explicit boundaries for unit-interval ratios (`0.0..=1.0`), e.g. cache-hit
 /// ratio and CPU utilisation. Default ms buckets run to 10000, so a ratio of
 /// `0.4` lands in the same bucket as everything `>= 0.0`.
@@ -119,6 +126,8 @@ fn histogram_boundaries(name: &str) -> Option<&'static [f64]> {
         "kiro_cli_process_cpu_utilization_ratio" => Some(RATIO_BOUNDARIES),
         "kiro_cli_mcp_tools_token_count_estimate" => Some(TOKEN_COUNT_BOUNDARIES),
         "kiro_cli_process_peak_rss_bytes" => Some(MEMORY_BYTES_BOUNDARIES),
+        // Millisecond latency but long-tailed: extension commands may run minutes.
+        "kiro_cli_acp_method_duration_ms" => Some(ACP_METHOD_MS_BOUNDARIES),
         _ => None,
     }
 }
@@ -770,11 +779,19 @@ mod tests {
         assert_eq!(histogram_boundaries("kiro_cli_tool_execution_duration_ms"), None);
         assert_eq!(histogram_boundaries("kiro_cli_model_time_to_first_content_ms"), None);
 
+        // ACP extension latency is ms-scale but long-tailed, so it overrides
+        // the SDK's 10 s ceiling.
+        assert_eq!(
+            histogram_boundaries("kiro_cli_acp_method_duration_ms"),
+            Some(ACP_METHOD_MS_BOUNDARIES)
+        );
+
         for boundaries in [
             SECONDS_LATENCY_BOUNDARIES,
             RATIO_BOUNDARIES,
             TOKEN_COUNT_BOUNDARIES,
             MEMORY_BYTES_BOUNDARIES,
+            ACP_METHOD_MS_BOUNDARIES,
         ] {
             Stream::builder()
                 .with_aggregation(Aggregation::ExplicitBucketHistogram {

@@ -7,6 +7,11 @@ attributes:
     allowed_values: [interactive_cli, noninteractive_cli, external_acp]
   - name: acp_client_name
     description: Sanitized name reported by an ACP client, capped at 64 characters.
+  - name: acp_method
+    description: Recognized inbound ACP extension method; retained only for EMF queries.
+  - name: acp_method_outcome
+    description: Terminal JSON-RPC handling outcome of an inbound ACP extension request (success, client error, server fault, or unknown when no response was observed).
+    allowed_values: [success, error, fault, unknown]
   - name: agent_engine
     description: Agent runtime responsible for the measured operation.
     allowed_values: [v1, v2, v3, unknown]

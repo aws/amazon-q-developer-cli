@@ -151,6 +151,8 @@ impl Event {
             | EventType::AuthFailed { .. }
             | EventType::CliSubcommandExecuted { .. }
             | EventType::ChatSessionStarted { .. }
+            | EventType::AcpMethodInvoked { .. }
+            | EventType::AcpMethodCompleted { .. }
             | EventType::DidSelectProfile { .. }
             | EventType::ProfileState { .. }
             | EventType::DailyHeartbeat { .. }
@@ -381,6 +383,17 @@ pub enum EventType {
         /// Whether the session prompts for permission at all.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         trust_posture: Option<metric::TrustPosture>,
+    },
+    /// One recognized inbound ACP extension request observed before decoding.
+    AcpMethodInvoked {
+        method: String,
+    },
+    /// One inbound ACP extension request that reached a terminal response, carrying its
+    /// outcome and end-to-end latency.
+    AcpMethodCompleted {
+        method: String,
+        outcome: metric::AcpMethodOutcome,
+        duration: Duration,
     },
     ChatEnd {
         conversation_id: String,
@@ -732,6 +745,8 @@ impl EventType {
             Self::TransientRetry { .. } => None,
             Self::ModelInvocation { .. } => None,
             Self::ChatSessionStarted { .. } => None,
+            Self::AcpMethodInvoked { .. } => None,
+            Self::AcpMethodCompleted { .. } => None,
         }
     }
 }

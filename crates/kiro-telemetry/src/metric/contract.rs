@@ -1413,6 +1413,109 @@ pub fn record_user_turn(session_interface: SessionInterface, agent_mode: AgentMo
     record_user_turn_for_acp_client(session_interface, agent_mode, engine, None)
 }
 
+pub fn record_acp_method_invocation(
+    session_interface: SessionInterface,
+    engine: Engine,
+    method: &str,
+    acp_client_name: Option<&str>,
+) -> MetricRecord {
+    with_common_product_dimensions(
+        counter("kiro_cli_acp_method_invocations_total", 1),
+        session_interface,
+        engine,
+        None,
+    )
+    .attribute("acp_method", method)
+    .optional_attribute("acp_client_name", acp_client_name)
+    .expect_valid()
+}
+
+/// Terminal outcome of one inbound ACP extension request.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AcpMethodOutcome {
+    /// The handler produced a JSON-RPC result.
+    Success,
+    /// Rejected as client-attributable because the request parameters were invalid.
+    Error,
+    /// Failed with a server-attributable (internal) error.
+    Fault,
+    #[default]
+    Unknown,
+}
+
+impl AcpMethodOutcome {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Error => "error",
+            Self::Fault => "fault",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Shared product + ACP dimensions for the outcome counter and duration
+/// histogram, so both series carry an identical dimension set.
+fn with_acp_method_dimensions(
+    builder: super::MetricBuilder,
+    session_interface: SessionInterface,
+    engine: Engine,
+    method: &str,
+    acp_client_name: Option<&str>,
+    outcome: AcpMethodOutcome,
+) -> super::MetricBuilder {
+    with_common_product_dimensions(builder, session_interface, engine, None)
+        .attribute("acp_method", method)
+        .optional_attribute("acp_client_name", acp_client_name)
+        .attribute("acp_method_outcome", outcome.as_str())
+}
+
+/// Terminal outcome of one inbound ACP extension request. A single counter partitioned by
+/// `acp_method_outcome` gives a bounded
+/// success/error/fault/unknown breakdown.
+pub fn record_acp_method_outcome(
+    session_interface: SessionInterface,
+    engine: Engine,
+    method: &str,
+    acp_client_name: Option<&str>,
+    outcome: AcpMethodOutcome,
+) -> MetricRecord {
+    with_acp_method_dimensions(
+        counter("kiro_cli_acp_method_outcome_total", 1),
+        session_interface,
+        engine,
+        method,
+        acp_client_name,
+        outcome,
+    )
+    .expect_valid()
+}
+
+/// End-to-end latency of one completed inbound ACP extension request, split by
+/// terminal outcome. Non-finite or non-positive samples are dropped (the
+/// outcome counter still records them).
+pub fn record_acp_method_duration_ms(
+    milliseconds: f64,
+    session_interface: SessionInterface,
+    engine: Engine,
+    method: &str,
+    acp_client_name: Option<&str>,
+    outcome: AcpMethodOutcome,
+) -> Option<MetricRecord> {
+    positive(milliseconds).then(|| {
+        with_acp_method_dimensions(
+            histogram("kiro_cli_acp_method_duration_ms", milliseconds),
+            session_interface,
+            engine,
+            method,
+            acp_client_name,
+            outcome,
+        )
+        .expect_valid()
+    })
+}
+
 pub fn record_user_turn_for_acp_client(
     session_interface: SessionInterface,
     agent_mode: AgentMode,
