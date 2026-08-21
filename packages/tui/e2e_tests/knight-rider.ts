@@ -155,7 +155,7 @@ function resolveCommand(): { cmd: string; env: Record<string, string> } {
       cmd: `bun ${TUI_ENTRY}${APP_ARGS ? ` ${APP_ARGS}` : ''}`,
       env: {
         KIRO_AGENT_ENGINE: 'kas',
-        KIRO_KAS_NODE_PATH: 'node',
+        KIRO_KAS_NODE_PATH: process.env.KIRO_KAS_NODE_PATH || 'node',
         // KAS launches with `--auth=acp-callback` and asks the TUI for
         // OIDC tokens via `_kiro/auth/getAccessToken`. The TUI handler
         // shells out to this binary for `chat _ get-kas-token`.
