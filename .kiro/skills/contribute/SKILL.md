@@ -1,6 +1,6 @@
 ---
 name: contribute
-description: Route incoming contributions to kiro-cli. Use when a user wants to file a bug, request a feature, or contribute a fix. Handles classification, deduplication, SIM/Taskei ticket creation, and routing through three paths based on issue complexity.
+description: Route incoming contributions to kiro-cli. Use when a user wants to file a bug, request a feature, or contribute a fix. Handles classification, deduplication, Taskei task creation, and routing through three paths based on issue complexity.
 ---
 
 # Contribution Routing Skill
@@ -19,7 +19,7 @@ This skill implements Phase 1 (Foundation) of the delegated contribution model. 
 If the user passes `--dry-run` or says "dry run" / "test mode", execute the full workflow but **do NOT create any tickets**. Instead:
 - Run all dedup searches normally (read operations are safe)
 - Classify normally
-- At Step 4, instead of calling TicketingWriteActions, output the complete ticket payload as formatted text: title, CTI, resolver group, description with all fields filled in
+- At Step 4, instead of calling TaskeiCreateTask, output the complete task payload as formatted text: name, room, type, tags, description with all fields filled in
 - Prefix the Step 5 summary with `🧪 DRY RUN —` and show what would have been created
 - This lets users and testers validate the full flow without side effects
 
@@ -27,14 +27,14 @@ If the user passes `--dry-run` or says "dry run" / "test mode", execute the full
 
 Before starting the flow, verify tooling is available. Run these checks silently and report any issues to the user upfront:
 
-1. **builder-mcp**: Try a lightweight TicketingReadActions call. If it fails, warn the user: "builder-mcp is unavailable — I can walk you through the flow but won't be able to create tickets. I'll give you the ticket details as copyable text instead."
-2. **gh CLI**: Run `gh auth status` (allowed by shell config). If it fails, warn: "GitHub CLI is not authenticated — I won't be able to check for duplicate GitHub issues or open PRs. Run `gh auth login` or set `GH_TOKEN` to enable this. I'll proceed with SIM-only dedup."
+1. **builder-mcp**: Try a lightweight TaskeiListTasks call. If it fails, warn the user: "builder-mcp is unavailable — I can walk you through the flow but won't be able to create tasks. I'll give you the task details as copyable text instead."
+2. **gh CLI**: Run `gh auth status` (allowed by shell config). If it fails, warn: "GitHub CLI is not authenticated — I won't be able to check for duplicate GitHub issues or open PRs. Run `gh auth login` or set `GH_TOKEN` to enable this. I'll proceed with Taskei-only dedup."
 
 Report both results before proceeding. If both are unavailable, the agent can still classify and provide ticket text — just can't create anything or dedup against GitHub.
 
 ## Step 0b: Quick Check
 
-- **If the user already has a PR**: Skip to Step 2 (dedup). After classification, for Path A they can submit directly. For Path B/C, create the ticket and link the PR in it. Tell them: "Link the SIM ticket in your PR description — CI validates the reference."
+- **If the user already has a PR**: Skip to Step 2 (dedup). After classification, for Path A they can submit directly. For Path B/C, create the task and link the PR in it. Tell them: "Link the Taskei task in your PR description — CI validates the reference."
 - **If none of the above apply**, proceed to Step 1.
 
 ## Step 1: Gather Information
@@ -59,22 +59,29 @@ Tell the user: "Let me check if this is already tracked..." before running searc
 
 Search for existing tickets in this order:
 
-### 2a. Search SIM/Taskei (source of truth)
+### 2a. Search the Taskei intake room (source of truth)
 
-Use builder-mcp TicketingReadActions to search:
-- Search `kiro-core` resolver group for matching open tickets
-- Search CTI `Kiro / CLI / Intake` for recent tickets
-- For feature requests, also search Taskei (keyword match on title/description)
+Human intake is cut natively in the Taskei contributions room (`7c221a81-7ca7-436c-8f05-a7278949341b`). Use builder-mcp TaskeiListTasks against that room. NOTE: the tool takes STRUCTURED parameters and silently ignores unknown ones — there is no `filter` query string. Search per keyword (3-5 variants):
 
-If TicketingReadActions fails (auth error, service unavailable), do NOT silently proceed. Tell the user what happened and give them options:
+```
+@builder-mcp/TaskeiListTasks
+roomId: "7c221a81-7ca7-436c-8f05-a7278949341b"
+name: { queryOperator: "contains", value: "KEYWORD" }
+status: "ALL"
+pagination: { maxResults: 100 }
+```
+
+Use `status: "ALL"` so closed duplicates surface. Legacy tickets may also exist in the SIM CTI queue (`Kiro / CLI / Intake`, resolver `kiro-core`) — a TicketingReadActions full-text pass there is a nice-to-have, not a gate.
+
+If TaskeiListTasks fails (auth error, service unavailable), do NOT silently proceed. Tell the user what happened and give them options:
 1. "Fix the issue and try again" (e.g., re-authenticate, check network)
 2. "Search manually and confirm no duplicates" — ask the user to check issues.amazon.com themselves and confirm there are no existing tickets before proceeding
 
-Do NOT proceed to ticket creation until BOTH of these are confirmed:
-1. **No duplicate SIM ticket** — either via successful TicketingReadActions search, or user manually confirms they checked issues.amazon.com
+Do NOT proceed to task creation until BOTH of these are confirmed:
+1. **No duplicate task in the intake room** — either via successful TaskeiListTasks search, or user manually confirms they checked the room at taskei.amazon.dev
 2. **No existing PR already fixing this** — either via successful `gh pr list` search, or user manually confirms they checked open PRs on kiro-team/kiro-cli
 
-GitHub issues search is secondary — skip it if `gh` failed, since SIM is the source of truth.
+GitHub issues search is secondary — skip it if `gh` failed, since the intake room is the source of truth.
 
 ### 2b. Search GitHub issues AND PRs on kiro-team/kiro-cli
 
@@ -100,14 +107,14 @@ If `gh` fails with auth errors, see Step 0 for recovery.
 
 ### 2c. Evaluate matches
 
-When both SIM and GitHub have matches, present the SIM ticket as the canonical tracker. Mention the GitHub issue as additional context but direct the user to interact with the SIM ticket.
+When both Taskei and GitHub have matches, present the Taskei task as the canonical tracker. Mention the GitHub issue as additional context but direct the user to interact with the Taskei task.
 
 Classify each result into one of these tiers:
 
 **Tier 1 — Exact duplicate** (same root cause and symptom):
 - Do NOT create a new ticket
-- Show the user the existing ticket
-- Ask if they want to add context (use TicketingWriteActions to comment on the SIM ticket, or `gh issue comment` for GitHub)
+- Show the user the existing task
+- Ask if they want to add context (use TaskeiUpdateTask `postCommentMessage` on the task, or `gh issue comment` for GitHub)
 - If the user disagrees ("that's not the same issue"), proceed with ticket creation and add a cross-reference to the original in the description
 
 **Tier 2 — Likely related** (same component or overlapping symptoms):
@@ -122,16 +129,16 @@ Classify each result into one of these tiers:
 
 ### Compound failure
 
-If both SIM search and `gh pr list` fail, do NOT proceed to ticket creation. Tell the user: "I couldn't verify there are no duplicate SIM tickets or existing PRs. Before I create a ticket, I need you to either:
+If both the room search and `gh pr list` fail, do NOT proceed to task creation. Tell the user: "I couldn't verify there are no duplicate tasks or existing PRs. Before I create a task, I need you to either:
 1. Fix the connectivity/auth issue so I can retry
-2. Manually confirm both: (a) no existing SIM ticket at issues.amazon.com, and (b) no open PR already fixing this at github.com/kiro-team/kiro-cli"
+2. Manually confirm both: (a) no existing task in the intake room at taskei.amazon.dev, and (b) no open PR already fixing this at github.com/kiro-team/kiro-cli"
 
 Only proceed after the user confirms both.
 
 ### Important
 
 - The `kirodotdev/Kiro` public repo is OUT OF SCOPE — ignore it entirely
-- SIM/Taskei is the source of truth, GitHub is secondary
+- The Taskei intake room is the source of truth, GitHub is secondary
 - Distinguish between "search returned zero results" (good — proceed) and "search failed" (bad — dedup was not performed, warn the user)
 
 ## Step 3: Classify into Path
@@ -152,7 +159,7 @@ Criteria (ALL must be true):
 
 Action:
 1. Skip issue sign-off — no need to wait for team review
-2. Create a SIM ticket (see Step 4) if not already tracked
+2. Create a Taskei task (see Step 4) if not already tracked
 3. **Contributor conversion**: If the user filed the bug (not already planning to contribute), prompt them: "This looks like a quick fix — most Path A bugs take under an hour. Would you like to submit the PR yourself? See CONTRIBUTING.md for setup. PRs are merged on the weekly Wednesday cadence."
 
 ### Path B — Ambiguous Bug/Fix
@@ -165,10 +172,10 @@ Criteria (ANY triggers Path B):
 - Requires design discussion
 
 Action:
-1. Create a SIM ticket with the proposed solution documented in the description
-2. Tell the user: "This bug needs team review. Document your proposed solution in the SIM ticket — the team reviews these at their weekly Wednesday meeting. Expect feedback within a week."
-3. **Contributor conversion**: "If you're interested in contributing, document your proposed approach in the SIM ticket. Once the team gives feedback, you can start coding. Watch the SIM ticket for updates."
-4. If the contributor has strong conviction about the approach, suggest they document it thoroughly in the SIM ticket to accelerate the review. But do NOT greenlight coding before team feedback.
+1. Create a Taskei task with the proposed solution documented in the description
+2. Tell the user: "This bug needs team review. Document your proposed solution in the Taskei task — the team reviews these at their weekly Wednesday meeting. Expect feedback within a week."
+3. **Contributor conversion**: "If you're interested in contributing, document your proposed approach in the Taskei task. Once the team gives feedback, you can start coding. Watch the task for updates."
+4. If the contributor has strong conviction about the approach, suggest they document it thoroughly in the task to accelerate the review. But do NOT greenlight coding before team feedback.
 
 ### Path C — Feature Request
 
@@ -180,8 +187,8 @@ Criteria (ANY triggers Path C):
 - Roadmap impact (new integration, new protocol support, etc.)
 
 Action:
-1. Create a Taskei ticket for Monday Office Hours review
-2. Tell the user: "Feature requests go through product review at Monday Office Hours via the Taskei intake queue. Watch the Taskei ticket for status updates."
+1. Create a Taskei task in the same intake room (tag `feature-request`) for Monday Office Hours review
+2. Tell the user: "Feature requests go through product review at Monday Office Hours via the intake room. Watch the Taskei task for status updates."
 3. **Warning**: "Features need product approval before implementation starts. Please wait for feedback before coding."
 4. **Contributor conversion**: "If this gets approved, would you be interested in implementing it? We can note that on the ticket so the team knows there's a volunteer."
 
@@ -192,7 +199,7 @@ Action:
 - **Documentation fixes** → Path A (straightforward)
 - **Dependency updates** → Path A if security patch, Path B if major version bump
 - **Test additions** → Path A
-- **Uncertain if bug or intended behavior** → Path B (create SIM for team to clarify)
+- **Uncertain if bug or intended behavior** → Path B (create the task for the team to clarify)
 - **Bug fix that introduces new configuration** → Path B if the config is an operational knob (e.g., timeout value). Path C if it creates a new user-facing workflow or significantly changes how users interact with the tool.
 
 ## Step 4: Create Tickets
@@ -201,14 +208,14 @@ If in dry-run mode, skip ticket creation and output the complete ticket payload 
 
 If ticket creation fails, show the user the error and provide the pre-filled ticket details as copyable text so they can create it manually. Ticket creation failure does not block PR submission — tell the user to create the ticket manually, then proceed with Step 5 guidance.
 
-### SIM Ticket Creation (Path A and Path B)
+### Taskei Task Creation (Path A and Path B)
 
-Use builder-mcp TicketingWriteActions to create a SIM ticket with:
+Use builder-mcp TaskeiCreateTask with:
 
-- **CTI**: `Kiro / CLI / Intake`
-- **Resolver group**: `kiro-core`
-- **Tags**: `straightforward-bug` for Path A, `needs-team-review` for Path B (REQUIRED — do not omit)
-- **Title**: Clear, concise summary
+- **roomId**: `7c221a81-7ca7-436c-8f05-a7278949341b` (the contributions/intake room)
+- **type**: `BUG`
+- **tags**: `straightforward-bug` for Path A, `needs-team-review` for Path B (REQUIRED — do not omit; Taskei tags are free-form strings)
+- **name**: Clear, concise summary
 - **Description** must include:
   - **Summary**: one paragraph
   - **Repro steps** (for bugs): numbered steps to reproduce
@@ -222,16 +229,17 @@ Use builder-mcp TicketingWriteActions to create a SIM ticket with:
   - **Classification**: "Path A — Straightforward Bug" or "Path B — Ambiguous Bug"
   - **Volunteer** (REQUIRED if user wants to contribute): "Contributor [alias] has volunteered to implement once approach is approved"
 
-**Path A ownership**: After creating the ticket, ask the user: "Would you like to take ownership of this fix and set the ticket to In Progress?" If yes, update the ticket status to In Progress and assign it to the user (ask for their alias if not known).
+**Path A ownership**: After creating the task, ask the user: "Would you like to take ownership of this fix and set the task to In Progress?" If yes, use TaskeiUpdateTask to assign it to the user and move its workflow step (ask for their alias if not known).
 
-**Path B volunteer**: After creating the ticket, if the user expressed interest in contributing, ask for their alias and add it to the ticket. Do NOT assign or set In Progress — the team needs to approve the approach first.
+**Path B volunteer**: After creating the task, if the user expressed interest in contributing, ask for their alias and add it to the task. Do NOT assign or set In Progress — the team needs to approve the approach first.
 
-### Taskei Ticket Creation (Path C)
+### Taskei Task Creation (Path C)
 
-Use builder-mcp TicketingWriteActions to create a Taskei ticket:
+Use builder-mcp TaskeiCreateTask in the same intake room (`7c221a81-7ca7-436c-8f05-a7278949341b`):
 
-- **Title**: Feature request summary
-- **Tags**: `feature-request` (REQUIRED — do not omit)
+- **name**: Feature request summary
+- **type**: `STORY`
+- **tags**: `feature-request` (REQUIRED — do not omit)
 - **Description** must include:
   - **Use case**: why the user wants this — the problem they're solving
   - **Proposed behavior**: what it should do, concretely enough that someone could implement from this description
@@ -255,13 +263,13 @@ If in dry-run mode, prefix all summaries with `🧪 DRY RUN —`.
 If the user already has a PR, reference it by number instead of suggesting they submit one.
 
 **For Path A:**
-> ✅ Created SIM ticket [TICKET-ID]. This is a straightforward bug — you can submit a PR directly to `kiro-team/kiro-cli`. Link this SIM ticket in your PR description — CI validates the reference. PRs are merged on the weekly Wednesday cadence.
+> ✅ Created Taskei task [TASK-ID] (https://taskei.amazon.dev/tasks/[TASK-ID]). This is a straightforward bug — you can submit a PR directly to `kiro-team/kiro-cli`. Link this task in your PR description — CI validates the reference. PRs are merged on the weekly Wednesday cadence.
 
 **For Path B:**
-> 📋 Created SIM ticket [TICKET-ID] with proposed solution. The team reviews these at their weekly Wednesday meeting — expect feedback within a week. Watch the SIM ticket for updates. Once approved, link the SIM ticket in your PR.
+> 📋 Created Taskei task [TASK-ID] with proposed solution. The team reviews these at their weekly Wednesday meeting — expect feedback within a week. Watch the task for updates. Once approved, link the task in your PR.
 
 **For Path C:**
-> 📝 Created Taskei ticket [TICKET-ID]. This feature request will be reviewed at Monday Office Hours. Product approval is required before implementation can begin. Watch the ticket for status updates.
+> 📝 Created Taskei task [TASK-ID]. This feature request will be reviewed at Monday Office Hours. Product approval is required before implementation can begin. Watch the task for status updates.
 
 **For duplicates:**
 > 🔗 This is already tracked in [TICKET-ID] ([link]). Added your context to the existing ticket.
