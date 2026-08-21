@@ -64,9 +64,15 @@ pub enum Feature {
     /// launching the V3/KAS engine. Internal nightly only for now; the launcher
     /// only runs the migration prompt/scan when this is enabled.
     AutoAgentUpgrade,
-    /// Consolidated `/config` panel and cloud/local source labels on config
-    /// listings (`/mcp` Source column). Ramped to all internal users on every
-    /// channel; external users stay dark.
+    /// Cloud config: the consolidated `/config` panel and cloud/local source
+    /// labels on config listings (`/mcp` Source column), and the launcher
+    /// passing the stage-default cloud-config BFF endpoint to KAS for local
+    /// V3 sessions. Turning this off hides the UI and stops the launcher
+    /// supplying that stage default, so KAS makes no cloud-config sync calls
+    /// (steering/agents/skills/hooks) unless the user explicitly sets a
+    /// trusted-host endpoint override, which applies regardless of the
+    /// rollout. Ramped to all internal users on every channel; external
+    /// users stay dark.
     CloudConfig,
     /// Session dashboard: the full-screen `/sessions` browser, the `--sessions`
     /// launch flag, and (on v3) routing `--resume-picker` into the dashboard.

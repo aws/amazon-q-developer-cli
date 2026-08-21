@@ -160,10 +160,10 @@ function buildTwinki(): boolean {
 }
 
 /**
- * Stage-keyed remote-sessions endpoint, mirroring launch.rs
- * default_remote_sessions_endpoint. An unrecognized portal maps to prod.
+ * Stage-keyed BFF endpoint, mirroring launch.rs default_bff_endpoint. An
+ * unrecognized portal maps to prod.
  */
-function defaultRemoteSessionsEndpoint(authPortalUrl?: string): string {
+function defaultBffEndpoint(authPortalUrl?: string): string {
   switch (authPortalUrl?.trim()) {
     case 'https://gamma.app.kiro.dev':
       return 'https://gamma.app.kiro.dev';
@@ -232,10 +232,16 @@ function startTUI() {
       // `remote` session source when launched with this endpoint. Prod sets it
       // in launch.rs (remote_sandbox rollout, 100%/all); bun run dev bypasses
       // that launcher, so mirror it here or cloud sessions never list. Stage is
-      // keyed to the auth portal, matching default_remote_sessions_endpoint.
+      // keyed to the auth portal, matching launch.rs default_bff_endpoint.
       KIRO_REMOTE_SESSIONS_ENDPOINT:
         process.env.KIRO_REMOTE_SESSIONS_ENDPOINT?.trim() ||
-        defaultRemoteSessionsEndpoint(process.env.KIRO_AUTH_PORTAL_URL),
+        defaultBffEndpoint(process.env.KIRO_AUTH_PORTAL_URL),
+      // Same opt-in shape for the cloud-config pull: prod's launcher sets it
+      // (cloud_config rollout); mirror it here or cloud config never syncs
+      // under bun run dev.
+      CLOUD_CONFIG_ENDPOINT:
+        process.env.CLOUD_CONFIG_ENDPOINT?.trim() ||
+        defaultBffEndpoint(process.env.KIRO_AUTH_PORTAL_URL),
       // Enable /tangent locally (prod's launcher includes it in the feature
       // set; dev bypasses that launcher).
       KIRO_ENABLED_FEATURES: devEnabledFeatures(

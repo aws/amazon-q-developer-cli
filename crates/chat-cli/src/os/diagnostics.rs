@@ -211,6 +211,14 @@ pub struct CloudDiagnostic {
     /// environment (`KIRO_REMOTE_SESSIONS_ENDPOINT`). Without one, KAS uses
     /// its baked-in default; the capability handshake decides from there.
     pub remote_sessions_endpoint_configured: bool,
+    /// Whether the compile-time rollout gate enables the cloud-config
+    /// feature for this build + cohort. Off means the launcher supplies no
+    /// stage-default cloud-config endpoint (an explicit env override still
+    /// wins), so absent an override KAS makes no cloud-config calls.
+    pub cloud_config_rollout: bool,
+    /// Whether a cloud-config endpoint override is present in the
+    /// environment (`CLOUD_CONFIG_ENDPOINT`).
+    pub cloud_config_endpoint_configured: bool,
     /// Extracted KAS bundle versions on disk, most recently used first —
     /// tells the oncall which agent version the CLI actually runs (vs. the
     /// CLI's own version).
@@ -234,6 +242,8 @@ impl CloudDiagnostic {
         CloudDiagnostic {
             remote_sandbox_rollout: crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
             remote_sessions_endpoint_configured: env.get("KIRO_REMOTE_SESSIONS_ENDPOINT").is_ok(),
+            cloud_config_rollout: crate::rollout::rollout().is_enabled(crate::rollout::Feature::CloudConfig),
+            cloud_config_endpoint_configured: env.get("CLOUD_CONFIG_ENDPOINT").is_ok(),
             extracted_kas_versions,
         }
     }

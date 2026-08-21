@@ -228,14 +228,23 @@ pub mod env_var {
         KIRO_KAS_SERVER_PATH = "KIRO_KAS_SERVER_PATH",
 
         /// BFF endpoint KAS talks to for remote/cloud sandbox sessions.
-        /// The launcher sets this on the KAS child (which inherits it via the
-        /// TUI's `process.env`) ONLY when the `remote_sandbox` rollout is
-        /// enabled, defaulting to the endpoint for the user's auth stage
-        /// (`resolve_remote_sessions_endpoint`). A user/parent-provided value
-        /// wins, so preprod testing can point KAS at gamma/beta. When the
-        /// rollout is off the launcher leaves it unset, so KAS's own gate keeps
-        /// the cloud-session machinery dark. Read by the KAS server.
+        /// A user/parent-provided value wins if it names a trusted BFF host
+        /// or the local loopback, so preprod testing can point KAS at
+        /// gamma/beta; otherwise the launcher sets the auth-stage default on
+        /// the KAS child (which inherits it via the TUI's `process.env`)
+        /// ONLY when the `remote_sandbox` rollout is enabled. When the
+        /// rollout is off the launcher leaves it unset, so KAS's own gate
+        /// keeps the cloud-session machinery dark. Read by the KAS server.
         KIRO_REMOTE_SESSIONS_ENDPOINT = "KIRO_REMOTE_SESSIONS_ENDPOINT",
+
+        /// BFF endpoint KAS pulls cloud config (steering/agents/skills/hooks)
+        /// from in local V3 sessions. A user/parent-provided value wins if it
+        /// names a trusted BFF host or the local loopback (preprod testing);
+        /// otherwise the launcher sets the auth-stage default ONLY when the
+        /// `cloud_config` rollout is enabled. Left unset, KAS makes no
+        /// cloud-config calls. The name has no `KIRO_` prefix because it must
+        /// match what the KAS server reads.
+        CLOUD_CONFIG_ENDPOINT = "CLOUD_CONFIG_ENDPOINT",
 
         /// Path to the KAS bundle archive (`.tar.gz` of `node_modules`).
         /// At build time this is consumed by `build.rs` to embed the bundle.

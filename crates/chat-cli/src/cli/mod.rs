@@ -1035,6 +1035,10 @@ pub(crate) async fn spawn_kas_process(os: &Os, stdio: KasStdio) -> Result<tokio:
         crate::util::consts::env_var::KIRO_CONTENT_COLLECTION_ENABLED,
         content_collection_enabled(os).to_string(),
     );
+    // This direct spawn backs `acp` passthrough and non-interactive runs,
+    // which bypass the TUI launch path — gate the BFF endpoints here too so
+    // no KAS spawn inherits an unvalidated or rollout-disabled endpoint.
+    crate::launch::apply_kas_bff_endpoint_env(&mut cmd, crate::launch::resolve_kas_bff_endpoint_env());
 
     let child = cmd.spawn().with_context(|| {
         format!(
@@ -1069,8 +1073,8 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
 
     let kas_version = read_kas_version(&server_js);
 
-    let mut child = tokio::process::Command::new(&node_bin)
-        .arg("--experimental-wasm-modules")
+    let mut cmd = tokio::process::Command::new(&node_bin);
+    cmd.arg("--experimental-wasm-modules")
         .arg(&server_js)
         .arg("--transport=ws")
         .arg("--auth=acp-callback")
@@ -1092,15 +1096,15 @@ async fn execute_kas_serve(os: &Os, port: u16) -> Result<ExitCode> {
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .kill_on_drop(false)
-        .spawn()
-        .with_context(|| {
-            format!(
-                "failed to spawn the v3 engine server: {} {}",
-                node_bin.display(),
-                server_js.display()
-            )
-        })?;
+        .kill_on_drop(false);
+    crate::launch::apply_kas_bff_endpoint_env(&mut cmd, crate::launch::resolve_kas_bff_endpoint_env());
+    let mut child = cmd.spawn().with_context(|| {
+        format!(
+            "failed to spawn the v3 engine server: {} {}",
+            node_bin.display(),
+            server_js.display()
+        )
+    })?;
 
     let status = child.wait().await?;
     Ok(status.code().map_or(ExitCode::FAILURE, |c| ExitCode::from(c as u8)))

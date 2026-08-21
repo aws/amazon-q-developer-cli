@@ -53,6 +53,7 @@ use crate::telemetry::core::{
     TelemetryResult,
 };
 use crate::util::consts::env_var::{
+    CLOUD_CONFIG_ENDPOINT,
     KIRO_CHAT_CLI_BIN,
     KIRO_KAS_NODE_PATH,
     KIRO_KAS_SERVER_PATH,
@@ -571,13 +572,18 @@ fn tui_child_env(
     env
 }
 
-/// Default BFF endpoint for remote/cloud sandbox sessions, keyed to the auth
-/// stage. KAS treats a set endpoint as the opt-in to run cloud machinery, so
-/// owning the default here (rather than in KAS) keeps that gate a deliberate
-/// client choice while removing per-client duplication. Stage is inferred from
-/// the auth portal URL — the only stage signal the CLI has — so cloud sessions
-/// hit the same stage the user authenticated against.
-fn default_remote_sessions_endpoint(auth_portal_url: Option<&str>) -> &'static str {
+/// The BFF hosts the launcher will hand KAS a bearer-carrying endpoint for:
+/// the hosts an https override may name. Must cover every stage default.
+const TRUSTED_BFF_HOSTS: [&str; 3] = ["app.kiro.dev", "gamma.app.kiro.dev", "beta.app.kiro.dev"];
+
+/// Default BFF endpoint, keyed to the auth stage. KAS treats a set endpoint
+/// (remote sessions, cloud config) as the opt-in to run the corresponding
+/// cloud machinery, so owning the default here (rather than in KAS) keeps
+/// that gate a deliberate client choice while removing per-client
+/// duplication. Stage is inferred from the auth portal URL — the only stage
+/// signal the CLI has — so cloud calls hit the same stage the user
+/// authenticated against.
+fn default_bff_endpoint(auth_portal_url: Option<&str>) -> &'static str {
     // Exact match is intentional: an unrecognized portal (variant spelling,
     // port, private IdC) conservatively maps to prod; preprod testers who need
     // a nonstandard portal set the endpoint env var explicitly.
@@ -588,23 +594,128 @@ fn default_remote_sessions_endpoint(auth_portal_url: Option<&str>) -> &'static s
     }
 }
 
-/// Resolve the endpoint the launcher sets on the KAS child, or `None` to leave
-/// it unset (KAS then keeps cloud sessions dark). An explicit
-/// `KIRO_REMOTE_SESSIONS_ENDPOINT` always wins so preprod testing can override;
-/// otherwise the stage default applies only when the `remote_sandbox` rollout
-/// is enabled for this user.
-fn resolve_remote_sessions_endpoint(
+/// KAS attaches the user's bearer token to these endpoints, so an override
+/// from a stray environment variable must not be able to name an arbitrary
+/// destination for the credential. Allowed: https to a trusted BFF host, or
+/// http(s) to the local loopback for fixtures. Exact host comparison, so
+/// e.g. `http://localhost.evil.com` is rejected.
+fn is_allowed_endpoint_override(url: &str) -> bool {
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    let loopback = match parsed.host() {
+        Some(url::Host::Domain(d)) => d == "localhost",
+        Some(url::Host::Ipv4(ip)) => ip == std::net::Ipv4Addr::LOCALHOST,
+        Some(url::Host::Ipv6(ip)) => ip == std::net::Ipv6Addr::LOCALHOST,
+        None => false,
+    };
+    match parsed.scheme() {
+        "https" => loopback || parsed.host_str().is_some_and(|h| TRUSTED_BFF_HOSTS.contains(&h)),
+        "http" => loopback,
+        _ => false,
+    }
+}
+
+/// Scheme and host of a rejected override, for warnings. Never the full
+/// value: a rejected endpoint is exactly the class of string that may carry
+/// userinfo credentials, a signed query, or an internal hostname, and the
+/// warning also lands in the tracing log users attach to issue reports.
+fn redacted_endpoint(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(u) => format!("{}://{}", u.scheme(), u.host_str().unwrap_or("<no-host>")),
+        Err(_) => "<unparseable value>".to_string(),
+    }
+}
+
+/// Resolve a BFF endpoint the launcher sets on the KAS child, or `None` to
+/// leave it unset (KAS then keeps the corresponding cloud machinery dark). An
+/// explicit env override wins if it names a trusted BFF host or the local
+/// loopback (preprod testing, fixtures); otherwise the stage default applies
+/// only when the feature's rollout is enabled for this user — the rollout is
+/// the client-side kill switch, since KAS activates on a resolvable endpoint
+/// alone. A blank or disallowed override is treated as unset, with a loud
+/// stderr warning so a typo'd endpoint does not silently redirect to the
+/// stage default.
+fn resolve_gated_bff_endpoint(
+    var_name: &str,
     parent_override: Option<String>,
     rollout_enabled: bool,
     auth_portal_url: Option<&str>,
 ) -> Option<String> {
-    if let Some(v) = parent_override.filter(|v| !v.trim().is_empty()) {
-        return Some(v);
+    if let Some(v) = parent_override.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
+        if is_allowed_endpoint_override(&v) {
+            return Some(v);
+        }
+        let redacted = redacted_endpoint(&v);
+        eprintln!(
+            "[launcher] ignoring {var_name} ({redacted}): must be a trusted BFF host (https) or the local loopback"
+        );
+        tracing::warn!("ignoring {var_name} override ({redacted}): not a trusted BFF host or local loopback");
     }
     if rollout_enabled {
-        return Some(default_remote_sessions_endpoint(auth_portal_url).to_string());
+        return Some(default_bff_endpoint(auth_portal_url).to_string());
     }
     None
+}
+
+/// The gated BFF endpoint env entries for the KAS child, from explicit inputs
+/// so a test can pin which env var each rollout gate controls. An omitted
+/// entry leaves the env unset, keeping the corresponding KAS machinery dark:
+/// remote/cloud sandbox sessions for the first, the cloud-config pull
+/// (cloud-hosted steering/agents/skills/hooks) for the second.
+fn kas_bff_endpoint_env(
+    remote_sessions_override: Option<String>,
+    remote_sandbox_rollout: bool,
+    cloud_config_override: Option<String>,
+    cloud_config_rollout: bool,
+    auth_portal_url: Option<&str>,
+) -> Vec<(&'static str, String)> {
+    let mut env = Vec::new();
+    if let Some(endpoint) = resolve_gated_bff_endpoint(
+        KIRO_REMOTE_SESSIONS_ENDPOINT,
+        remote_sessions_override,
+        remote_sandbox_rollout,
+        auth_portal_url,
+    ) {
+        env.push((KIRO_REMOTE_SESSIONS_ENDPOINT, endpoint));
+    }
+    if let Some(endpoint) = resolve_gated_bff_endpoint(
+        CLOUD_CONFIG_ENDPOINT,
+        cloud_config_override,
+        cloud_config_rollout,
+        auth_portal_url,
+    ) {
+        env.push((CLOUD_CONFIG_ENDPOINT, endpoint));
+    }
+    env
+}
+
+/// Resolve the BFF endpoint env entries from the process environment and the
+/// rollout gates. Emits the rejected-override warning, so interactive callers
+/// must run this before starting the launch spinner (which rewrites the
+/// stderr line on every tick) or the warning is never seen.
+pub(crate) fn resolve_kas_bff_endpoint_env() -> Vec<(&'static str, String)> {
+    kas_bff_endpoint_env(
+        std::env::var(KIRO_REMOTE_SESSIONS_ENDPOINT).ok(),
+        crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
+        std::env::var(CLOUD_CONFIG_ENDPOINT).ok(),
+        crate::rollout::rollout().is_enabled(crate::rollout::Feature::CloudConfig),
+        std::env::var("KIRO_AUTH_PORTAL_URL").ok().as_deref(),
+    )
+}
+
+/// Scrub both BFF endpoint vars from a KAS-bound child and re-set only the
+/// resolved values, so a value the resolver rejected can never leak through
+/// by inheritance. Shared by every KAS spawn path (interactive TUI child and
+/// the direct KAS process spawn behind `acp` / non-interactive runs) so their
+/// gating cannot drift.
+pub(crate) fn apply_kas_bff_endpoint_env(cmd: &mut tokio::process::Command, resolved: Vec<(&'static str, String)>) {
+    cmd.env_remove(KIRO_REMOTE_SESSIONS_ENDPOINT);
+    cmd.env_remove(CLOUD_CONFIG_ENDPOINT);
+    for (key, endpoint) in resolved {
+        info!("{key}: {endpoint}");
+        cmd.env(key, endpoint);
+    }
 }
 
 /// Whether this process is an instrumented coverage run: KIRO_COVERAGE=1 plus
@@ -625,6 +736,16 @@ async fn launch_acp_interactive(
     cli_session_completion_emitted: &mut bool,
     startup: &mut StartupTelemetry,
 ) -> Result<ExitCode> {
+    // Resolved before the spinner starts: resolution may warn on stderr about
+    // a rejected endpoint override, and the spinner rewrites that line on
+    // every tick, so a later warning would never be seen. Only the KAS engine
+    // consumes the result, so other engines skip the resolution (and its
+    // warning) entirely.
+    let kas_bff_endpoint_env = match agent_engine {
+        AgentEngine::Kas => resolve_kas_bff_endpoint_env(),
+        _ => Vec::new(),
+    };
+
     // Show a spinner immediately so the user knows the CLI is starting. The
     // guard stops the spinner and clears its line on every exit path — normal
     // return, `?`/`bail!` early return, or panic unwind — so a startup failure
@@ -848,18 +969,9 @@ async fn launch_acp_interactive(
                 );
             }
 
-            // Own the remote-sessions endpoint here so it isn't duplicated per
-            // client. Setting it is KAS's opt-in for cloud machinery, so gate
-            // the default on the rollout; an explicit env value still wins for
-            // preprod. Leaving it unset keeps KAS's cloud path dark.
-            if let Some(endpoint) = resolve_remote_sessions_endpoint(
-                std::env::var(KIRO_REMOTE_SESSIONS_ENDPOINT).ok(),
-                crate::rollout::rollout().is_enabled(crate::rollout::Feature::RemoteSandbox),
-                std::env::var("KIRO_AUTH_PORTAL_URL").ok().as_deref(),
-            ) {
-                info!("Remote sessions endpoint: {endpoint}");
-                cmd.env(KIRO_REMOTE_SESSIONS_ENDPOINT, endpoint);
-            }
+            // The TUI forwards its env to the KAS child, so the endpoints
+            // set here are what KAS's cloud machinery sees.
+            apply_kas_bff_endpoint_env(&mut cmd, kas_bff_endpoint_env);
         },
         AgentEngine::V2 => {
             // KIRO_CHAT_CLI_BIN (set unconditionally above) is the canonical
@@ -1951,70 +2063,152 @@ mod tests {
     }
 
     #[test]
-    fn remote_endpoint_default_follows_auth_stage() {
-        assert_eq!(default_remote_sessions_endpoint(None), "https://app.kiro.dev");
+    fn bff_endpoint_default_follows_auth_stage() {
+        assert_eq!(default_bff_endpoint(None), "https://app.kiro.dev");
         assert_eq!(
-            default_remote_sessions_endpoint(Some("https://app.kiro.dev")),
+            default_bff_endpoint(Some("https://app.kiro.dev")),
             "https://app.kiro.dev"
         );
         assert_eq!(
-            default_remote_sessions_endpoint(Some("https://gamma.app.kiro.dev")),
+            default_bff_endpoint(Some("https://gamma.app.kiro.dev")),
             "https://gamma.app.kiro.dev"
         );
         assert_eq!(
-            default_remote_sessions_endpoint(Some("  https://beta.app.kiro.dev  ")),
+            default_bff_endpoint(Some("  https://beta.app.kiro.dev  ")),
             "https://beta.app.kiro.dev"
         );
         // An unrecognized portal (e.g. a private IdC start URL) falls back to prod.
         assert_eq!(
-            default_remote_sessions_endpoint(Some("https://example.com")),
+            default_bff_endpoint(Some("https://example.com")),
             "https://app.kiro.dev"
         );
     }
 
-    #[test]
-    fn remote_endpoint_unset_when_rollout_off_and_no_override() {
-        assert_eq!(resolve_remote_sessions_endpoint(None, false, None), None);
-        // A blank env value is treated as unset, not as an override.
-        assert_eq!(
-            resolve_remote_sessions_endpoint(Some("   ".to_string()), false, None),
-            None
-        );
+    fn resolve(override_: Option<&str>, rollout: bool, portal: Option<&str>) -> Option<String> {
+        resolve_gated_bff_endpoint("TEST_ENDPOINT_VAR", override_.map(String::from), rollout, portal)
     }
 
     #[test]
-    fn remote_endpoint_uses_stage_default_when_rollout_on() {
+    fn gated_bff_endpoint_unset_when_rollout_off_and_no_override() {
+        assert_eq!(resolve(None, false, None), None);
+        // A blank env value is treated as unset, not as an override.
+        assert_eq!(resolve(Some("   "), false, None), None);
+    }
+
+    #[test]
+    fn gated_bff_endpoint_uses_stage_default_when_rollout_on() {
+        assert_eq!(resolve(None, true, None), Some("https://app.kiro.dev".to_string()));
         assert_eq!(
-            resolve_remote_sessions_endpoint(None, true, None),
-            Some("https://app.kiro.dev".to_string())
-        );
-        assert_eq!(
-            resolve_remote_sessions_endpoint(None, true, Some("https://gamma.app.kiro.dev")),
+            resolve(None, true, Some("https://gamma.app.kiro.dev")),
             Some("https://gamma.app.kiro.dev".to_string())
         );
         // A blank override must fall through to the stage default, not set a
         // blank endpoint.
         assert_eq!(
-            resolve_remote_sessions_endpoint(Some("   ".to_string()), true, None),
+            resolve(Some("   "), true, None),
             Some("https://app.kiro.dev".to_string())
         );
     }
 
     #[test]
-    fn remote_endpoint_explicit_override_wins_regardless_of_rollout() {
+    fn gated_bff_endpoint_explicit_override_wins_regardless_of_rollout() {
         // Override is honored even when the rollout is off (preprod testing).
         assert_eq!(
-            resolve_remote_sessions_endpoint(Some("http://127.0.0.1:8787".to_string()), false, None),
+            resolve(Some("http://127.0.0.1:8787"), false, None),
             Some("http://127.0.0.1:8787".to_string())
         );
         // And it beats the stage default when the rollout is on.
         assert_eq!(
-            resolve_remote_sessions_endpoint(
-                Some("http://127.0.0.1:8787".to_string()),
+            resolve(Some("http://127.0.0.1:8787"), true, Some("https://gamma.app.kiro.dev")),
+            Some("http://127.0.0.1:8787".to_string())
+        );
+        // A padded override reaches KAS trimmed, not with the padding.
+        assert_eq!(
+            resolve(Some("  http://127.0.0.1:8787  "), false, None),
+            Some("http://127.0.0.1:8787".to_string())
+        );
+    }
+
+    #[test]
+    fn gated_bff_endpoint_disallowed_override_is_ignored() {
+        // KAS attaches the bearer token to the endpoint, so an override may
+        // not name an arbitrary destination: not plain http off-loopback, and
+        // not https to a host outside the trusted BFF list.
+        assert_eq!(resolve(Some("http://evil.example"), false, None), None);
+        assert_eq!(resolve(Some("https://evil.example"), false, None), None);
+        // Exact host comparison: lookalike hosts are rejected too.
+        assert_eq!(resolve(Some("http://localhost.evil.example"), false, None), None);
+        assert_eq!(resolve(Some("https://app.kiro.dev.evil.example"), false, None), None);
+        assert_eq!(resolve(Some("not a url"), false, None), None);
+        // With the rollout on, a dropped override falls back to the stage
+        // default instead of darkening the feature.
+        assert_eq!(
+            resolve(Some("https://evil.example"), true, None),
+            Some("https://app.kiro.dev".to_string())
+        );
+        // Trusted BFF hosts and loopback fixtures (IPv4, name, IPv6) stay usable.
+        assert_eq!(
+            resolve(Some("https://beta.app.kiro.dev"), false, None),
+            Some("https://beta.app.kiro.dev".to_string())
+        );
+        assert_eq!(
+            resolve(Some("http://localhost:8787"), false, None),
+            Some("http://localhost:8787".to_string())
+        );
+        assert_eq!(
+            resolve(Some("http://[::1]:8787"), false, None),
+            Some("http://[::1]:8787".to_string())
+        );
+        assert_eq!(
+            resolve(Some("https://127.0.0.1:8787"), false, None),
+            Some("https://127.0.0.1:8787".to_string())
+        );
+    }
+
+    #[test]
+    fn trusted_bff_hosts_cover_every_stage_default() {
+        // The override validator must accept whatever the stage derivation
+        // can produce, or a legitimate stage endpoint set explicitly would be
+        // rejected.
+        for portal in [
+            None,
+            Some("https://gamma.app.kiro.dev"),
+            Some("https://beta.app.kiro.dev"),
+        ] {
+            let default = default_bff_endpoint(portal);
+            assert!(
+                is_allowed_endpoint_override(default),
+                "stage default {default} must be an allowed override"
+            );
+        }
+    }
+
+    #[test]
+    fn kas_bff_endpoint_env_pairs_each_var_with_its_own_gate() {
+        // Each rollout gate controls only its own env var, and each override
+        // lands on its own var — the pairing is the only thing distinguishing
+        // the two endpoints once resolution is shared.
+        assert_eq!(kas_bff_endpoint_env(None, false, None, false, None), vec![]);
+        assert_eq!(kas_bff_endpoint_env(None, true, None, false, None), vec![(
+            "KIRO_REMOTE_SESSIONS_ENDPOINT",
+            "https://app.kiro.dev".to_string()
+        )]);
+        assert_eq!(kas_bff_endpoint_env(None, false, None, true, None), vec![(
+            "CLOUD_CONFIG_ENDPOINT",
+            "https://app.kiro.dev".to_string()
+        )]);
+        assert_eq!(
+            kas_bff_endpoint_env(
+                Some("http://127.0.0.1:1111".to_string()),
+                true,
+                Some("http://127.0.0.1:2222".to_string()),
                 true,
                 Some("https://gamma.app.kiro.dev")
             ),
-            Some("http://127.0.0.1:8787".to_string())
+            vec![
+                ("KIRO_REMOTE_SESSIONS_ENDPOINT", "http://127.0.0.1:1111".to_string()),
+                ("CLOUD_CONFIG_ENDPOINT", "http://127.0.0.1:2222".to_string()),
+            ]
         );
     }
 

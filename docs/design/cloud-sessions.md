@@ -70,10 +70,15 @@ Two independent gates, both required:
    provider catalog) only when `KIRO_REMOTE_SESSIONS_ENDPOINT` is supplied. Without it, KAS makes
    zero BFF calls and advertises `executionTargets: ['local']`.
 
-The launcher connects the two (`launch.rs::resolve_remote_sessions_endpoint`): it sets the
-endpoint env on the KAS child **only when the rollout gate is enabled** for this user. An explicit
-`KIRO_REMOTE_SESSIONS_ENDPOINT` in the parent environment always wins (preprod testing). The
-endpoint default derives from the auth portal stage (`app.kiro.dev` / gamma / beta).
+The launcher connects the two (`launch.rs::resolve_gated_bff_endpoint`, shared with the
+cloud-config endpoint since both are the same BFF base URL): it sets the endpoint env on the KAS
+child **only when the rollout gate is enabled** for this user, and applies the same
+resolve-and-scrub at every Rust-side KAS spawn (interactive TUI launch, `acp` passthrough,
+non-interactive runs, `serve`). An explicit `KIRO_REMOTE_SESSIONS_ENDPOINT` in the parent
+environment wins **only if it names a trusted BFF host or the local loopback** (preprod testing,
+fixtures); anything else is dropped with a warning and, with the rollout on, replaced by the
+stage default. The endpoint default derives from the auth portal stage (`app.kiro.dev` / gamma /
+beta).
 
 ### Dark-ship invariants (tested)
 
