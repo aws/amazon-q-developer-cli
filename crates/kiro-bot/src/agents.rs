@@ -285,10 +285,15 @@ mod tests {
             v["toolsSettings"]["grep"].is_null(),
             "grep settings must remain absent while grep is unavailable"
         );
+        // The source checkout, plus the agent's own skill files. Those live under
+        // $KIRO_HOME/agents, outside the ./** workspace, so without them the bot
+        // stops to ask a human for permission to read its own instructions on
+        // every fresh session. Enumerated rather than a directory glob so the
+        // agent still cannot read sibling agent configs or secrets.toml.
         assert_eq!(
             v["toolsSettings"]["read"]["allowedPaths"],
-            serde_json::json!(["./**"]),
-            "only the working source checkout should be auto-approved for read"
+            serde_json::json!(["./**", "$KIRO_HOME/agents/SKILL.md", "$KIRO_HOME/agents/references/**"]),
+            "read auto-approval covers the workspace and the agent's own skill files, nothing else"
         );
         let denied: Vec<&str> = v["toolsSettings"]["read"]["deniedPaths"]
             .as_array()

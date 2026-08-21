@@ -59,7 +59,9 @@
   "toolsSettings": {
     "read": {
       "allowedPaths": [
-        "./**"
+        "./**",
+        "$KIRO_HOME/agents/SKILL.md",
+        "$KIRO_HOME/agents/references/**"
       ],
       "deniedPaths": [
         "$KIRO_HOME/bots",
