@@ -1,0 +1,98 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Tangent journeys. A tangent is a child session in this engine -- /tangent <name> switches onto one and bare /tangent returns to the parent -- so it belongs with the session journeys rather than with conversation history, and it shares the switch path that loading a session uses. What a user depends on is that the detour leaves no trace on the session they came back to, which is asserted from the transcript after the return.",
+  "scenarios": [
+    {
+      "id": "session-tangent-holds-a-detour-then-returns-clean",
+      "name": "A tangent takes the session aside and returns it without the detour",
+      "category": "session-management",
+      "description": "A turn on the root session, a named tangent with a turn of its own, then a return -- asserts the tangent is entered and marked, and that returning restores the root transcript without the tangent's turns",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:remember the root codeword ROOTWORD-1",
+        "waitForIdle",
+        "type:/tangent sidequest",
+        "enter",
+        "waitForText:On tangent",
+        "frame:in-tangent",
+        "prompt:this is the tangent turn TANGENTWORD-2",
+        "waitForIdle",
+        "type:/tangent",
+        "enter",
+        "waitForText:Returned to root",
+        "frame:back-on-root"
+      ],
+      "verify": [
+        "screen.contains:Returned to root",
+        "screen.contains:RootNoted.",
+        "screen.notContains:TangentNoted.",
+        "screen.notContains:sidequest"
+      ],
+      "observe": "The tangent is entered by name and the run only proceeds once the session says so, so the detour is real rather than assumed. The return is the assertion that matters: the root answer is still there while the tangent's answer is not, which is what separates a session that came back from one that merely carried on. The tangent's own name is asserted absent too, because it labels the status bar while the detour is active and a return that left the label would leave the user unsure which session they are on.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "root-turn",
+          "match": {
+            "userInputContains": "ROOTWORD-1"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "RootNoted."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tangent-turn",
+          "match": {
+            "userInputContains": "TANGENTWORD-2"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "TangentNoted."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

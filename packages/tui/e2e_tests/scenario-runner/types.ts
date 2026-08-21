@@ -52,6 +52,16 @@ export interface Scenario {
     }
   >;
   /**
+   * Hooks the planted agent declares, keyed by trigger (`agentSpawn`,
+   * `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop`). A context hook's
+   * whole purpose is that its output reaches the model, which a request-body
+   * matcher can assert.
+   */
+  hooks?: Record<
+    string,
+    Array<{ command: string; matcher?: string; timeoutMs?: number }>
+  >;
+  /**
    * Scripted KRS turns answering this scenario's prompts, validated by
    * krs-turns.schema.json. Their absence is what makes a scenario unrunnable
    * against the fake Kiro Runtime Service.

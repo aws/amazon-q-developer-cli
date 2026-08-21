@@ -24,6 +24,7 @@ interface Scenario {
   category?: string;
   priority?: string;
   verify?: string[];
+  steps?: string[];
   [key: string]: unknown;
 }
 
@@ -98,22 +99,40 @@ describe('scenario corpus', () => {
     expect(dupes).toEqual([]);
   });
 
-  it('keeps every notContains needle clear of the launch tips', () => {
-    // One tip is picked at random per launch, so a needle that is a substring
-    // of any tip fails only on the runs that happen to draw it.
+  // One launch tip is drawn at random per run, so a needle that is a substring
+  // of any tip decides by luck: a positive or a gate can be satisfied without
+  // the feature working, and a negative can fail while it does. Positives are
+  // the worse half — they lose coverage silently instead of flaking.
+  //
+  // Scoped to the krs-mock lane, which holds zero collisions across all three
+  // shapes. shared/scenarios.json carries pre-existing ones on single words
+  // (`agent`, `plan`, `Kiro`, `line`) and is knowingly excluded rather than
+  // silently passing under a narrower check.
+  it('keeps every krs-mock needle clear of the launch tips', () => {
     const { SHARED, TUI_ONLY, LITE_ONLY } = __TIPS_FOR_TESTS;
-    // A tip's text may be a function of launch context. Its source carries the
+    // A tip's text may be a function of launch context; its source carries the
     // literals it can return, which over-approximates rather than misses.
     const tips = [...SHARED, ...TUI_ONLY, ...LITE_ONLY].map((tip) =>
       typeof tip.text === 'string' ? tip.text : String(tip.text)
     );
+    const prefixes = [
+      'screen.contains:',
+      'screen.notContains:',
+      'waitForText:',
+    ];
     const offenders: string[] = [];
     for (const { file, scenario } of corpus) {
-      for (const predicate of scenario.verify ?? []) {
-        if (!predicate.startsWith('screen.notContains:')) continue;
-        const needle = predicate.slice('screen.notContains:'.length);
+      if (!file.includes(`krs-mock${path.sep}`)) continue;
+      const predicates = [...(scenario.verify ?? []), ...(scenario.steps ?? [])];
+      for (const predicate of predicates) {
+        const prefix = prefixes.find((p) => predicate.startsWith(p));
+        if (!prefix) continue;
+        const needle = predicate.slice(prefix.length);
+        if (needle.length < 3) continue;
         const clash = tips.find((tip) => tip.includes(needle));
-        if (clash) offenders.push(`${file} ${scenario.id}: ${needle} <- ${clash}`);
+        if (clash) {
+          offenders.push(`${file} ${scenario.id}: ${prefix}${needle} <- ${clash}`);
+        }
       }
     }
     expect(offenders).toEqual([]);

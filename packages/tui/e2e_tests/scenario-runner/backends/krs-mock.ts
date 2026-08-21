@@ -337,13 +337,16 @@ async function mcpAgentConfig(
   stopAll: () => void;
 } | null> {
   const servers = scenario.mcpServers;
-  if (!servers || Object.keys(servers).length === 0) return null;
+  const hooks = scenario.hooks;
+  const wantsServers = servers && Object.keys(servers).length > 0;
+  const wantsHooks = hooks && Object.keys(hooks).length > 0;
+  if (!wantsServers && !wantsHooks) return null;
 
-  const tempDir = mkdtempSync(join(tmpdir(), `kiro-mcp-${scenario.id}-`));
+  const tempDir = mkdtempSync(join(tmpdir(), `kiro-agent-${scenario.id}-`));
   const stops: Array<() => void> = [];
   const entries: Array<[string, Record<string, unknown>]> = [];
   try {
-    for (const [name, spec] of Object.entries(servers)) {
+    for (const [name, spec] of Object.entries(servers ?? {})) {
       if (spec.remote) {
         const { url, stop } = await spawnRemoteMcpServer(
           name,
@@ -380,7 +383,8 @@ async function mcpAgentConfig(
         description: 'Agent carrying the scenario-declared MCP servers.',
         prompt: 'You are a test agent.',
         tools: ['*'],
-        mcpServers: Object.fromEntries(entries),
+        ...(wantsServers ? { mcpServers: Object.fromEntries(entries) } : {}),
+        ...(wantsHooks ? { hooks } : {}),
       },
       null,
       2

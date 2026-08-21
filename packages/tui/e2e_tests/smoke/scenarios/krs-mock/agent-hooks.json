@@ -1,0 +1,142 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Agent hook journeys. A hook is declared by the agent the scenario plants, so these cover hooks as an agent capability rather than as a panel: what the listing says about them, and whether a context hook's output actually reaches the model. The second is the one a user depends on and the one a panel cannot show -- it is asserted through the request body, by scripting a turn that only answers when the hook's stdout is present and pairing it with a turn that answers when it is not.",
+  "scenarios": [
+    {
+      "id": "agent-hooks-are-listed-with-their-trigger-and-command",
+      "name": "An agent's hooks are listed with the trigger and command they will run",
+      "category": "agents",
+      "description": "Two hooks declared by the planted agent, on different triggers -- asserts the listing names each one's resolved trigger and the exact command, and counts them",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/hooks",
+        "enter",
+        "waitForText:UserPromptSubmit",
+        "frame:hooks-panel"
+      ],
+      "verify": [
+        "screen.contains:2 hooks",
+        "screen.contains:echo HOOK-SPAWN-SENTINEL-77",
+        "screen.contains:echo HOOK-PROMPT-SENTINEL-88",
+        "screen.contains:SessionStart",
+        "screen.contains:UserPromptSubmit",
+        "screen.notContains:No hooks configured"
+      ],
+      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. The triggers are asserted because the config spells one of them `agentSpawn` while the listing resolves it to `SessionStart`, so the row proves the mapping rather than echoing the key. An agent that declares no hooks is caught before verify -- the wait for a trigger name expires -- so the predicates here carry the detail rather than the existence: the count, the verbatim commands, the resolved triggers, and the absent empty-state line for a panel that rendered chrome over an empty read.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "agentSpawn": [
+          {
+            "command": "echo HOOK-SPAWN-SENTINEL-77"
+          }
+        ],
+        "userPromptSubmit": [
+          {
+            "command": "echo HOOK-PROMPT-SENTINEL-88"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "unused-no-prompt-is-sent",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "agent-prompt-hook-output-reaches-the-model",
+      "name": "A per-prompt hook's output is in the request the model receives",
+      "category": "agents",
+      "description": "A userPromptSubmit hook that prints a sentinel -- asserts the sentinel is present in the request body the agent sends, which is the only place a context hook's effect can be observed",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p0",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:answer once the prompt hook has run",
+        "waitForIdle",
+        "frame:after-prompt"
+      ],
+      "verify": [
+        "screen.contains:PromptHookReachedModel.",
+        "screen.notContains:NoHookOutputInBody."
+      ],
+      "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn answers whenever that is missing, which turns a silently dropped hook into a named string on screen instead of a timeout. Asserting the second absent is what makes the first meaningful -- together they distinguish 'the hook reached the model' from 'the turn was answered at all'.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "agentSpawn": [
+          {
+            "command": "echo HOOK-SPAWN-SENTINEL-77"
+          }
+        ],
+        "userPromptSubmit": [
+          {
+            "command": "echo HOOK-PROMPT-SENTINEL-88"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "prompt-hook-reached-model",
+          "match": {
+            "bodyContains": "HOOK-PROMPT-SENTINEL-88"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "PromptHookReachedModel."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "hook-output-missing-from-body",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "NoHookOutputInBody."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

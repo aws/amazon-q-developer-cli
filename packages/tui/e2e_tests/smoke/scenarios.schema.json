@@ -265,6 +265,31 @@
               }
             }
           }
+        },
+        "hooks": {
+          "type": "object",
+          "description": "Hooks the planted agent declares, keyed by trigger (agentSpawn, userPromptSubmit, preToolUse, postToolUse, stop).",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "command"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "matcher": {
+                  "type": "string"
+                },
+                "timeoutMs": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
         }
       }
     },
