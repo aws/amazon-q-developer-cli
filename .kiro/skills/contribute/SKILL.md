@@ -19,7 +19,7 @@ This skill implements Phase 1 (Foundation) of the delegated contribution model. 
 If the user passes `--dry-run` or says "dry run" / "test mode", execute the full workflow but **do NOT create any tickets**. Instead:
 - Run all dedup searches normally (read operations are safe)
 - Classify normally
-- At Step 4, instead of calling TaskeiCreateTask, output the complete task payload as formatted text: name, room, type, tags, description with all fields filled in
+- At Step 4, instead of calling TaskeiCreateTask, output the complete task payload as formatted text: name, room, folder, type, tags, description with all fields filled in
 - Prefix the Step 5 summary with `🧪 DRY RUN —` and show what would have been created
 - This lets users and testers validate the full flow without side effects
 
@@ -213,7 +213,7 @@ If ticket creation fails, show the user the error and provide the pre-filled tic
 Use builder-mcp TaskeiCreateTask with:
 
 - **roomId**: `7c221a81-7ca7-436c-8f05-a7278949341b` (the Kiro CLI intake room)
-- **folder**: `0205a00e-4757-425d-bde0-e06884dce83e` (Bug Reports). CAVEAT (verified 2026-08): the API silently drops `folder` on create and rejects folder moves for non-resolvers, so via MCP the task usually lands unfoldered — and the team's board views filter by folder. After creating, give the user the wiki's pre-foldered create link as the fallback (https://taskei.amazon.dev/tasks/create?room=7c221a81-7ca7-436c-8f05-a7278949341b&folder=0205a00e-4757-425d-bde0-e06884dce83e&type=TASK) or ask in the room/Slack for a resolver to folder it; note the placement gap in your summary rather than claiming board visibility
+- **folder**: `0205a00e-4757-425d-bde0-e06884dce83e` (Bug Reports). CAVEAT (verified 2026-08): the API silently drops `folder` on create for non-resolvers (create succeeds, no warning) and rejects folder moves — and the team's board views filter by folder. After creating, verify placement with TaskeiGetTask. If the folder was dropped, give the user the wiki's pre-foldered create link as the fallback (https://taskei.amazon.dev/tasks/create?room=7c221a81-7ca7-436c-8f05-a7278949341b&folder=0205a00e-4757-425d-bde0-e06884dce83e&type=TASK) or ask in the room/Slack for a resolver to folder it, and note the placement gap in your summary rather than claiming board visibility
 - **type**: `TASK` (matches the wiki's create template)
 - **tags**: `straightforward-bug` for Path A, `needs-team-review` for Path B (REQUIRED — do not omit; Taskei tags are free-form strings)
 - **name**: Clear, concise summary

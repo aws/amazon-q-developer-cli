@@ -67,6 +67,7 @@ chat.log
 .kiro/specs/
 .kiro/skills/*
 !.kiro/skills/coe/
+!.kiro/skills/contribute/
 !.kiro/skills/knight-rider/
 !.kiro/skills/acp-session-storage/
 !.kiro/skills/gh-issues/
