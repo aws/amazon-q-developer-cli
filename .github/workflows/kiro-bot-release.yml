@@ -92,8 +92,6 @@ jobs:
           # Without `with: toolchain:` set, this action reads the file.
           toolchain: 1.92.0
       - uses: Swatinem/rust-cache@v2
-      - name: Test no-RAG release contract
-        run: bash .github/scripts/kiro-bot-release/test-no-rag-contract.sh
       - run: |
           cargo test \
             -p kiro-bot \
@@ -111,9 +109,9 @@ jobs:
           targets: ${{ env.TARGET }}
       - uses: Swatinem/rust-cache@v2
         with:
-          # Distinct cache slot for the cross-compile target dir so it
-          # doesn't churn against the host-target caches in `test` and
-          # `eval`, and persists even when the build step itself fails.
+          # Distinct cache slot for the cross-compile target dir so it doesn't
+          # churn against the host-target cache in `test`, and persists even
+          # when the build step itself fails.
           shared-key: arm64-build
           cache-on-failure: true
       - name: Install zig (cross-toolchain)
@@ -229,6 +227,34 @@ jobs:
             exit 1
           }
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      - name: Verify the image ships what the bot needs
+        # Asserted against the BUILT IMAGE, not by grepping source. The previous
+        # version of this contract grepped this workflow for a `COPY` line; when
+        # that line moved into runtime.Dockerfile the grep started failing while
+        # the contract itself was still satisfied, which broke every release run
+        # on main. An image assertion cannot be fooled by a file moving.
+        #
+        # kiro-knowledge-mcp is the compatibility case that matters: the agent
+        # config no longer registers it, but the binary must stay in the image
+        # until the config change has shipped everywhere.
+        run: |
+          IMAGE=${{ env.AWS_ACCOUNT }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.RUNTIME_REPO }}
+          docker run --rm --platform linux/arm64 --entrypoint sh \
+            "$IMAGE@${{ steps.push.outputs.digest }}" -c '
+              set -e
+              for binary in kiro-bot kiro-cli kiro-knowledge-mcp kiro-github-mcp kiro-mcp; do
+                test -x "/usr/local/bin/$binary" || { echo "missing or non-executable: $binary" >&2; exit 1; }
+              done
+              # entrypoint.sh hard-fails without these, and a container that
+              # cannot start looks identical to a bad deploy.
+              test -f /etc/kiro-help/config.toml
+              test -f /etc/kiro-help/policies/agents.cedar
+              # The container git-fetches this sha at startup and asserts
+              # rev-parse HEAD matches, so a malformed one is unbootable.
+              sha=$(tr -d "\n" < /etc/kiro-help/source-sha)
+              test ${#sha} -eq 40
+              case "$sha" in *[!0-9a-f]*) echo "source-sha is not 40 hex: $sha" >&2; exit 1 ;; esac
+            '
       - name: Write SSM runtime digest
         # Read at deploy time by stack.ts via
         # ssm.StringParameter.valueForStringParameter, so CloudFormation stays

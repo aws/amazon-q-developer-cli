@@ -5437,22 +5437,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kiro-bot-eval"
-version = "0.0.0-dev"
-dependencies = [
- "anyhow",
- "async-trait",
- "clap",
- "kiro-knowledge-mcp",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "kiro-bot-metrics"
 version = "0.0.0-dev"
 dependencies = [
