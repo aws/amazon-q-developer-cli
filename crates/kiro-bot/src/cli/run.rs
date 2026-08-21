@@ -270,6 +270,12 @@ pub async fn cmd_chat(name: &str) -> Result<()> {
     let instance_dir = config::config_dir(name)?;
     let cfg = config::load_config(&instance_dir)?;
     std::env::set_current_dir(&instance_dir)?;
+    // Same two-step as run_bot: chdir into the instance so relative config
+    // paths resolve, then hand the agent its real workspace. `new_session`
+    // passes `current_dir()` as the session root, so without this the agent is
+    // rooted in $KIRO_HOME/bots/<name> — which agents/kiro-help.json lists in
+    // `read.deniedPaths`, making its `./**` allowance resolve to a denied path.
+    set_working_directory(&cfg.working_directory)?;
     let max_active_work_items = cfg.agent.max_active_work_items;
 
     let acp_cfg = AcpConfig {
