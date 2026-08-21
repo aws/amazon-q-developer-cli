@@ -1,0 +1,149 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Agent-selection journeys. The success alert is the only string in this surface that cannot be printed without the active agent having actually changed -- it is emitted after the handler re-reads the store and finds the requested agent live. But it is a transient alert, so it is gated by a waitForText step -- which polls the same snapshot verify reads, on a 50ms interval, and so catches the alert inside the seconds it is up -- while the durable proof is the status-bar chip. Chip assertions survive alongside the picker because the menu is a live region erased on dismissal rather than committed to scrollback -- verified on captured frames, and each such journey pins that by asserting the picker heading is absent once it has closed.",
+  "scenarios": [
+    {
+      "id": "agent-swap-changes-active-agent",
+      "name": "Swapping agents changes the active agent",
+      "category": "agents",
+      "priority": "p0",
+      "description": "A swap must actually move the session onto the requested agent, not merely report that it tried -- the status bar has to follow",
+      "docRef": "/docs/cli/agents",
+      "steps": [
+        "type:/agent swap kiro_planner",
+        "enter",
+        "waitForText:Switched to kiro_planner",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.contains:Plan",
+        "screen.notContains:not available",
+        "screen.notContains:Failed to switch agent"
+      ],
+      "observe": "The success alert is gated as a step because it auto-hides: it is emitted only after the handler re-reads the active agent and finds the requested one, so reaching it at all proves the switch landed rather than was merely requested. The chip is the durable half -- it renders the agent's display name, so a swap that alerted but left the store untouched fails here. This journey never opens the picker, keeping the typed-swap path isolated from the selection path that a separate journey covers.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "agent-swap-unknown-is-refused",
+      "name": "Swapping to an unknown agent leaves the session alone",
+      "category": "agents",
+      "priority": "p1",
+      "description": "An unresolvable agent name must be refused with the session left on its current agent, rather than half-applied or falsely reported as switched",
+      "docRef": "/docs/cli/agents",
+      "steps": [
+        "type:/agent swap ghost_agent_zzz",
+        "enter",
+        "waitForText:not available"
+      ],
+      "verify": [
+        "screen.contains:Default · Mock",
+        "screen.notContains:Switched to ghost_agent_zzz"
+      ],
+      "observe": "The refusal has to be reported, not just survived: the chip naming the previous agent is true before the command is even typed, so on its own it cannot tell a refusal from a handler that returned silently. The gating step carries that weight -- only the post-switch read-back finding the requested agent absent prints this -- and the chip is then the durable evidence that nothing half-applied. On this backend the read-back is what refuses; an unknown mode rejected earlier by the RPC prints different text, so a change in where the refusal originates fails here rather than passing quietly.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "agent-picker-select-switches-agent",
+      "name": "Selecting from the agent picker switches the session onto that agent",
+      "category": "agents",
+      "priority": "p1",
+      "description": "Choosing a row must actually move the session onto that agent -- listing the registry is worthless if selection dispatches the wrong value or nothing at all",
+      "docRef": "/docs/cli/agents",
+      "steps": [
+        "type:/agent",
+        "enter",
+        "waitForText:Select agent",
+        "sleep:1000",
+        "arrowDown",
+        "sleep:500",
+        "enter",
+        "waitForText:Switched to spec",
+        "sleep:500"
+      ],
+      "verify": [
+        "screen.contains:Spec · Mock",
+        "screen.notContains:Default ·",
+        "screen.notContains:Select agent"
+      ],
+      "observe": "Arrowing off the active row and selecting lands on the second advertised agent, and the status bar follows. Unlike the swap journeys this one may assert the chip even though it opened the picker: the menu is a live region that is erased on dismissal rather than committed to scrollback, so its rows cannot supply the chip text -- the absent picker heading is the paired proof of that. The previous agent's chip going away is what rules out a selection that alerted without moving the session. The row it lands on is the agent server's second built-in mode. That is an ordering this scenario depends on but does not control -- the harness plants an agent profile into the sandbox home, and built-ins are only listed ahead of file-based entries by convention -- so a registry reordering fails this loudly rather than passing quietly.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "agent-create-registers-a-swappable-agent",
+      "name": "A created agent is registered and can be switched to",
+      "category": "agents",
+      "priority": "p1",
+      "description": "Creating an agent must leave something the session can actually run, not just a file on disk -- a profile the registry never picks up is indistinguishable from a failed create",
+      "docRef": "/docs/cli/agents",
+      "env": { "EDITOR": "true", "VISUAL": "true" },
+      "steps": [
+        "type:/agent create scenario_fixture_agent",
+        "enter",
+        "sleep:5000",
+        "type:/agent swap scenario_fixture_agent",
+        "enter",
+        "waitForText:Switched to scenario_fixture_agent"
+      ],
+      "verify": [
+        "screen.contains:scenario_fixture_agent · Mock",
+        "screen.notContains:Default ·",
+        "screen.notContains:not available"
+      ],
+      "observe": "The agent is created and then run, which is the only evidence that create produced a profile the registry accepts -- writing the file is necessary but not sufficient. The editor is replaced with a no-op through the environment because the command hands the new profile to $EDITOR once written, and this journey is about registration rather than editing; without that the run would sit inside an editor forever. The chip carrying the new name, with the previous agent's chip gone, is the durable half. The not-available negative separates a real switch from the refusal that a profile the registry rejected would produce.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    }
+  ]
+}

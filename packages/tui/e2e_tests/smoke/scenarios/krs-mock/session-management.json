@@ -1,0 +1,489 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Session-management journeys. Losing a conversation is the worst outcome in the product, so these assert the request body the model actually received rather than what is painted on screen: the terminal keeps scrollback, so restored text is indistinguishable from leftover text by substring alone. Two journeys therefore lead with a matcher-scoped sticky turn that fires only when history leaked where it should not have -- sticky so it does not trip the unused-turn check, and first in the queue so it wins over the normal turn when it matches. Verified from recorded exchanges: after /chat new the earlier reply is absent from the next request, and after /chat load it is present again.",
+  "scenarios": [
+    {
+      "id": "session-new-drops-history",
+      "name": "New conversation starts without the earlier history",
+      "category": "session-management",
+      "priority": "p0",
+      "description": "After /chat new the next prompt must reach the model without the previous conversation attached -- a new session that silently carries history is a privacy and correctness failure the screen cannot show",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:remember the codeword ZEPHYR-9",
+        "waitForIdle",
+        "type:/chat new",
+        "enter",
+        "waitForText:New conversation started",
+        "prompt:what was the codeword again",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:NO-EARLIER-CONTEXT",
+        "screen.notContains:HISTORY-LEAKED"
+      ],
+      "observe": "The follow-up is answered by a turn that requires the earlier reply to be ABSENT from the request body, so the reply is a direct statement that the history did not come along rather than an inference from which turn fired. The leak detector matches on the AGENT's earlier reply, which can only be in a request as carried-over history -- it cannot match the first request, where that reply does not exist yet. So HISTORY-LEAKED remaining absent is a real statement about the request body, not about the screen. Two things are deliberately NOT in verify: the codeword, because scrollback keeps the pre-reset text forever, and the new-conversation confirmation, because it is a transient alert that has auto-hidden by the time verify runs; the waitForText step catches it while it is still up, polling every 50ms against the same snapshot verify reads.",
+      "turns": [
+        {
+          "name": "leak-detector",
+          "times": 0,
+          "match": { "bodyContains": "Noted, the codeword is ZEPHYR-9." },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "HISTORY-LEAKED into the new session." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "establish-codeword",
+          "match": { "userInputContains": "remember the codeword ZEPHYR-9" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted, the codeword is ZEPHYR-9." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "answer-in-fresh-session",
+          "match": {
+            "userInputContains": "what was the codeword again",
+            "bodyNotContains": "Noted, the codeword is ZEPHYR-9."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "NO-EARLIER-CONTEXT: nothing before this message was sent to me."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-save-load-restores-history",
+      "name": "Loading a saved session restores its history to the model",
+      "category": "session-management",
+      "priority": "p0",
+      "description": "Save a conversation, start a new one, then load the save back -- the next prompt must reach the model with the saved history attached, which is the only thing that makes save/load worth anything",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:remember the codeword ZEPHYR-9",
+        "waitForIdle",
+        "type:/chat save {{tmpFile:session.json}}",
+        "enter",
+        "waitForText:Saved",
+        "type:/chat new",
+        "enter",
+        "waitForText:New conversation started",
+        "type:/chat load {{tmpFile:session.json}}",
+        "enter",
+        "waitForText:Loaded session from",
+        "prompt:what was the codeword again",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:RESTORED-HISTORY",
+        "screen.notContains:NO-RESTORED-HISTORY",
+        "screen.contains:Loaded session from"
+      ],
+      "observe": "The post-load prompt is answered by a turn that matches only when the saved conversation is present in the request, so the reply cannot render unless load actually rehydrated the history the model sees. The mirror turn answers when it is absent, which turns a silent restore failure into a distinct visible sentinel instead of a timeout. Load is asynchronous -- the panel shows 'Resolving session' first -- so the wait before prompting is deliberate.",
+      "turns": [
+        {
+          "name": "establish-codeword",
+          "match": { "userInputContains": "remember the codeword ZEPHYR-9" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted, the codeword is ZEPHYR-9." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "answer-with-restored-history",
+          "match": {
+            "userInputContains": "what was the codeword again",
+            "bodyContains": "Noted, the codeword is ZEPHYR-9."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "RESTORED-HISTORY: the saved conversation is attached again."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "restore-failed-mirror",
+          "times": 0,
+          "match": { "userInputContains": "what was the codeword again" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "NO-RESTORED-HISTORY: the saved conversation never arrived."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-save-confirms-destination",
+      "name": "Saving a session confirms where it was written",
+      "category": "session-management",
+      "priority": "p1",
+      "description": "A save must report back, naming the destination, so a user knows the conversation is on disk rather than silently lost",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:note this before saving",
+        "waitForIdle",
+        "type:/chat save {{tmpFile:confirmed.json}}",
+        "enter",
+        "waitForText:Saved",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.contains:Saved session to",
+        "screen.contains:confirmed.json"
+      ],
+      "observe": "The confirmation names the destination file. Asserting the filename as well as the verb is what separates a real save from a generic acknowledgement; the filename comes from the harness temp dir, so it cannot be a hardcoded string in the product.",
+      "turns": [
+        {
+          "name": "pre-save",
+          "match": { "userInputContains": "note this before saving" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted before the save." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-save-refuses-silent-overwrite",
+      "name": "Saving onto an existing file is refused instead of overwriting it",
+      "category": "session-management",
+      "priority": "p0",
+      "description": "A second save to the same path must be refused and name the path -- silently overwriting destroys a conversation the user had already archived, which is unrecoverable",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:note before the guarded save",
+        "waitForIdle",
+        "type:/chat save {{tmpFile:guard.zip}}",
+        "enter",
+        "waitForText:Saved session to",
+        "sleep:1000",
+        "type:/chat save {{tmpFile:guard.zip}}",
+        "enter",
+        "waitForText:output path already exists",
+        "sleep:500"
+      ],
+      "verify": [
+        "screen.contains:output path already exists",
+        "screen.contains:guard.zip"
+      ],
+      "observe": "The first save creates the archive and the second is refused by name. The refusal string is the discriminator: it exists nowhere else in the product, so it cannot be on screen unless the guard fired -- an overwrite would report a second success instead and the gating step would time out. The --force override is deliberately not exercised here: its success alert is textually identical to the first save's, which is already on screen, so no assertion could tell the override from a no-op.",
+      "turns": [
+        {
+          "name": "pre-save",
+          "match": { "userInputContains": "note before the guarded save" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted before the save." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-load-missing-archive-keeps-session",
+      "name": "Loading a missing archive is refused and leaves the session usable",
+      "category": "session-management",
+      "priority": "p1",
+      "description": "A load that cannot find its archive must say so and leave the current session intact -- a half-applied load that blanks or wedges the conversation costs the user everything they had open",
+      "docRef": "/docs/cli/chat",
+      "terminal": { "width": 160, "height": 40 },
+      "steps": [
+        "type:/chat load {{tmpDir}}/never-written.zip",
+        "enter",
+        "waitForText:No such file",
+        "waitForText:never-written.zip",
+        "prompt:still usable after the refused load",
+        "waitForIdle"
+      ],
+      "verify": ["screen.contains:SESSION-STILL-USABLE"],
+      "observe": "The refusal names the path it could not find, and the session then answers a normal prompt. Both halves of the refusal are gated as steps because the alert is transient and the turn that follows outlives it -- the steps fail if either the wording or the path never renders. The terminal is widened for this scenario alone so the temp path lands on one line: the harness path is long enough to wrap at the default width, which would split the filename across rows and defeat a line-based match without any product regression. Verify then carries the durable half, which is the actual point: the refusal happens before anything is torn down, so a regression that cleared the conversation or dropped the connection first would still print the error but fail to complete the following turn.",
+      "turns": [
+        {
+          "name": "after-refusal",
+          "match": { "userInputContains": "still usable after the refused load" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SESSION-STILL-USABLE after the refused load."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-picker-resumes-selected-session",
+      "name": "Selecting an earlier session in the picker resumes it with its history",
+      "category": "session-management",
+      "priority": "p0",
+      "description": "Resuming from the picker must bring the chosen conversation's history back to the model, which is the entire reason the picker exists -- a resume that switches the label but not the history silently answers from the wrong conversation",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:remember the codeword ZEPHYR-9",
+        "waitForIdle",
+        "type:/chat new",
+        "enter",
+        "waitForText:New conversation started",
+        "prompt:this is the second session",
+        "waitForIdle",
+        "type:/sessions",
+        "enter",
+        "waitForText:Remember the codeword ZEPHYR-9",
+        "sleep:2000",
+        "arrowDown",
+        "sleep:500",
+        "enter",
+        "waitForText:Session loaded",
+        "prompt:what was the codeword again",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:RESUMED-SESSION-HISTORY",
+        "screen.notContains:WRONG-SESSION-RESUMED"
+      ],
+      "observe": "Two sessions are established, the picker is opened on the second, and the row below it -- the earlier session -- is selected. The following prompt is answered by a turn that fires only when the first session's reply is in the request body, so the sentinel cannot render unless that conversation's history came back. The mirror turn answers when it did not, naming the failure instead of timing out.",
+      "turns": [
+        {
+          "name": "first-session",
+          "match": { "userInputContains": "remember the codeword ZEPHYR-9" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted, the codeword is ZEPHYR-9." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "second-session",
+          "match": { "userInputContains": "this is the second session" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Second session established." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "answer-with-resumed-history",
+          "match": {
+            "userInputContains": "what was the codeword again",
+            "bodyContains": "Noted, the codeword is ZEPHYR-9."
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "RESUMED-SESSION-HISTORY: the earlier conversation is attached."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "wrong-session-mirror",
+          "times": 0,
+          "match": { "userInputContains": "what was the codeword again" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "WRONG-SESSION-RESUMED: that conversation never came back."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-save-without-a-path-shows-usage",
+      "name": "Save with no path states its usage",
+      "category": "session-management",
+      "priority": "p2",
+      "description": "A bare save must say what it expected rather than writing somewhere the user did not choose or reporting a success with no destination",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:something worth saving",
+        "waitForIdle",
+        "type:/chat save",
+        "enter",
+        "waitForText:Usage: /chat save"
+      ],
+      "verify": [
+        "screen.contains:Usage: /chat save",
+        "screen.notContains:Saved session to"
+      ],
+      "observe": "The usage line renders and no save is claimed. The negative is the point: the failure worth catching is a bare save that picks a destination on the user's behalf and reports success, leaving an archive somewhere they will not find it.",
+      "turns": [
+        {
+          "name": "seed",
+          "match": { "userInputContains": "something worth saving" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-load-directory-is-refused",
+      "name": "Loading a directory instead of an archive is refused",
+      "category": "session-management",
+      "priority": "p2",
+      "description": "A path that exists but is not an archive must be refused on its own terms, so the user learns what is wrong rather than seeing an extraction failure",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:/chat load {{tmpDir}}",
+        "enter",
+        "waitForText:Not a file",
+        "prompt:still usable after the directory refusal",
+        "waitForIdle"
+      ],
+      "verify": ["screen.contains:SESSION-SURVIVED-DIRECTORY-LOAD"],
+      "observe": "The refusal distinguishes a directory from a missing file, which is a different message on a different branch, and the session then completes a normal turn. The wording is gated as a step because it is transient; verify carries the durable half, that nothing was torn down before the path was validated.",
+      "turns": [
+        {
+          "name": "after-refusal",
+          "match": {
+            "userInputContains": "still usable after the directory refusal"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SESSION-SURVIVED-DIRECTORY-LOAD and answered normally."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    }
+  ]
+}

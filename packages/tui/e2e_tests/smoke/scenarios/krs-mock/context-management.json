@@ -1,0 +1,631 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Context-management journeys. Context contents change what the agent answers, so silent loss or staleness is a top-tier failure -- and it is invisible unless a test opens the panel and reads it. Every negative assertion is paired with a positive proving the panel actually rendered, otherwise an absent filename would also 'pass' when the panel failed to open. The displayed percentage is deliberately never asserted: it is computed locally from token accounting, not taken from the scripted response, so it would be brittle. Scenarios that open the panel carry a sticky catch-all turn because opening it makes backend bookkeeping calls beyond the scripted prompt.",
+  "scenarios": [
+    {
+      "id": "context-add-then-ask",
+      "name": "Added file is listed as session context",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "A user attaches a file and then asks about it -- the file must appear as a session context entry, not merely be accepted silently",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json",
+        "enter",
+        "sleep:2000",
+        "prompt:what is the name field in that file",
+        "waitForIdle",
+        "type:/context show",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:Session (temporary)",
+        "screen.contains:– package.json",
+        "screen.contains:Current context window:"
+      ],
+      "observe": "The attached file appears under 'Session (temporary)' as a bulleted entry with its share of the window. Asserting the bulleted entry rather than the bare filename is what distinguishes a real context entry from the name merely appearing somewhere on screen.",
+      "turns": [
+        {
+          "name": "answer-about-file",
+          "match": { "userInputContains": "what is the name field in that file" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "The name field is @kiro/tui."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-remove-drops-entry",
+      "name": "Removing a file drops it from context",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "A file that was attached and then removed must no longer be listed -- the panel still has to render, so absence cannot be confused with a panel that failed to open",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json",
+        "enter",
+        "sleep:2000",
+        "type:/context remove package.json",
+        "enter",
+        "sleep:2000",
+        "type:/context show",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:Session (temporary)",
+        "screen.contains:Current context window:",
+        "screen.notContains:package.json"
+      ],
+      "observe": "The 'Session (temporary)' heading remains but carries no entries. The two positive assertions are what make the negative meaningful: they prove the panel rendered, so a missing filename is a real removal rather than a panel that never opened. Typed slash commands leave no echo in scrollback, which is why the bare filename is safe to assert absent.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-clear-keeps-agent-files",
+      "name": "Clearing context drops session files but keeps agent files",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "/context clear is scoped to session context -- the agent's own auto-loaded files must survive, or clearing would silently strip the agent's configuration",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json",
+        "enter",
+        "sleep:2000",
+        "type:/context clear",
+        "enter",
+        "sleep:2000",
+        "type:/context show",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:Current context window:",
+        "screen.contains:AGENTS.md",
+        "screen.notContains:package.json"
+      ],
+      "observe": "The session entry is gone while the auto-loaded agent file is still listed. This pair is the point of the scenario: clear is scoped to what the user attached this session, and a regression that cleared everything would strip the agent's configured context without the user asking.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-survives-multiple-turns",
+      "name": "Attached context survives later turns",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "A file attached before several exchanges must still be attached afterwards -- context silently dropped mid-conversation changes later answers without the user noticing",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json",
+        "enter",
+        "sleep:2000",
+        "prompt:first question about the project",
+        "waitForIdle",
+        "prompt:second unrelated question",
+        "waitForIdle",
+        "type:/context show",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:– package.json",
+        "screen.contains:Session (temporary)",
+        "screen.contains:SECOND-ANSWER"
+      ],
+      "observe": "The attachment is still listed after two unrelated exchanges. The second answer token confirms the conversation really advanced rather than stalling before the panel opened, which would otherwise leave the attachment listed for the wrong reason.",
+      "turns": [
+        {
+          "name": "first",
+          "match": { "userInputContains": "first question about the project" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "FIRST-ANSWER about the project." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "second",
+          "match": { "userInputContains": "second unrelated question" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "SECOND-ANSWER unrelated." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-breakdown-accounting",
+      "name": "Context panel breaks usage down by source",
+      "category": "context-management",
+      "priority": "p2",
+      "description": "After an exchange the panel must attribute the window across agent files, tools, responses and prompts, so a user can see what is consuming it",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "prompt:tell me something short",
+        "waitForIdle",
+        "type:/context show",
+        "enter",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:Current context window:",
+        "screen.contains:Agent files",
+        "screen.contains:Kiro responses",
+        "screen.contains:Your prompts",
+        "screen.contains:Active agent context: default",
+        "screen.contains:– AGENTS.md",
+        "screen.notContains:Agent files 0.0%"
+      ],
+      "observe": "All four accounting categories render, plus the active agent name. Two assertions make this about attribution rather than chrome: the agent file the workspace really carries is listed under the active-agent heading, and the agent bucket is required to be non-zero -- so a breakdown that renders the labels while attributing everything to one category, or reports zeroes across the board, fails here. Exact percentages are still not asserted: they are derived locally from token accounting rather than from the scripted response, so pinning a number would break on any tokenizer or window-size change without indicating a regression.",
+      "turns": [
+        {
+          "name": "short-answer",
+          "match": { "userInputContains": "tell me something short" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Something short." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-add-reports-per-path-failure",
+      "name": "Adding several paths reports which ones failed",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "When one path of several cannot be attached, the ones that did attach must be counted and the one that failed must be named -- a swallowed failure leaves the user believing a file is in context when it is not",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json zzz-not-a-real-file.txt",
+        "enter",
+        "waitForText:Added 1 path(s) to context.",
+        "sleep:500"
+      ],
+      "verify": [
+        "screen.contains:Added 1 path(s) to context.",
+        "screen.contains:Failed: Path not found:",
+        "screen.contains:zzz-not-a-real-file.txt"
+      ],
+      "observe": "The count and the failure are reported together in one alert. The count is the load-bearing half: it can only read 1 if the paths were applied individually and tallied, so a handler that aborted the whole command on the first failure would report 0 and a handler that ignored failures would report 2. Naming the rejected path is what makes the message actionable.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-unknown-subcommand-is-refused",
+      "name": "An unknown /context subcommand is refused with the valid ones listed",
+      "category": "context-management",
+      "priority": "p2",
+      "description": "A mistyped subcommand must be named and refused with the alternatives offered, not silently treated as a path or as the default show",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context bogussub",
+        "enter",
+        "waitForText:Unknown /context subcommand",
+        "sleep:500"
+      ],
+      "verify": [
+        "screen.contains:Unknown /context subcommand",
+        "screen.contains:Use: show, add, remove, clear",
+        "screen.notContains:Current context window:"
+      ],
+      "observe": "The refusal quotes the offending token and lists the valid subcommands. The negative is the discriminating half: the nearest plausible regression is falling through to the default show, which would open the breakdown panel and swallow the typo -- so the panel heading has to be absent.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-compact-replaces-history",
+      "name": "Compacting sends a summary of the conversation to the model",
+      "category": "context-management",
+      "priority": "p0",
+      "description": "/compact must summarise the conversation and put that summary into the context the model receives -- a compaction that renders a summary the model never sees buys the user nothing",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "prompt:the codeword is VERMILION-7 remember it",
+        "waitForIdle",
+        "type:/compact",
+        "enter",
+        "waitForText:SUMMARY-SENTINEL-ZK9",
+        "prompt:what was the codeword",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:COMPACTED-HISTORY-IN-USE",
+        "screen.notContains:RAW-HISTORY-STILL-ATTACHED"
+      ],
+      "observe": "The summarising call is answered with a sentinel, and the next prompt is answered by a turn that fires only when that sentinel is present in the request body -- which can only happen if the summary replaced the earlier turns as the history the model sees. The mirror turn answers the same prompt when the sentinel is absent, so a compaction that displayed a summary without putting it in the context produces a named sentinel rather than a timeout. The summary is gated as a step because it is also the proof the compaction call happened at all. What this does NOT pin is the raw turns being dropped: the recorded exchange shows the post-compact request carrying the summary AND the seeded reply, which is recent-turn retention rather than a defect -- a single exchange has nothing old enough to evict. Proving eviction needs a conversation past the retention budget, which this backend's window makes impractical.",
+      "turns": [
+        {
+          "name": "seed-the-fact",
+          "match": {
+            "userInputContains": "the codeword is VERMILION-7 remember it"
+          },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted: VERMILION-7 is the codeword." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "answer-from-summary",
+          "match": {
+            "userInputContains": "what was the codeword",
+            "bodyContains": "SUMMARY-SENTINEL-ZK9"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "COMPACTED-HISTORY-IN-USE: the summary arrived instead of the raw turns."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "raw-history-mirror",
+          "times": 0,
+          "match": { "userInputContains": "what was the codeword" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "RAW-HISTORY-STILL-ATTACHED: the summary never replaced the turns."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "summariser",
+          "match": { "bodyContains": "conversation history" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SUMMARY-SENTINEL-ZK9: the user shared codeword VERMILION-7."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-auto-compacts-on-overflow",
+      "name": "A context-window overflow is auto-compacted and the turn completes",
+      "category": "context-management",
+      "priority": "p0",
+      "description": "When the backend rejects a request for exceeding the context window, the agent must summarise, retry and answer -- surfacing the overflow as a failed turn strands the user with a conversation they cannot continue",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "prompt:seed the overflow with this fact COBALT-3",
+        "waitForIdle",
+        "prompt:trigger overflow now",
+        "waitForText:AUTO-COMPACTED-AND-RETRIED",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:AUTO-COMPACTED-AND-RETRIED",
+        "screen.notContains:Input is too long"
+      ],
+      "observe": "The scripted overflow rejection is answered by summarising and retrying, and the retry is matched only when the summary sentinel is in its body -- so the reply proves the recovery rebuilt the context rather than merely swallowing the error. The negative is the raw backend message: recovery is silent when it works, so that wording reaching the screen means the overflow was surfaced instead of handled. The rejection is modelled as the validation error whose message the agent recognises as an overflow, which is what makes this reachable without filling a real window.",
+      "turns": [
+        {
+          "name": "seed-before-overflow",
+          "match": {
+            "userInputContains": "seed the overflow with this fact COBALT-3"
+          },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted COBALT-3." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "reject-for-overflow",
+          "match": { "userInputContains": "trigger overflow now" },
+          "respond": {
+            "httpError": {
+              "kind": "validation",
+              "message": "Input is too long for the requested model."
+            }
+          }
+        },
+        {
+          "name": "summariser",
+          "match": { "bodyContains": "conversation history" },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "AUTOSUMMARY-SENTINEL-CB3: earlier turns condensed."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "retry-carries-summary",
+          "match": {
+            "userInputContains": "trigger overflow now",
+            "bodyContains": "AUTOSUMMARY-SENTINEL-CB3"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "AUTO-COMPACTED-AND-RETRIED: the rebuilt context came through."
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-reloads-after-agent-swap",
+      "name": "Swapping agents reloads the context the panel reports",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "Each agent carries its own context, so after a swap the panel must report the new agent's context rather than a cached view of the previous one -- a stale panel tells the user their prompts are grounded in files that are no longer loaded",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context show",
+        "enter",
+        "waitForText:Active agent context: default",
+        "escape",
+        "sleep:1000",
+        "type:/agent swap kiro_planner",
+        "enter",
+        "waitForText:Switched to kiro_planner",
+        "type:/context show",
+        "enter",
+        "waitForText:Active agent context: kiro_planner"
+      ],
+      "verify": [
+        "screen.contains:Active agent context: kiro_planner",
+        "screen.notContains:Active agent context: default"
+      ],
+      "observe": "The panel is read once per agent, and the second read names the agent that was switched to. Both reads are gated as steps so a panel that kept reporting the previous agent fails at the step rather than in verify -- checked by mutation: with the swap removed, the second read still says 'default' and the step times out. What this does NOT pin is the freshness-over-cache precedence inside the show handler: preferring the cached breakdown still yields the new name here, because the swap refreshes that cache before the panel is reopened. The negative is about the panel's own state, not about which source it read.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-add-multiple-and-remove-alias",
+      "name": "Several paths attach at once and rm detaches one of them",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "Attaching more than one path in a single command must report how many landed, and the rm alias must detach exactly the named one -- a user who removes one file cannot afford to lose the others",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json eslint.config.js",
+        "enter",
+        "waitForText:Added 2 path(s) to context",
+        "type:/context rm package.json",
+        "enter",
+        "waitForText:Removed 'package.json' from context",
+        "type:/context show",
+        "enter",
+        "waitForText:Session (temporary)"
+      ],
+      "verify": [
+        "screen.contains:– eslint.config.js",
+        "screen.notContains:– package.json"
+      ],
+      "observe": "Two paths attach in one command, then the alias detaches one by name. The panel is the arbiter: the surviving file is still listed as a session entry while the removed one is not, which is what separates a real per-path removal from a command that cleared everything or nothing. The bulleted form is asserted rather than the bare filename because the removal alert names the file too. Both paths are files that exist in the repository root AND under packages/tui, because the lane runs from either: CI invokes the runner from the root, local runs from packages/tui. The asserted count is only reachable when every named path resolves against the cwd the TUI inherited, so a path present in only one of those two places fails in exactly one environment.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-force-attaches-unmatched-path",
+      "name": "--force attaches a path the plain add refused",
+      "category": "context-management",
+      "priority": "p1",
+      "description": "The flag the refusal advertises has to work, or the user is told how to proceed and then cannot -- and a --force that silently no-ops leaves them believing a file is attached",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add zzz-not-yet-written.md",
+        "enter",
+        "waitForText:Path not found",
+        "type:/context add --force zzz-not-yet-written.md",
+        "enter",
+        "waitForText:Added 'zzz-not-yet-written.md' to context"
+      ],
+      "verify": ["screen.contains:Added 'zzz-not-yet-written.md' to context"],
+      "observe": "The same path is refused and then accepted, which is the whole claim: the flag changes the outcome rather than being parsed and dropped. The refusal is gated first so the success cannot be mistaken for a path that existed all along, and the success alert names the path, so it cannot be satisfied by the earlier message.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "context-add-without-a-path-shows-usage",
+      "name": "Add with no path states its usage",
+      "category": "context-management",
+      "priority": "p2",
+      "description": "A bare add must say what it expected rather than attaching nothing silently or falling through to the panel",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add",
+        "enter",
+        "waitForText:Usage: /context add"
+      ],
+      "verify": [
+        "screen.contains:Usage: /context add",
+        "screen.notContains:Current context window:"
+      ],
+      "observe": "The usage line names the subcommand it is talking about. The negative rules out the nearest wrong behaviour: treating the empty argument list as a bare /context and opening the breakdown panel, which would leave the user thinking the command did something.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    }
+  ]
+}

@@ -240,7 +240,7 @@
     "step": {
       "type": "string",
       "description": "A test step in the format 'action' or 'action:argument'",
-      "pattern": "^(type|waitForText|prompt|sleep|frame):.+$|^(enter|waitForIdle|ctrlc|ctrlc-twice|ctrlj|ctrls|arrowUp|arrowDown|escape|tab)$"
+      "pattern": "^(type|waitForText|prompt|sleep|frame):.+$|^(enter|waitForIdle|ctrlc|ctrlc-twice|ctrlj|ctrls|ctrla|ctrle|ctrlk|ctrlu|ctrlw|ctrlf|ctrlo|ctrlx|backspace|arrowUp|arrowDown|arrowLeft|arrowRight|escape|tab)$"
     },
     "verifyPredicate": {
       "type": "string",

@@ -956,6 +956,73 @@
       "engine": [
         "kas"
       ]
+    },
+    {
+      "id": "conversation-reasoning-only-turn-keeps-session-usable",
+      "name": "A turn that only reasons still shows its reasoning and accepts the next prompt",
+      "category": "conversation",
+      "description": "A turn whose entire output is reasoning, with no spoken text and no tool call, followed by an ordinary prompt -- asserts the reasoning still reaches the user and the session accepts the next turn",
+      "docRef": "/docs/cli/chat",
+      "priority": "p2",
+      "steps": [
+        "prompt:think without answering",
+        "waitForIdle",
+        "frame:after-reasoning-only",
+        "prompt:now answer plainly",
+        "waitForIdle",
+        "frame:after-followup"
+      ],
+      "verify": [
+        "screen.contains:OrphanReasonOnly with no spoken answer.",
+        "screen.contains:FollowUpAnswer arrived fine.",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "An empty model turn is the interesting case: reasoning is the only output, so if the client dropped it the user would face a blank response. It survives, and the next prompt is accepted -- the absent 'Prompt already in progress' is what proves the turn released the input rather than wedging the session. One known cosmetic defect is deliberately left unasserted: the finished turn's header keeps reading 'Thinking...' instead of settling to 'Thought for Ns', because only a text event ends the thinking phase. Asserting the settled header would fail today, and asserting the stuck one would fail on the fix.",
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ],
+      "turns": [
+        {
+          "name": "reason-only",
+          "match": {
+            "userInputContains": "think without answering"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "reasoning",
+                "text": "OrphanReasonOnly with no spoken answer."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "plain-followup",
+          "match": {
+            "userInputContains": "now answer plainly"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "FollowUpAnswer arrived fine."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

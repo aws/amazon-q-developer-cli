@@ -226,9 +226,9 @@
         "enter"
       ],
       "verify": [
-        "screen.contains:context"
+        "screen.contains:Current context window:"
       ],
-      "observe": "Context panel shows active agent name, file rules with token percentages, session rules section, tips at bottom, Tab to switch to /usage",
+      "observe": "Context panel shows active agent name, file rules with token percentages, session rules section, tips at bottom, Tab to switch to /usage. Asserting the window heading rather than the bare word 'context' is what distinguishes a rendered panel from the command name merely appearing on screen.",
       "engine": [
         "v2",
         "kas"
@@ -249,9 +249,9 @@
         "enter"
       ],
       "verify": [
-        "screen.contains:context"
+        "screen.contains:Added 'package.json' to context"
       ],
-      "observe": "Confirmation that rule was added, /context show should now list the new rule",
+      "observe": "A snackbar confirms the file was attached, naming it. Asserting the named confirmation rather than the bare word 'context' means a silently ignored add cannot pass.",
       "engine": [
         "v2",
         "kas"
@@ -272,9 +272,9 @@
         "enter"
       ],
       "verify": [
-        "screen.contains:context"
+        "screen.contains:Removed 'package.json' from context"
       ],
-      "observe": "Confirmation that rule was removed",
+      "observe": "A snackbar confirms the file was detached, naming it.",
       "engine": [
         "v2",
         "kas"
@@ -295,9 +295,9 @@
         "enter"
       ],
       "verify": [
-        "screen.contains:context"
+        "screen.contains:context updated"
       ],
-      "observe": "All session rules cleared, /context show should show empty session rules",
+      "observe": "A snackbar confirms the clear ran. This only proves the command reported back; that clear is correctly scoped -- session entries dropped, agent files kept -- is asserted by the krs-mock context journeys, which can open the panel and read it.",
       "engine": [
         "v2",
         "kas"

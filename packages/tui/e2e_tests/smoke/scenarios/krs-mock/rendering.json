@@ -252,6 +252,143 @@
       ],
       "tags": ["journey", "scenario"],
       "engine": ["kas"]
+    },
+    {
+      "id": "rendering-reasoning-settles-to-a-thought-header",
+      "name": "Streamed reasoning renders, reassembles and settles once the answer starts",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "Two reasoning chunks then the spoken answer -- asserts the chunks concatenate into one block, the header settles from the in-flight 'Thinking...' to 'Thought for', and the reasoning stays separate from the answer",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:weigh the two options and answer",
+        "waitForIdle",
+        "frame:after-reasoning"
+      ],
+      "verify": [
+        "screen.contains:Thought for",
+        "screen.contains:ReasonStepOne weighing the options. ReasonStepTwo picking one.",
+        "screen.contains:ReasonedAnswer is the result.",
+        "screen.notContains:Thinking...",
+        "screen.notContains:esc to cancel"
+      ],
+      "observe": "The reasoning arrives as two events and renders as ONE body line -- asserting the joined string is what proves the client concatenates chunks rather than emitting a block per event. The header settles to 'Thought for Ns'; the absent 'Thinking...' and 'esc to cancel' are the load-bearing half, because a turn that never ends its thinking phase leaves both on screen after the turn is over, and the reasoning body alone cannot tell the two apart.",
+      "turns": [
+        {
+          "name": "reasoned-answer",
+          "match": { "userInputContains": "weigh the two options" },
+          "respond": {
+            "events": [
+              {
+                "type": "reasoning",
+                "text": "ReasonStepOne weighing the options."
+              },
+              { "type": "reasoning", "text": " ReasonStepTwo picking one." },
+              { "type": "text", "content": "ReasonedAnswer is the result." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-ascii-mode-degrades-every-glyph",
+      "name": "ASCII mode replaces every Unicode glyph on a reasoning turn",
+      "category": "rendering",
+      "priority": "p1",
+      "description": "The same reasoning turn under KIRO_ASCII_MODE=1 -- asserts the message bullet, reasoning gutter, summary marker and submit hint all degrade to ASCII and no Unicode form survives",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:answer in ascii mode", "waitForIdle", "frame:after-ascii"],
+      "verify": [
+        "screen.contains:* Thought for",
+        "screen.contains:+ AsciiReasonBody weighing it.",
+        "screen.contains:> Time:",
+        "screen.contains:ask a question or describe a task enter",
+        "screen.notContains:\u25cf",
+        "screen.notContains:\u2570",
+        "screen.notContains:\u25b8",
+        "screen.notContains:\u21b5"
+      ],
+      "observe": "Every asserted ASCII form has its Unicode counterpart asserted absent in the same frame, so the pair fails from either side: a regression that stops degrading a glyph fails the notContains, and one that degrades it to the wrong character fails the contains. The four cover distinct call sites -- message bullet, reasoning gutter, turn-summary marker, prompt-bar submit hint -- so a partial degradation is caught rather than averaged away.",
+      "env": { "KIRO_ASCII_MODE": "1" },
+      "turns": [
+        {
+          "name": "ascii-answer",
+          "match": { "userInputContains": "answer in ascii mode" },
+          "respond": {
+            "events": [
+              { "type": "reasoning", "text": "AsciiReasonBody weighing it." },
+              { "type": "text", "content": "AsciiAnswer is the result." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-turn-summary-reports-metered-usage",
+      "name": "A metered turn reports its usage in the turn summary",
+      "category": "rendering",
+      "priority": "p2",
+      "description": "A response carrying a metering event -- asserts the metered amount and its plural unit reach the turn summary line beneath the answer",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:report the metered turn", "waitForIdle", "frame:after-metering"],
+      "verify": [
+        "screen.contains:MeteredAnswer here.",
+        "screen.contains:Tokens: 1234.00",
+        "screen.contains:Time:"
+      ],
+      "observe": "The metered amount renders as 'Tokens: 1234.00' -- pluralised unit, capitalised, two decimal places, which is a formatting decision the bare number would not catch. A turn with no metering event renders the same summary line carrying only 'Time:', so the Tokens segment appearing at all is attributable to the event.",
+      "turns": [
+        {
+          "name": "metered-answer",
+          "match": { "userInputContains": "report the metered turn" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "MeteredAnswer here." },
+              {
+                "type": "metering",
+                "usage": 1234.0,
+                "unit": "token",
+                "unitPlural": "tokens"
+              },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "rendering-context-usage-reaches-the-status-bar",
+      "name": "Streamed context usage reaches the status bar",
+      "category": "rendering",
+      "priority": "p2",
+      "description": "A response carrying a context-usage event -- asserts the streamed percentage reaches the status bar rather than the boot placeholder persisting",
+      "docRef": "/docs/cli/chat",
+      "steps": ["prompt:report the context usage", "waitForIdle", "frame:after-usage"],
+      "verify": ["screen.contains:ContextUsageAnswer here.", "screen.contains:73%"],
+      "observe": "The status bar reads '73%' only because the stream said so -- with no context-usage event the same bar renders the 1% it boots with, so the asserted number cannot appear by default. The percentage is asserted without its adjacent fill glyph, which tracks the value and would couple this to an unrelated presentation choice.",
+      "turns": [
+        {
+          "name": "usage-answer",
+          "match": { "userInputContains": "report the context usage" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ContextUsageAnswer here." },
+              { "type": "contextUsage", "contextUsagePercentage": 73.0 },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
     }
   ]
 }

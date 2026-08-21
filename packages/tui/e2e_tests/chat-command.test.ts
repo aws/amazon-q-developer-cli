@@ -279,11 +279,10 @@ describe('Chat Command', () => {
       await testCase.waitForText('Hello from mock!', 30000);
       await testCase.waitForIdle();
 
-      // E2ETestCase points KIRO_TEST_SESSIONS_DIR at sandboxDir, so V2
-      // session files land directly under sandboxDir as `<id>.json` /
-      // `<id>.jsonl`.
+      // V2 session files land in the engine's transcript dir as
+      // `<id>.json` / `<id>.jsonl`.
       const originalJsonPath = path.join(
-        testCase.sandboxDir,
+        testCase.sessionsDir,
         `${originalSessionId}.json`
       );
       expect(fs.existsSync(originalJsonPath)).toBe(true);
@@ -320,7 +319,7 @@ describe('Chat Command', () => {
       expect(newSessionId).toBeTruthy();
 
       const newJsonPath = path.join(
-        testCase.sandboxDir,
+        testCase.sessionsDir,
         `${newSessionId}.json`
       );
       expect(fs.existsSync(newJsonPath)).toBe(true);

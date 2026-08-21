@@ -1,0 +1,1049 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Keyboard journeys. Input editing is invisible to a screen assertion: the buffer, the cursor and the kill ring leave no durable text, and the terminal snapshot carries no style or cursor data. What IS observable is the message that gets submitted, so these journeys assert the request the model received via userInputContains and userInputRegex. That is what makes them discriminating -- the existing smoke scenarios assert text that is either literally typed or already in scrollback, so they pass with the key handler removed entirely.",
+  "scenarios": [
+    {
+      "id": "keyboard-history-recall-appends",
+      "name": "History recall refills the buffer so it can be edited and resent",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "Pressing up must put the previous prompt back in the buffer with the cursor at its end, so typing continues it -- the everyday amend-and-resend flow",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:tell me about vermilion",
+        "waitForIdle",
+        "arrowUp",
+        "type: and cobalt",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:BOTH-PIGMENTS-CONFIRMED"
+      ],
+      "observe": "The second message reaches the model as the recalled prompt plus the appended text, which is only possible if up refilled the buffer and left the cursor at the end. A no-op up key submits just the appended fragment, so the turn matching the combined text is never requested -- that fails the unused-turn check and the sentinel never renders. Scrollback cannot fake this: the sentinel exists nowhere until the model answers the edited prompt.",
+      "turns": [
+        {
+          "name": "first-pigment",
+          "match": {
+            "userInputContains": "tell me about vermilion"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "First pigment logged."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "recalled-and-edited",
+          "match": {
+            "userInputContains": "vermilion and cobalt"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "BOTH-PIGMENTS-CONFIRMED: the recalled prompt arrived with the edit."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-ctrlj-inserts-newline",
+      "name": "Ctrl+J inserts a newline instead of submitting",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "Ctrl+J must add a line to the buffer and leave it unsent, so a multi-line prompt arrives as one message -- the failure mode is submitting a half-written prompt",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:first line alpha",
+        "ctrlj",
+        "type:second line beta",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:TWO-LINE-MESSAGE-RECEIVED"
+      ],
+      "observe": "The turn matches a regex spanning a newline, which is the only way this harness can observe one -- the screen shows the same characters whether or not the break survived. Both failure modes miss the regex: a dropped Ctrl+J joins the lines into one, and a Ctrl+J that submits sends only the first line and never sends the second.",
+      "turns": [
+        {
+          "name": "two-line-message",
+          "match": {
+            "userInputRegex": "first line alpha\\nsecond line beta"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "TWO-LINE-MESSAGE-RECEIVED as a single prompt."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-slash-menu-filters",
+      "name": "Slash autocomplete filters to what was typed",
+      "category": "keyboard",
+      "priority": "p1",
+      "description": "Typing a partial slash command must narrow the menu to matching commands rather than listing everything",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:/comp",
+        "waitForText:to select",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.contains:Compact conversation history",
+        "screen.contains:to select",
+        "screen.notContains:/clear"
+      ],
+      "observe": "The matching row renders its registry description, not just the command name, which proves rows are produced from the advertised command list rather than echoed input -- and the description is text no rotating welcome tip can supply, whereas '/compact' alone appears in one of them. The select hint is menu-only chrome and is the paired positive that makes the negative meaningful -- note the navigate hint is deliberately NOT asserted, since it is suppressed when the filter leaves a single row. Excluding a non-matching command is what fails if filtering regresses and the menu dumps everything.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-escape-clears-slash-buffer",
+      "name": "Escape dismisses the slash menu and empties the buffer",
+      "category": "keyboard",
+      "priority": "p1",
+      "description": "Escaping a half-typed slash command must clear it, or the next prompt is silently prefixed with the abandoned fragment and routed as a command",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:/comp",
+        "waitForText:to select",
+        "escape",
+        "type:zephyr status check",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:BUFFER-WAS-CLEAN",
+        "screen.notContains:/compzephyr"
+      ],
+      "observe": "The following prompt reaches the model on its own, proving escape cleared the abandoned fragment rather than only closing the menu. Had the fragment survived, the submitted text would start with a slash and be routed as a command instead of a prompt, so the turn is never requested and the sentinel never renders; the negative catches the concatenation directly in the echoed user message.",
+      "turns": [
+        {
+          "name": "clean-prompt",
+          "match": {
+            "userInputContains": "zephyr status check"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "BUFFER-WAS-CLEAN: the prompt arrived without the abandoned fragment."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-arrow-up-edits-multiline-buffer",
+      "name": "Up arrow moves within a multi-line buffer instead of recalling history",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "With a half-written multi-line prompt, up must move the cursor to the previous line -- recalling history there replaces the buffer and destroys work the user cannot get back",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:prior history entry here",
+        "waitForIdle",
+        "type:alpha bravo",
+        "ctrlj",
+        "type:kilo",
+        "sleep:500",
+        "arrowUp",
+        "sleep:500",
+        "type:X",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:MULTILINE-CURSOR-MOVED",
+        "screen.notContains:HISTORY-RECALLED-INSTEAD"
+      ],
+      "observe": "The submitted message is the two-line buffer with the character inserted into the FIRST line at the column the cursor held on the second, which is only reachable if up moved the cursor rather than reloading history. History is deliberately non-empty: with no earlier prompt a broken up key would be an indistinguishable no-op, so the scenario would prove nothing. The mirror turn matches the recalled-and-appended text instead, turning the regression into a named sentinel rather than a timeout.",
+      "turns": [
+        {
+          "name": "prior-entry",
+          "match": {
+            "userInputContains": "prior history entry here"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Prior entry logged."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "cursor-moved-up-a-line",
+          "match": {
+            "userInputRegex": "alphXa bravo\\nkilo"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "MULTILINE-CURSOR-MOVED: the edit landed on the first line."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "history-recall-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "prior history entry hereX"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "HISTORY-RECALLED-INSTEAD: the buffer was replaced."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-tab-completes-then-runs-command",
+      "name": "Tab completes a partial command so it can be run with arguments",
+      "category": "keyboard",
+      "priority": "p1",
+      "description": "Tab must turn a partial command into the real one and let a subcommand follow, or the user submits their prefix as prose and the command never runs",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:/conte",
+        "waitForText:to select",
+        "sleep:500",
+        "tab",
+        "sleep:1500",
+        "type:show",
+        "sleep:500",
+        "enter",
+        "sleep:1500",
+        "enter",
+        "waitForText:ctrl+o to collapse"
+      ],
+      "verify": [
+        "screen.contains:Active agent context",
+        "screen.contains:ctrl+o to collapse",
+        "screen.notContains:Unrecognized command"
+      ],
+      "observe": "The completed command runs with its subcommand and opens the expanded panel. Tab is load-bearing here because the typed prefix is not a command on its own: without it the buffer becomes the prefix and the subcommand concatenated, which submits as an unrecognised command -- that exact string is the negative. Asserting the expanded panel rather than the buffer is deliberate, since the buffer leaves no durable text to read.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-editing-shortcuts-compose",
+      "name": "Readline editing shortcuts compose into the submitted message",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "The kill and line-move chords must edit the buffer the way a shell does, since users reach for them mid-prompt -- a chord that kills the wrong span silently sends a mangled message",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:alpha bravo charlie",
+        "sleep:300",
+        "ctrlw",
+        "type:delta",
+        "ctrla",
+        "type:zulu ",
+        "ctrle",
+        "type: omega",
+        "enter",
+        "waitForIdle",
+        "type:garbage prefix ",
+        "sleep:300",
+        "ctrlu",
+        "type:kept only",
+        "enter",
+        "waitForIdle",
+        "type:keep this and drop that",
+        "sleep:300",
+        "ctrla",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "arrowRight",
+        "ctrlk",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:WORD-KILL-AND-LINE-MOVES",
+        "screen.contains:LINE-DISCARDED",
+        "screen.contains:TRUNCATED-AT-CURSOR",
+        "screen.notContains:WORD-KILL-FAILED",
+        "screen.notContains:LINE-DISCARD-FAILED",
+        "screen.notContains:KILL-TO-END-FAILED"
+      ],
+      "observe": "Three messages, each proving a different chord against the text the model received. The first composes a word-kill with both line moves: the killed word is gone, an insert lands at the head and another at the tail, which no single wrong chord can reproduce. The second proves the whole-line discard by submitting text that must NOT carry the abandoned prefix. The third walks the cursor into the middle and truncates, so the tail is missing while the head survives. Splitting them is deliberate -- a later kill would erase the evidence of an earlier one, so one combined string could not speak for every chord. Each chord also has a mirror turn matching the un-edited text and placed ahead of its partner in the queue, which is what makes the positives discriminating: the intended text is a substring of the failure text in two of the three cases, so a substring match alone would pass either way.",
+      "turns": [
+        {
+          "name": "word-kill-failed-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "alpha bravo charlie"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "WORD-KILL-FAILED: the killed word was still there."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "line-discard-failed-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "garbage prefix"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "LINE-DISCARD-FAILED: the abandoned prefix was submitted."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "kill-to-end-failed-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "keep this and drop that"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "KILL-TO-END-FAILED: the tail survived the cursor."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "word-kill-and-line-moves",
+          "match": {
+            "userInputContains": "zulu alpha bravo delta omega"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "WORD-KILL-AND-LINE-MOVES arrived intact."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "line-discarded",
+          "match": {
+            "userInputContains": "kept only"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "LINE-DISCARDED: the abandoned prefix never arrived."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "truncated-at-cursor",
+          "match": {
+            "userInputContains": "keep this"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "TRUNCATED-AT-CURSOR: the tail was killed and the head kept."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-ctrlo-expands-panel",
+      "name": "Ctrl+O expands the collapsed context panel in place",
+      "category": "keyboard",
+      "priority": "p1",
+      "description": "The panel advertises Ctrl+O as the way to see the detail behind the summary, so the chord must expand it without reopening the command",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context",
+        "enter",
+        "waitForText:ctrl+o to expand",
+        "sleep:1000",
+        "ctrlo",
+        "waitForText:ctrl+o to collapse"
+      ],
+      "verify": [
+        "screen.contains:ctrl+o to collapse",
+        "screen.contains:Active agent context",
+        "screen.notContains:ctrl+o to expand"
+      ],
+      "observe": "The panel opens collapsed, the chord expands it, and the detail section appears. The footer hint flipping from one wording to the other is the discriminator: both strings come from the same expression, so the negative rules out a panel that rendered the detail without updating its own state. The panel is a live region, so the pre-expansion wording does not linger in scrollback to defeat that.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-ctrlx-clears-active-filter",
+      "name": "Ctrl+X clears a filter that was applied",
+      "category": "keyboard",
+      "priority": "p2",
+      "description": "The dashboard advertises Ctrl+X as clear-filter, so it must reset an applied filter rather than only dismissing the chooser -- a user who cannot clear a filter concludes their sessions are gone",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:establish a session to filter",
+        "waitForIdle",
+        "type:/sessions",
+        "enter",
+        "waitForText:filter: all",
+        "sleep:1500",
+        "ctrlf",
+        "waitForText:bookmarked",
+        "arrowRight",
+        "sleep:500",
+        "enter",
+        "waitForText:filter: <current workspace>",
+        "sleep:1000",
+        "ctrlx",
+        "sleep:2000"
+      ],
+      "verify": [
+        "screen.contains:filter: all",
+        "screen.notContains:filter: <current workspace>"
+      ],
+      "observe": "A filter is chosen and applied first, so the chord has something to undo -- pressing it on a pristine dashboard would pass whether or not it did anything. The applied filter name -- rendered in angle brackets only while a filter is active -- is gated as a step, and its absence afterwards is the whole assertion. Waiting for the cleared wording would prove nothing, since the unfiltered footer was on screen before the filter was ever applied and the snapshot a wait reads is the same one verify reads. The negative works because the dashboard is redrawn in place rather than appended to, which holds while it fits the terminal. The chooser row is reached via its own list of filter names, which only render while the chooser is open.",
+      "turns": [
+        {
+          "name": "establish",
+          "match": {
+            "userInputContains": "establish a session to filter"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Session established."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-backspace-and-cursor-corrections",
+      "name": "Backspace deletes at the cursor, wherever it was moved to",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "Correcting a typo is the most common thing anyone does to a prompt, and it has to delete the character before the cursor rather than the last one typed",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "type:hello worlx",
+        "sleep:300",
+        "backspace",
+        "type:d",
+        "enter",
+        "waitForIdle",
+        "type:kilo tango",
+        "sleep:300",
+        "arrowLeft",
+        "arrowLeft",
+        "arrowLeft",
+        "arrowLeft",
+        "arrowLeft",
+        "backspace",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:TRAILING-FIX-APPLIED",
+        "screen.contains:MIDWORD-DELETE-APPLIED",
+        "screen.notContains:TRAILING-FIX-MISSED",
+        "screen.notContains:MIDWORD-DELETE-MISSED"
+      ],
+      "observe": "Two messages: the first deletes the character just typed and retypes it, the second walks the cursor back into the middle and deletes there. Only the second distinguishes cursor-relative deletion from truncating the tail. Its mirror matches the buffer left UNCHANGED, so a backspace that does nothing is named rather than timing out; a backspace that ignored the cursor and truncated the tail submits 'kilo tang', which matches no scripted turn and is caught by the absent MIDWORD-DELETE-APPLIED sentinel instead. Each has a mirror ahead of it in the queue because the corrected text is not a substring of the uncorrected text in either direction.",
+      "turns": [
+        {
+          "name": "trailing-fix-missed-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "worlx"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "TRAILING-FIX-MISSED: the typo survived."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "midword-delete-missed-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "kilo tango"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "MIDWORD-DELETE-MISSED: the space survived."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "trailing-fix",
+          "match": {
+            "userInputContains": "hello world"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "TRAILING-FIX-APPLIED as typed."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "midword-delete",
+          "match": {
+            "userInputContains": "kilotango"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "MIDWORD-DELETE-APPLIED at the cursor."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-history-forward-returns-to-newer-prompt",
+      "name": "Down arrow walks history back toward the newest prompt",
+      "category": "keyboard",
+      "priority": "p1",
+      "description": "Overshooting into older history is normal, so down has to come back -- without it the user has to retype the prompt they were reaching for",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:first pigment vermilion",
+        "waitForIdle",
+        "prompt:second pigment cobalt",
+        "waitForIdle",
+        "arrowUp",
+        "sleep:300",
+        "arrowUp",
+        "sleep:300",
+        "arrowDown",
+        "sleep:300",
+        "type: confirmed",
+        "enter",
+        "waitForIdle"
+      ],
+      "verify": [
+        "screen.contains:WALKED-FORWARD-IN-HISTORY",
+        "screen.notContains:STUCK-ON-OLDER-PROMPT"
+      ],
+      "observe": "Two ups reach the older prompt and one down returns to the newer one, which is then edited and sent. The submitted text names which entry the buffer held, so a down key that did nothing sends the older prompt instead and hits the mirror turn. Two ups rather than one is what makes the down observable at all: from the newest entry there is nowhere forward to go.",
+      "turns": [
+        {
+          "name": "first-pigment",
+          "match": {
+            "userInputContains": "first pigment vermilion"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "First pigment logged."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "second-pigment",
+          "match": {
+            "userInputContains": "second pigment cobalt"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Second pigment logged."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stuck-on-older-mirror",
+          "times": 0,
+          "match": {
+            "userInputContains": "first pigment vermilion confirmed"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "STUCK-ON-OLDER-PROMPT: down did not move forward."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "walked-forward",
+          "match": {
+            "userInputContains": "second pigment cobalt confirmed"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "WALKED-FORWARD-IN-HISTORY to the newer prompt."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    },
+    {
+      "id": "keyboard-escape-cancels-in-flight-stream",
+      "name": "Escape stops a response that is still streaming",
+      "category": "keyboard",
+      "priority": "p0",
+      "description": "Escape is the advertised way out of a response heading the wrong way, so it must stop the stream rather than wait for it to finish",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:narrate something long and slow",
+        "waitForText:STREAM-HEAD",
+        "escape",
+        "waitForIdle",
+        "sleep:1000"
+      ],
+      "verify": [
+        "screen.contains:STREAM-HEAD",
+        "screen.notContains:STREAM-TAIL"
+      ],
+      "observe": "The reply is scripted in two pieces with a gap between them longer than the cancel takes, so the tail can only reach the screen if the stream was allowed to run to completion. Waiting for the head rather than sleeping a fixed time means the cancel always lands mid-stream, and idling afterwards gives a stream that ignored the key time to deliver the tail and fail the negative.",
+      "turns": [
+        {
+          "name": "slow-narration",
+          "match": {
+            "userInputContains": "narrate something long and slow"
+          },
+          "respond": {
+            "chunkDelayMs": 6000,
+            "events": [
+              {
+                "type": "text",
+                "content": "STREAM-HEAD begins the narration."
+              },
+              {
+                "type": "text",
+                "content": "STREAM-TAIL should never be reached."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ],
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
+    }
+  ]
+}

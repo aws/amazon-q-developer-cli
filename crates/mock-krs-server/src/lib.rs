@@ -695,6 +695,11 @@ fn matches_request(matcher: &Matcher, input: &GenerateAssistantResponseInput, ra
             return false;
         }
     }
+    if let Some(needle) = &matcher.body_not_contains {
+        if raw_body.contains(needle.as_str()) {
+            return false;
+        }
+    }
     if let Some(expected) = matcher.has_tool_results {
         if has_tool_results(input) != expected {
             return false;
@@ -1041,6 +1046,37 @@ mod tests {
         };
         assert!(matches_request(&matcher, &input, raw, 0));
         assert!(!matches_request(&matcher, &input, "{}", 0));
+    }
+
+    #[test]
+    fn body_not_contains_requires_the_needle_to_be_absent() {
+        let input = user_message("hi");
+        let matcher = Matcher {
+            body_not_contains: Some("ZEPHYR-9".into()),
+            ..Default::default()
+        };
+        assert!(matches_request(&matcher, &input, r#"{"history":[]}"#, 0));
+        assert!(!matches_request(&matcher, &input, r#"{"history":["ZEPHYR-9"]}"#, 0));
+    }
+
+    #[test]
+    fn body_contains_and_not_contains_are_both_required() {
+        let input = user_message("hi");
+        let matcher = Matcher {
+            body_contains: Some("summary".into()),
+            body_not_contains: Some("raw-turn".into()),
+            ..Default::default()
+        };
+        assert!(matches_request(&matcher, &input, r#"{"a":"summary"}"#, 0));
+        // Present-and-forbidden fails even though the positive needle matched.
+        assert!(!matches_request(
+            &matcher,
+            &input,
+            r#"{"a":"summary","b":"raw-turn"}"#,
+            0
+        ));
+        // Absent-and-required fails even though nothing forbidden is present.
+        assert!(!matches_request(&matcher, &input, r#"{"a":"none"}"#, 0));
     }
 
     #[test]

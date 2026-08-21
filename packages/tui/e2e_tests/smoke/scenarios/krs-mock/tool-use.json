@@ -1307,6 +1307,107 @@
           }
         }
       ]
+    },
+    {
+      "id": "tool-input-split-across-frames-reassembles",
+      "name": "A tool call whose input arrives in fragments runs as one call",
+      "category": "tool-use",
+      "description": "One shell call whose JSON input is streamed as three partial toolUse events, the last carrying stop -- asserts the fragments concatenate into a single call with the whole command, and that three events do not become three calls",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the fragmented command",
+        "waitForText:requires approval",
+        "frame:at-gate",
+        "enter",
+        "waitForIdle",
+        "frame:after-run"
+      ],
+      "verify": [
+        "screen.contains:Shell echo TOOL-SPLIT-OK",
+        "screen.contains:SplitInputDone after the split call.",
+        "screen.notContains:{\"comm",
+        "screen.notContains:and\":\"echo",
+        "screen.notContains:requires approval",
+        "screen.notContains:Standing by"
+      ],
+      "observe": "A real stream delivers a tool call's input in pieces, and the client is what concatenates them until an event carries stop. The collapsed tool card naming the whole command is what proves reassembly -- the approval dialog names it too, but that line lives in the live region and is gone by the time verify runs, and the two asserted-absent fragments are the shapes a broken concatenation would surface: a truncated first piece, or a middle piece parsed on its own. Three events becoming three calls is caught before verify: the extra gates stay open and the wait for the turn to settle expires, which is also why no count is needed. Dropping the stop flag fails the same way, at the wait for the first gate that never opens. Execution is proven by the synthesis line, which is scripted on a turn that only fires once a tool result returns.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "split-call",
+          "match": {
+            "userInputContains": "run the fragmented command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-split",
+                "name": "execute_bash",
+                "input": "{\"comm"
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-split",
+                "name": "execute_bash",
+                "input": "and\":\"echo TOOL-"
+              },
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-split",
+                "name": "execute_bash",
+                "input": "SPLIT-OK\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "synthesize-after-split",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SplitInputDone after the split call."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

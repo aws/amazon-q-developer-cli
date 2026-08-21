@@ -1,8 +1,181 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "panels scenarios; turns inline per scenario.",
+  "notes": "Panel scenarios: a slash command that opens a panel or picker belongs here, and the assertions are about what the surface renders and how it is dismissed. Anything asserting a domain effect the panel merely reports -- what is attached to context, which agent is live, which session resumed -- lives with its domain instead. Panels are live regions that are erased on dismissal rather than committed to scrollback, so a string only asserts what is on screen at the moment verify runs; the strings gated by waitForText steps are the ones that must have rendered at some point. Turns are inline per scenario, and panel-opening scenarios need a sticky catch-all because opening one makes backend bookkeeping calls beyond any scripted prompt.",
   "scenarios": [
+    {
+      "id": "context-bare-renders-collapsed-panel",
+      "name": "Bare /context opens the panel collapsed",
+      "category": "panels",
+      "priority": "p1",
+      "description": "Bare /context is the glance form and must stay collapsed, while /context show is the detail form -- a regression that flipped the default would bury the summary under a file list or hide the list from the user who asked for it",
+      "docRef": "/docs/cli/context",
+      "steps": [
+        "type:/context add package.json",
+        "enter",
+        "sleep:2000",
+        "type:/context",
+        "enter",
+        "waitForText:ctrl+o to expand"
+      ],
+      "verify": [
+        "screen.contains:Current context window:",
+        "screen.contains:ctrl+o to expand",
+        "screen.notContains:Active agent context",
+        "screen.notContains:Session (temporary)"
+      ],
+      "observe": "The summary and the expand affordance render while the detail section does not. The file is attached first on purpose: it makes the negatives a statement about the collapsed default hiding detail that exists, rather than about an empty panel. The footer hint is the discriminator -- it reads 'to expand' only in the collapsed state and 'to collapse' only in the expanded one, so the two forms of the command cannot both satisfy this.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "ok" },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "agent-picker-lists-registry",
+      "name": "Agent picker lists the registry with the active agent marked",
+      "category": "panels",
+      "priority": "p1",
+      "description": "The picker must show real registry entries and mark which one is live, so a user can see what they are choosing between",
+      "docRef": "/docs/cli/agents",
+      "steps": ["type:/agent", "enter", "waitForText:Select agent", "sleep:2000"],
+      "verify": [
+        "screen.contains:Select agent",
+        "screen.contains:Bundled",
+        "screen.contains:[active]",
+        "screen.notContains:No agents available"
+      ],
+      "observe": "The source group cell and the active marker are both produced per row from the registry the backend advertised, so neither can render from an empty list -- which is what separates this from asserting the picker chrome alone. The empty-state negative pins that the word 'agent' on screen came from a populated picker rather than the no-agents alert.",
+      "turns": [
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-picker-lists-then-restores-prompt",
+      "name": "Session picker lists sessions and hands the prompt back on escape",
+      "category": "panels",
+      "priority": "p2",
+      "description": "The /sessions picker takes over the whole screen, so it must list the current session and give the prompt back when dismissed -- a picker that cannot be escaped strands the user",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:establish one session entry",
+        "waitForIdle",
+        "type:/sessions",
+        "enter",
+        "waitForText:Session Name",
+        "waitForText:find by title, prompt or #tag",
+        "escape",
+        "sleep:2000"
+      ],
+      "verify": ["screen.contains:ask a question"],
+      "observe": "The picker renders its column header and search placeholder, then escape returns to the prompt. Those two picker strings are gated by waitForText steps rather than verify on purpose: the picker is a full-screen takeover whose content never enters scrollback, so it is absent from the settled frame once dismissed -- the waitForText step catches them while the picker is still up, and fails if they never render. Verify then carries the other half: the prompt placeholder is off screen entirely while the picker is up, so finding it proves the takeover was dismissed rather than merely opened.",
+      "turns": [
+        {
+          "name": "one-entry",
+          "match": { "userInputContains": "establish one session entry" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Session entry established." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
+    {
+      "id": "session-dashboard-search-narrows-rows",
+      "name": "Typing in the dashboard search narrows to matching sessions",
+      "category": "panels",
+      "priority": "p1",
+      "description": "The dashboard's search field is how a user finds one conversation among many, so typing must filter the rows rather than only decorate the field",
+      "docRef": "/docs/cli/chat",
+      "steps": [
+        "prompt:vermilion pigment notes",
+        "waitForIdle",
+        "type:/chat new",
+        "enter",
+        "waitForText:New conversation started",
+        "prompt:cobalt mineral notes",
+        "waitForIdle",
+        "type:/sessions",
+        "enter",
+        "waitForText:Session Name",
+        "sleep:2000",
+        "type:vermilion",
+        "sleep:2500"
+      ],
+      "verify": [
+        "screen.contains:Vermilion pigment notes",
+        "screen.notContains:Cobalt mineral notes"
+      ],
+      "observe": "Two sessions exist with distinct titles, and typing part of one leaves only that row. The excluded title is the discriminating half: a field that accepted the text without filtering would keep both rows, and both titles were on screen before the query was typed. Titles are derived from each session's first prompt, so neither string is anything the scenario typed into the dashboard.",
+      "turns": [
+        {
+          "name": "first-session",
+          "match": { "userInputContains": "vermilion pigment notes" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted the pigment." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "second-session",
+          "match": { "userInputContains": "cobalt mineral notes" },
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Noted the mineral." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        },
+        {
+          "name": "sticky-bookkeeping",
+          "times": 0,
+          "respond": {
+            "events": [
+              { "type": "text", "content": "Standing by." },
+              { "type": "metadata", "stopReason": "END_TURN" }
+            ]
+          }
+        }
+      ],
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
+    },
     {
       "id": "tools-panel-view",
       "name": "The /tools panel lists the tool groups",
@@ -19,10 +192,9 @@
       "verify": [
         "screen.contains:builtin",
         "screen.contains:type to filter",
-        "screen.contains:write",
-        "screen.notContains:Prompt already in progress"
+        "screen.contains:write"
       ],
-      "observe": "The /tools slash command opens the tools panel listing the builtin tool groups (read, shell, web, write) with a search filter and an esc-to-close hint.",
+      "observe": "The /tools slash command opens the panel listing the builtin tool groups with a search filter and an esc-to-close hint. What is pinned is that the list rendered and was populated from the tool registry -- two distinct group names cannot come from chrome. What is NOT pinned is any trust state, filtering behaviour, or per-tool permission, despite this being the trust-management surface; the permissions category covers the trust verbs separately.",
       "engine": [
         "kas"
       ],

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { E2ETestCase } from './E2ETestCase';
+import { E2ETestCase, V2_SESSIONS_RELATIVE_DIR } from './E2ETestCase';
 
 const SESSION_ID = randomUUID();
 const TURNS = 35;
@@ -94,8 +94,14 @@ describe('v2 lite: in-session /chat load of a large session, then type', () => {
       .withTestName('v2-lite-chatload-large')
       .withLite()
       .withGlobalSettings({ 'chat.preserveScrollback': true })
-      .withPrelaunchFile(`${SESSION_ID}.json`, v2SessionJson(cwd))
-      .withPrelaunchFile(`${SESSION_ID}.jsonl`, v2MessagesJsonl())
+      .withPrelaunchFile(
+        `${V2_SESSIONS_RELATIVE_DIR}/${SESSION_ID}.json`,
+        v2SessionJson(cwd)
+      )
+      .withPrelaunchFile(
+        `${V2_SESSIONS_RELATIVE_DIR}/${SESSION_ID}.jsonl`,
+        v2MessagesJsonl()
+      )
       .launch();
 
     await testCase.waitForText('ask a question', 15000);

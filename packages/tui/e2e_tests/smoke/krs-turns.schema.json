@@ -36,6 +36,7 @@
             "userInputContains": null,
             "userInputRegex": null,
             "bodyContains": null,
+            "bodyNotContains": null,
             "hasToolResults": null,
             "modelId": null,
             "agentMode": null,
@@ -83,6 +84,14 @@
         },
         "bodyContains": {
           "description": "Substring of the whole raw request body. The escape hatch for asserting\non parts of the request this struct does not model yet (history shape,\nadvertised tools, images) without growing a field per case.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "bodyNotContains": {
+          "description": "Substring the raw request body must NOT contain. Expresses the absence\nof history a positive matcher cannot: proving a turn was dropped needs\nthe old text gone, not new text present.",
           "type": [
             "string",
             "null"

@@ -104,6 +104,12 @@ pub struct Matcher {
     #[serde(default)]
     pub body_contains: Option<String>,
 
+    /// Substring the raw request body must NOT contain. Expresses the absence
+    /// of history a positive matcher cannot: proving a turn was dropped needs
+    /// the old text gone, not new text present.
+    #[serde(default)]
+    pub body_not_contains: Option<String>,
+
     /// `true` requires the request to carry at least one tool result (i.e. it
     /// is the continuation of a tool-using turn); `false` requires none.
     #[serde(default)]
@@ -129,6 +135,7 @@ impl Matcher {
         self.user_input_contains.is_none()
             && self.user_input_regex.is_none()
             && self.body_contains.is_none()
+            && self.body_not_contains.is_none()
             && self.has_tool_results.is_none()
             && self.model_id.is_none()
             && self.agent_mode.is_none()

@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { __TIPS_FOR_TESTS } from '../../src/tips/tips';
 
 const SMOKE_DIR = import.meta.dir;
 const SCENARIOS_ROOT = path.join(SMOKE_DIR, 'scenarios');
@@ -22,6 +23,7 @@ interface Scenario {
   id: string;
   category?: string;
   priority?: string;
+  verify?: string[];
   [key: string]: unknown;
 }
 
@@ -94,5 +96,26 @@ describe('scenario corpus', () => {
       else seen.set(scenario.id, file);
     }
     expect(dupes).toEqual([]);
+  });
+
+  it('keeps every notContains needle clear of the launch tips', () => {
+    // One tip is picked at random per launch, so a needle that is a substring
+    // of any tip fails only on the runs that happen to draw it.
+    const { SHARED, TUI_ONLY, LITE_ONLY } = __TIPS_FOR_TESTS;
+    // A tip's text may be a function of launch context. Its source carries the
+    // literals it can return, which over-approximates rather than misses.
+    const tips = [...SHARED, ...TUI_ONLY, ...LITE_ONLY].map((tip) =>
+      typeof tip.text === 'string' ? tip.text : String(tip.text)
+    );
+    const offenders: string[] = [];
+    for (const { file, scenario } of corpus) {
+      for (const predicate of scenario.verify ?? []) {
+        if (!predicate.startsWith('screen.notContains:')) continue;
+        const needle = predicate.slice('screen.notContains:'.length);
+        const clash = tips.find((tip) => tip.includes(needle));
+        if (clash) offenders.push(`${file} ${scenario.id}: ${needle} <- ${clash}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

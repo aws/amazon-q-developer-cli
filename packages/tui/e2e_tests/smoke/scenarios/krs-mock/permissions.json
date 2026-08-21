@@ -831,6 +831,80 @@
           }
         }
       ]
+    },
+    {
+      "id": "permissions-escape-cancels-the-approval",
+      "name": "Escape at the approval prompt cancels the call and frees the session",
+      "category": "permissions",
+      "description": "Escape pressed at a shell approval prompt -- asserts the call is marked cancelled rather than allowed or denied, and the next prompt is accepted",
+      "docRef": "/docs/cli/chat/permissions",
+      "priority": "p1",
+      "steps": [
+        "prompt:run the escape-guarded command",
+        "waitForText:requires approval",
+        "escape",
+        "waitForText:Cancelled",
+        "frame:after-escape",
+        "prompt:ask something ordinary",
+        "waitForIdle",
+        "frame:after-followup"
+      ],
+      "verify": [
+        "screen.contains:Cancelled echo PERM-ESCAPE-1",
+        "screen.contains:EscapeFollowUpAnswer arrived.",
+        "screen.notContains:requires approval",
+        "screen.notContains:Rejected",
+        "screen.notContains:Prompt already in progress"
+      ],
+      "observe": "Escape is the third outcome the other permission journeys never reach: they all resolve the prompt with Enter, so allow and deny are covered and dismissal is not. The call settles as 'Cancelled' against its command text, which is what separates dismissal from denial -- 'Rejected' is asserted absent for exactly that reason. No turn is declared for a tool result, so the runner's own check that every declared turn was requested fails if escape ever lets the call through.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "guarded",
+          "match": {
+            "userInputContains": "run the escape-guarded command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-1",
+                "name": "execute_bash",
+                "input": "{\"command\":\"echo PERM-ESCAPE-1\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "ordinary-followup",
+          "match": {
+            "userInputContains": "ask something ordinary"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "EscapeFollowUpAnswer arrived."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

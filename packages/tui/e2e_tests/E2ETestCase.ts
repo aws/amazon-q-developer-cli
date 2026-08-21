@@ -24,6 +24,12 @@ import { TuiIpcConnection } from '../src/test-utils/shared/tui-ipc-connection';
 import type { MockStreamItem } from './types/chat-cli';
 import { AcpTestHelper } from './AcpTestHelper';
 
+/**
+ * The V2 engine's transcript dir, relative to $HOME. Exported so a test that
+ * seeds a session writes to the same place the store reads from.
+ */
+export const V2_SESSIONS_RELATIVE_DIR = path.join('.kiro', 'sessions', 'cli');
+
 interface E2ETestCaseOptions {
   terminalSize?: { width: number; height: number };
   timeout?: number;
@@ -72,6 +78,15 @@ export class E2ETestCase {
   private readonly tuiJsPath: string;
   /** Temp directory for test isolation. Cleaned up on cleanup(). */
   readonly sandboxDir: string;
+
+  /**
+   * Where the V2 engine writes session transcripts inside the sandbox. Tests
+   * that seed or assert transcript files must read this rather than rebuilding
+   * the path, so a move stays a one-line change.
+   */
+  get sessionsDir(): string {
+    return path.join(this.sandboxDir, V2_SESSIONS_RELATIVE_DIR);
+  }
 
   constructor(options: E2ETestCaseOptions = {}) {
     this.options = {
@@ -159,7 +174,9 @@ export class E2ETestCase {
       KIRO_LOG_LEVEL: 'chat_cli=debug,agent=debug,semantic_search_client=trace',
       HOME: homeDir,
       USERPROFILE: homeDir,
-      KIRO_TEST_SESSIONS_DIR: homeDir,
+      // Must name the V2 transcript dir, not the sandbox root: the session
+      // store and the dashboard's content index both resolve from this path.
+      KIRO_TEST_SESSIONS_DIR: path.join(homeDir, V2_SESSIONS_RELATIVE_DIR),
       KIRO_TEST_DB_PATH: path.join(homeDir, 'test.sqlite3'),
       KIRO_TEST_AGENTS_DIR: path.join(homeDir, 'agents'),
       ...this.options.extraEnv,
