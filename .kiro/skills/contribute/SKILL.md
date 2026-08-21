@@ -61,7 +61,7 @@ Search for existing tickets in this order:
 
 ### 2a. Search the Taskei intake room (source of truth)
 
-Human intake is cut natively in the Taskei contributions room (`7c221a81-7ca7-436c-8f05-a7278949341b`). Use builder-mcp TaskeiListTasks against that room. NOTE: the tool takes STRUCTURED parameters and silently ignores unknown ones — there is no `filter` query string. Search per keyword (3-5 variants):
+Intake routing is defined by the Kiro Labs wikis (authoritative: https://w.amazon.com/bin/view/KiroLabs/Contribute and https://wiki.amazon.com/bin/view/KiroLabs/Backlog). Kiro CLI bugs and feature requests live in Taskei room `7c221a81-7ca7-436c-8f05-a7278949341b` — bugs in folder `0205a00e-4757-425d-bde0-e06884dce83e`, feature requests in folder `b710f4b4-3f53-4624-9b50-c239472dcf84`. Use builder-mcp TaskeiListTasks against the room (search the whole room, not just one folder, so cross-filed duplicates surface). NOTE: the tool takes STRUCTURED parameters and silently ignores unknown ones — there is no `filter` query string. Search per keyword (3-5 variants):
 
 ```
 @builder-mcp/TaskeiListTasks
@@ -212,8 +212,9 @@ If ticket creation fails, show the user the error and provide the pre-filled tic
 
 Use builder-mcp TaskeiCreateTask with:
 
-- **roomId**: `7c221a81-7ca7-436c-8f05-a7278949341b` (the contributions/intake room)
-- **type**: `BUG`
+- **roomId**: `7c221a81-7ca7-436c-8f05-a7278949341b` (the Kiro CLI intake room)
+- **folder**: `0205a00e-4757-425d-bde0-e06884dce83e` (Bug Reports). CAVEAT (verified 2026-08): the API silently drops `folder` on create and rejects folder moves for non-resolvers, so via MCP the task usually lands unfoldered — and the team's board views filter by folder. After creating, give the user the wiki's pre-foldered create link as the fallback (https://taskei.amazon.dev/tasks/create?room=7c221a81-7ca7-436c-8f05-a7278949341b&folder=0205a00e-4757-425d-bde0-e06884dce83e&type=TASK) or ask in the room/Slack for a resolver to folder it; note the placement gap in your summary rather than claiming board visibility
+- **type**: `TASK` (matches the wiki's create template)
 - **tags**: `straightforward-bug` for Path A, `needs-team-review` for Path B (REQUIRED — do not omit; Taskei tags are free-form strings)
 - **name**: Clear, concise summary
 - **Description** must include:
@@ -237,8 +238,9 @@ Use builder-mcp TaskeiCreateTask with:
 
 Use builder-mcp TaskeiCreateTask in the same intake room (`7c221a81-7ca7-436c-8f05-a7278949341b`):
 
+- **folder**: `b710f4b4-3f53-4624-9b50-c239472dcf84` (Feature Requests). Same caveat as Path A/B: the API may drop `folder` on create for non-resolvers — verify placement with TaskeiGetTask, and fall back to the wiki's pre-foldered create link (https://taskei.amazon.dev/tasks/create?room=7c221a81-7ca7-436c-8f05-a7278949341b&folder=b710f4b4-3f53-4624-9b50-c239472dcf84&type=TASK) if it was dropped
 - **name**: Feature request summary
-- **type**: `STORY`
+- **type**: `TASK` (matches the wiki's create template)
 - **tags**: `feature-request` (REQUIRED — do not omit)
 - **Description** must include:
   - **Use case**: why the user wants this — the problem they're solving

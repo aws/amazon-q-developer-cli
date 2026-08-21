@@ -9,7 +9,7 @@ Query the Kiro CLI UX Refresh Bugs board on Taskei.
 
 ## Room & label
 
-- Room ID: `0205a00e-4757-425d-bde0-e06884dce83e`
+- Board ID: `0205a00e-4757-425d-bde0-e06884dce83e` — per the KiroLabs Backlog wiki this is the Bug Reports FOLDER of room `7c221a81-7ca7-436c-8f05-a7278949341b`; the API accepts it as a `roomId` too, but for folder-scoped queries pass it as `folderId` with the real room
 - Label (ux-refresh-bugs): `9486ec82-fc33-43bf-92c5-066b139bfe1c`
 - Board URL: `https://taskei.amazon.dev/rooms/0205a00e-4757-425d-bde0-e06884dce83e/tasks?f=labels%3A9486ec82-fc33-43bf-92c5-066b139bfe1c%20AND%20NOT%20status%3AClosed`
 
