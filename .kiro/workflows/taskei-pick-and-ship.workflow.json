@@ -1,0 +1,130 @@
+{
+  "name": "taskei-pick-and-ship",
+  "description": "Picks ONE unclaimed open task from the Kiro CLI contributions board on Taskei (room 7c221a81-7ca7-436c-8f05-a7278949341b, label c4a8811a-6a6c-47e5-9119-ad9d9695b429, status Open), verifying it has no assignee, no claiming/solution comments, and no existing PR — then implements it in an isolated sibling git worktree (per the parallel-worktrees skill) with an implement-and-review loop, publishes a PR to kiro-team/kiro-cli, and babysits the PR: a github-pr watch loop responds to review feedback and CI failures until the PR is merged or closed. Fail-closed before publish: if no eligible task exists, or the review loop exhausts without approval, the run aborts. Performs external actions: pushes a branch, opens a PR, pushes follow-up commits, replies to PR comments, and comments on the Taskei task only AFTER the PR is published, to link the PR (never before). It never merges; fork-PR CI approval is a maintainer action (see the parallel-worktrees skill). The worktree and branch are left in place until the PR reaches a terminal state. Takes no inputs: the repo is resolved from the working directory the workflow is launched from (which must be inside a kiro-cli checkout). Artifacts land under <repo root>/.agents/tasks/taskei-pick-and-ship/<timestamp>/.",
+  "steps": [
+    {
+      "type": "step",
+      "id": "repo",
+      "agent": "wf-coder",
+      "effortLevel": "low",
+      "captureOutput": true,
+      "prompt": "You resolve the repo for this run. Do ONLY this, nothing else:\n1. Run `dirname \"$(git rev-parse --path-format=absolute --git-common-dir)\"` from your current working directory. This yields the MAIN checkout root even when the workflow is launched from a linked worktree — later steps create sibling worktrees, which must anchor on the main checkout, never on another worktree.\n2. Verify it is a checkout of kiro-team/kiro-cli: `git -C <root> remote get-url origin` must reference kiro-cli. If either check fails, call send_message with severity 'error' explaining that this workflow must be launched from inside a git checkout of kiro-team/kiro-cli, and stop.\n\nYour ENTIRE final response MUST be exactly the absolute repo root path and NOTHING else — no prose, no quotes, no backticks, no trailing slash, no trailing punctuation. Later steps consume this exact string as the repo path."
+    },
+    {
+      "type": "step",
+      "id": "setup",
+      "agent": "wf-coder",
+      "effortLevel": "low",
+      "captureOutput": true,
+      "prompt": "You are the setup step for a run that picks an unclaimed Kiro CLI contribution task from Taskei and ships a PR for it. The repo for this run is {{repo.output}} (already validated). Do ONLY this, nothing else:\n1. Compute a run timestamp string in the format YYYY-MM-DD_HH-MM-SS (e.g. `date +%Y-%m-%d_%H-%M-%S`).\n2. Create the directory {{repo.output}}/.agents/tasks/taskei-pick-and-ship/<timestamp>/ with `mkdir -p`.\n\nYour ENTIRE final response MUST be exactly that absolute directory path and NOTHING else — no prose, no quotes, no backticks, no trailing slash, no trailing punctuation. Later steps consume this exact string as the run directory."
+    },
+    {
+      "type": "repeat",
+      "id": "pick-gate",
+      "maxIterations": 1,
+      "onMaxIterations": "abort",
+      "stopCondition": {
+        "fileCheck": {
+          "path": "{{setup.output}}/task.json",
+          "jsonPath": "selected",
+          "value": true
+        }
+      },
+      "steps": [
+        {
+          "type": "step",
+          "id": "pick",
+          "agent": "wf-planner",
+          "artifacts": {
+            "task": "{{setup.output}}/task.md",
+            "task_json": "{{setup.output}}/task.json"
+          },
+          "prompt": "READ-ONLY task selection step. Do not edit code, create branches, or post anything anywhere — selection only. Your process cwd is the parent workspace — use ABSOLUTE paths for every file operation.\n\nGoal: pick exactly ONE open, unclaimed task from the Kiro CLI contributions board on Taskei.\n\nBoard:\n- Room ID: 7c221a81-7ca7-436c-8f05-a7278949341b\n- Filter: labels:c4a8811a-6a6c-47e5-9119-ad9d9695b429 AND status:Open\n- Board URL: https://taskei.amazon.dev/rooms/7c221a81-7ca7-436c-8f05-a7278949341b/tasks?f=labels%3Ac4a8811a-6a6c-47e5-9119-ad9d9695b429%20AND%20status%3AOpen&d=table\n- Task links look like https://taskei.amazon.dev/tasks/<shortId>\n\nHow to query: discover the Taskei MCP tools available to you (typically builder-mcp's TaskeiListTasks and TaskeiGetTask; there may also be tools for reading comments). List open tasks using the room ID and filter above, then fetch full details for each candidate. If no Taskei tools are available at all, write {\"selected\": false, \"reason\": \"no Taskei tooling available\"} to {{setup.output}}/task.json and stop.\n\nA task is ELIGIBLE only if ALL of these hold:\n1. Status is Open and it carries the label above.\n2. It has NO assignee.\n3. No comment claims it or effectively solves it: skip the task if anyone commented that they are taking it / working on it / will send a PR, or posted a concrete solution or PR link. Read the actual comments — do not rely on the assignee field alone.\n4. No existing PR in kiro-team/kiro-cli references it: check `gh pr list --repo kiro-team/kiro-cli --state all --search \"<task shortId>\"` and also search for distinctive keywords from the task title.\n5. It is actionable by an external contributor today: read {{repo.output}}/CONTRIBUTING.md section \"What's Accepted Today\" and skip tasks whose fix would land primarily in a paused area (e.g. Rust/server internals while paused). Prefer TUI/TypeScript (packages/tui), docs, and scripts work.\n\nAmong eligible tasks prefer one that is well-scoped, clearly described, and completable in a single focused PR.\n\nWrite to the run directory:\n- {{setup.output}}/task.md — full capture of the chosen task: shortId, title, full description, labels, URL, relevant comments, your reading of the acceptance criteria, and the evidence that it is unclaimed (exactly what you checked).\n- {{setup.output}}/task.json — machine record: {\"selected\": true, \"taskId\": \"<shortId>\", \"title\": \"...\", \"url\": \"https://taskei.amazon.dev/tasks/<shortId>\", \"slug\": \"<kebab-case-slug>\", \"branch\": \"<fix|feat|docs|chore>/<kebab-case-slug>\", \"reason\": \"<one sentence>\"}\n\nIf NO eligible task exists, write {\"selected\": false, \"reason\": \"...\"} to {{setup.output}}/task.json — the workflow aborts on that verdict, which is the correct outcome."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "worktree",
+      "agent": "wf-coder",
+      "effortLevel": "low",
+      "captureOutput": true,
+      "prompt": "You are preparing an isolated worktree for a picked task. Do NOT assign, comment on, or otherwise touch the Taskei task — the task is only linked from the PR after it is published. The repo is {{repo.output}} (absolute path). Your process cwd is the parent workspace — use ABSOLUTE paths for every file operation and `git -C {{repo.output}} ...` for every git command.\n\n1. Read {{setup.output}}/task.json (fields: taskId, url, slug, branch).\n2. The worktree convention is owned by {{repo.output}}/.kiro/skills/parallel-worktrees/SKILL.md — read its \"Creating a worktree\" section and follow it; if it conflicts with the summary below, the skill wins. Summary: `git -C {{repo.output}} fetch origin`, then `git -C {{repo.output}} worktree add \"$(dirname {{repo.output}})/kiro-cli-wt/<slug>\" -b <branch> origin/main` using slug and branch from task.json — a SIBLING directory, never inside the repo. If the branch or worktree path already exists from a previous run, suffix both with -2 (then -3, etc.).\n\nYour ENTIRE final response MUST be exactly the absolute worktree path and NOTHING else — no prose, no quotes, no backticks, no trailing slash. Later steps consume this exact string."
+    },
+    {
+      "type": "step",
+      "id": "plan",
+      "agent": "wf-planner",
+      "artifacts": {
+        "plan": "{{setup.output}}/plan.md"
+      },
+      "prompt": "Planning step. READ-ONLY with one exception: you write exactly one file, the plan.\n\nThe task to plan is captured at {{setup.output}}/task.md — read it first. The work will happen in the git worktree at {{worktree.output}} (branch already created). Your process cwd is the parent workspace — use ABSOLUTE paths everywhere; a relative path lands in the wrong directory.\n\nInvestigate the codebase at {{worktree.output}} until you understand exactly what change the task needs: read {{worktree.output}}/AGENTS.md and {{worktree.output}}/CONTRIBUTING.md for the repo's rules and verification gates, then the relevant sources. If the task is a bug report, trace it to a root cause with file:line citations. If you cannot verify the reported behavior by reading code alone, keep the item in the plan flagged \"needs verification during implementation\" — never dismiss a reported issue as already working.\n\nWrite the implementation plan to {{setup.output}}/plan.md with:\n- The goal restated in one paragraph, with acceptance criteria from the task.\n- Root cause / current behavior analysis with file:line citations.\n- Ordered implementation items, each with the files it touches and a \"done\" checkbox.\n- Tests to add (new feature => unit tests; bug fix => a regression test that fails without the fix).\n- The exact verification gates to run for the touched areas: TUI => `bun run typecheck && bun test && bun run lint` from {{worktree.output}}/packages/tui; Rust => `cargo build`, `cargo test` for the touched crate, `cargo clippy --locked -- -D warnings`, `cargo +nightly fmt`.\n- The changelog fragment: type (added/changed/deprecated/removed/fixed/security) and a one-sentence user-facing description, or a note that the change has no user-facing effect (the PR then needs the no-changelog label).\n- A suggested conventional-commit PR title (`type: description`, under 70 chars)."
+    },
+    {
+      "type": "repeat",
+      "id": "ship-loop",
+      "maxIterations": 4,
+      "onMaxIterations": "abort",
+      "stopCondition": {
+        "fileCheck": {
+          "path": "{{setup.output}}/review-status.json",
+          "jsonPath": "approved",
+          "value": true
+        }
+      },
+      "steps": [
+        {
+          "type": "step",
+          "id": "implement",
+          "agent": "wf-coder",
+          "artifacts": {
+            "verification": "{{setup.output}}/verification.md"
+          },
+          "prompt": "Implementation step for a Kiro CLI contribution. The worktree for this task is at {{worktree.output}} (a git worktree of {{repo.output}}). Your process cwd is the parent workspace — that is intentional. Use ABSOLUTE paths for every read, write, and edit, and `git -C {{worktree.output}} ...` for every git command. A relative path lands in the parent workspace, NOT the worktree. Never modify files under {{repo.output}} outside the worktree.\n\nFirst check whether {{setup.output}}/review-status.json exists.\n- If it exists, this is a later iteration: read it and {{setup.output}}/review.md, address EVERY finding, then continue below.\n- If it does not exist, this is the first iteration: implement from scratch.\n\nThe task: read {{setup.output}}/task.md. The plan: read {{setup.output}}/plan.md and follow it, checking off each item in the plan file as you complete it. Repo rules: {{worktree.output}}/AGENTS.md and {{worktree.output}}/CONTRIBUTING.md (one concern per PR, comment discipline, no dead code, no scope creep). The repo is skills-first: list {{worktree.output}}/.kiro/skills/ and read any SKILL.md matching the area you are about to touch before coding.\n\nRequirements:\n1. Tests: new features need unit tests; bug fixes need a regression test that fails without the fix.\n2. Run the verification gates for what you touched and record every command with its actual result:\n   - TUI/TypeScript: `bun install` at {{worktree.output}}, then `bun run typecheck && bun test && bun run lint` from {{worktree.output}}/packages/tui. If `bun install` fails on CodeArtifact auth, run `./scripts/codeartifact-login.sh` in the worktree once and retry; if it still fails, state clearly in the verification notes that the TUI gates could not run locally — never claim they passed.\n   - Rust: `cargo build`, `cargo test` for the touched crate, `cargo clippy --locked -- -D warnings`, `cargo +nightly fmt` (run from {{worktree.output}}).\n3. Changelog fragment: for user-facing changes run `./scripts/new-change.sh <type> \"<description>\"` from the worktree root so the fragment lands in {{worktree.output}}/.changes/. Write it from the user's perspective. If genuinely not user-facing, skip it and note that the PR needs the no-changelog label.\n4. Commit in the worktree with a conventional-commit message (`type: description`, present tense, subject under 72 chars): `git -C {{worktree.output}} add <specific files>` then `git -C {{worktree.output}} commit ...`. Pre-commit hooks may run fmt/clippy; if a hook fails, fix the issue, re-stage, and create a NEW commit.\n5. Write {{setup.output}}/verification.md: what was implemented, deviations from the plan (with reasons), and a \"Tests Run\" section listing every verification command with its actual output/result. Claims need evidence — cite real output."
+        },
+        {
+          "type": "step",
+          "id": "review",
+          "agent": "semantic-reviewer",
+          "artifacts": {
+            "review": "{{setup.output}}/review.md",
+            "review_status": "{{setup.output}}/review-status.json"
+          },
+          "prompt": "Code review step. The change under review lives in the git worktree at {{worktree.output}} (branch vs origin/main). Your process cwd is the parent workspace — use ABSOLUTE paths and `git -C {{worktree.output}} ...`.\n\nContext to read first: the task at {{setup.output}}/task.md, the plan at {{setup.output}}/plan.md, and the implementer's verification evidence at {{setup.output}}/verification.md.\n\nObtain the diff yourself: `git -C {{worktree.output}} diff origin/main...HEAD` plus `git -C {{worktree.output}} diff` for anything uncommitted. Review semantically: does the change fully address the task's acceptance criteria; is it one concern with no scope creep; are the tests real (a bug fix's regression test must fail without the fix); is the changelog fragment present and user-facing (or genuinely not needed, with the no-changelog label noted); do commits follow the conventional format; does the code follow the repo rules in {{worktree.output}}/AGENTS.md.\n\nDo NOT re-run build or test suites — the implementer recorded its verification in verification.md; judge that evidence. If evidence for a required gate is missing entirely, reject with a finding saying so. You may run at most one narrow spot-check when the evidence leaves a specific, articulable doubt.\n\nWrite the full review to {{setup.output}}/review.md (numbered findings with severities and concrete fixes) and the machine verdict to {{setup.output}}/review-status.json as {\"approved\": true|false, \"findings\": [\"...\"]}. The verdict is mechanical: any blocking finding (correctness, missing tests, missing or false verification evidence, missing changelog decision, task not actually addressed) means approved=false; zero blocking findings means approved=true."
+        }
+      ]
+    },
+    {
+      "type": "step",
+      "id": "publish",
+      "agent": "wf-coder",
+      "artifacts": {
+        "pr": "{{setup.output}}/pr.json"
+      },
+      "prompt": "Publish step. The reviewed, committed change lives in the git worktree at {{worktree.output}} on its own branch. Your process cwd is the parent workspace — use ABSOLUTE paths and `git -C {{worktree.output}} ...`. Read {{setup.output}}/task.json (taskId, url, branch) and {{setup.output}}/verification.md first.\n\n1. Freshen: `git -C {{worktree.output}} fetch origin`, then rebase onto origin/main only if it applies cleanly (`git -C {{worktree.output}} rebase origin/main`); on any conflict run `git -C {{worktree.output}} rebase --abort` and continue with the branch as-is.\n2. Determine the PR path: `gh api repos/kiro-team/kiro-cli --jq .permissions`. If push is true: `git -C {{worktree.output}} push -u origin <branch>`. Otherwise use the fork flow: fork with `gh repo fork kiro-team/kiro-cli --remote --remote-name fork` (run inside the worktree) and push the branch to the fork with -u.\n3. Create the PR against kiro-team/kiro-cli main with `gh pr create`: title = the conventional-commit title from {{setup.output}}/plan.md (`type: description`, under 70 chars — CI enforces this on PR titles); body = a summary of the change, a \"Testing\" section copied from verification.md's Tests Run, the Taskei link as \"Resolves: <task url>\", and the changelog-fragment status. If the change has no user-facing effect, request the `no-changelog` label in the body.\n4. Fork-PR CI approval is a maintainer action. Read the \"PR CI path\" guidance in {{repo.output}}/.kiro/skills/parallel-worktrees/SKILL.md and follow it — do not restate CI mechanics from memory in the PR body. Never attempt to trigger, approve, or label CI yourself.\n5. Do NOT merge and do not enable auto-merge — merging is core-team-only.\n6. Post the PR URL back on the Taskei task as a comment using the available Taskei tools (skip with a note if no commenting tool exists).\n7. Write {{setup.output}}/pr.json: {\"url\": \"<PR URL>\", \"taskId\": \"<shortId>\", \"branch\": \"<branch>\", \"worktree\": \"{{worktree.output}}\"}. The `url` field is mandatory — the PR watch loop reads it.\n\nLeave the worktree and branch in place — the babysit loop that follows will push follow-up revisions. When you finish, call send_message with a short summary: the task picked (id + title), the PR URL, the gates that ran, and any CI approval pending on maintainers."
+    },
+    {
+      "type": "repeat",
+      "id": "babysit",
+      "maxIterations": 100,
+      "onMaxIterations": "pause",
+      "stopWhen": "wait.terminal",
+      "steps": [
+        {
+          "type": "watch",
+          "id": "wait",
+          "handler": "github-pr",
+          "config": {
+            "prRef": "{{setup.output}}/pr.json"
+          }
+        },
+        {
+          "type": "step",
+          "id": "respond",
+          "agent": "wf-coder",
+          "prompt": "PR babysitting step. You respond to activity on the PR described in {{setup.output}}/pr.json (fields: url, branch, worktree). The code lives in the git worktree at {{worktree.output}} — your process cwd is the parent workspace, so use ABSOLUTE paths for every file operation and `git -C {{worktree.output}} ...` for every git command. Context: the task at {{setup.output}}/task.md and the plan at {{setup.output}}/plan.md.\n\nPR watch output (new comments, reviews, and check status since the last poll):\n{{wait.output}}\n\nIf the watch output shows state MERGED or CLOSED, the PR is done: comment the outcome on the Taskei task from {{setup.output}}/task.json using the available Taskei tools (on MERGED, ask in the comment for the task to be closed/resolved; skip silently if no commenting tool exists), write {\"state\": \"<MERGED|CLOSED>\"} to {{setup.output}}/respond.json, and finish with send_message severity 'success' summarizing the whole run (task, PR URL, outcome, and that the worktree at {{worktree.output}} can now be removed).\n\nOtherwise, handle every piece of feedback shown:\n1. Review comments and change requests: make the requested change in this PR, or reply with a concrete reason why not — never silently ignore a comment and never just promise a follow-up. For code changes: edit in the worktree, run the verification gates for what you touched (TUI: `bun run typecheck && bun test && bun run lint` from {{worktree.output}}/packages/tui; Rust: `cargo build`, `cargo test` for the touched crate, `cargo clippy --locked -- -D warnings`, `cargo +nightly fmt`), commit with a conventional message, and push to the same remote and branch the PR was opened from (check `git -C {{worktree.output}} status -sb` for the upstream). Keep the changelog fragment in {{worktree.output}}/.changes/ accurate if scope shifted.\n2. Failing CI checks: read the failure via `gh pr checks <url>` and `gh run view`, fix the root cause in the worktree, verify locally, commit and push. Root-cause before attributing — prove the failure comes from this diff before changing unrelated code; if the failure is provably unrelated to the diff (broken main), say so in a PR comment instead of patching around it.\n3. Reply on the PR thread via `gh pr comment` / `gh api` summarizing what you changed in response to which feedback.\n4. If CI appears stuck awaiting approval after a push, consult the \"PR CI path\" guidance in {{repo.output}}/.kiro/skills/parallel-worktrees/SKILL.md and surface what it says for maintainers in your PR comment. Never attempt to trigger or approve CI yourself.\n5. Never merge, never enable auto-merge, never close the PR yourself.\n6. If feedback requires a decision only a human can make (scope change, design disagreement you cannot resolve against the task's acceptance criteria), call send_message with severity 'warning' describing the question, then finish this step normally — the loop will keep watching.\n\nWrite {\"state\": \"OPEN\", \"handled\": [\"<short note per item handled>\"]} to {{setup.output}}/respond.json, then finish."
+        }
+      ]
+    }
+  ]
+}
