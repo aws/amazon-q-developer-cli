@@ -14,18 +14,18 @@
         "waitForText:ask a question",
         "type:/hooks",
         "enter",
-        "waitForText:UserPromptSubmit",
+        "waitForText:2 hooks",
         "frame:hooks-panel"
       ],
       "verify": [
         "screen.contains:2 hooks",
         "screen.contains:echo HOOK-SPAWN-SENTINEL-77",
-        "screen.contains:echo HOOK-PROMPT-SENTINEL-88",
+        "screen.contains:HOOK-PROMPT-OUT-$((40 + 48))",
         "screen.contains:SessionStart",
         "screen.contains:UserPromptSubmit",
         "screen.notContains:No hooks configured"
       ],
-      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. The triggers are asserted because the config spells one of them `agentSpawn` while the listing resolves it to `SessionStart`, so the row proves the mapping rather than echoing the key. An agent that declares no hooks is caught before verify -- the wait for a trigger name expires -- so the predicates here carry the detail rather than the existence: the count, the verbatim commands, the resolved triggers, and the absent empty-state line for a panel that rendered chrome over an empty read.",
+      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. Both triggers are asserted because the config spells one `agentSpawn` while the row reads SessionStart, so the pair proves the vocabulary is resolved rather than echoed. The run gates on the count, not on either trigger name, so the names are predicates that can fail rather than restatements of the wait.",
       "engine": [
         "kas"
       ],
@@ -41,13 +41,13 @@
         ],
         "userPromptSubmit": [
           {
-            "command": "echo HOOK-PROMPT-SENTINEL-88"
+            "command": "echo HOOK-PROMPT-OUT-$((40 + 48))"
           }
         ]
       },
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
@@ -81,7 +81,7 @@
         "screen.contains:PromptHookReachedModel.",
         "screen.notContains:NoHookOutputInBody."
       ],
-      "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn answers whenever that is missing, which turns a silently dropped hook into a named string on screen instead of a timeout. Asserting the second absent is what makes the first meaningful -- together they distinguish 'the hook reached the model' from 'the turn was answered at all'.",
+      "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn answers whenever that is missing, which turns a silently dropped hook into a named string on screen instead of a timeout. The sentinel is arithmetic the shell resolves, so the matched literal exists nowhere in the agent config that declares the hook -- only in what the hook printed. Asserting the second absent is what makes the first meaningful.",
       "engine": [
         "kas"
       ],
@@ -97,7 +97,7 @@
         ],
         "userPromptSubmit": [
           {
-            "command": "echo HOOK-PROMPT-SENTINEL-88"
+            "command": "echo HOOK-PROMPT-OUT-$((40 + 48))"
           }
         ]
       },
@@ -105,7 +105,7 @@
         {
           "name": "prompt-hook-reached-model",
           "match": {
-            "bodyContains": "HOOK-PROMPT-SENTINEL-88"
+            "bodyContains": "HOOK-PROMPT-OUT-88"
           },
           "respond": {
             "events": [
@@ -168,7 +168,7 @@
       ],
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
@@ -202,7 +202,7 @@
         "screen.contains:Tool execution failed",
         "screen.contains:ToolRefusedFollowUp."
       ],
-      "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The tool is an auto-approved read, so nothing here depends on an approval prompt -- a refusal that stopped working would let the read complete quietly, which is exactly the case the asserted failure text catches. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
+      "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The refusal also preempts the approval gate entirely -- this same read asks for approval when the matcher does not name it, and here no gate ever appears, so the hook is consulted before the user is. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
       "engine": [
         "kas"
       ],
@@ -248,6 +248,83 @@
               {
                 "type": "text",
                 "content": "ToolRefusedFollowUp."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "agent-pretool-hook-matcher-scopes-the-refusal",
+      "name": "A pre-tool hook matched to another tool leaves this one alone",
+      "category": "agents",
+      "description": "The same refusing preToolUse hook, matched to a tool the turn never calls -- asserts the call it does make runs normally, so the refusal is scoped by the matcher rather than applied to everything",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:read the manifest with a scoped hook",
+        "waitForText:requires approval",
+        "enter",
+        "waitForIdle",
+        "frame:after-read"
+      ],
+      "verify": [
+        "screen.contains:ScopedReadSucceeded.",
+        "screen.notContains:Tool execution failed"
+      ],
+      "observe": "This is the control for the refusal journey, and without it a hook engine that refused every tool would pass that one. The hook is identical and still exits non-zero; only its matcher differs, naming a tool this turn never calls. The read therefore reaches its approval gate and completes once approved, which the absent failure text checks -- the same string the refusal journey asserts present, so the two together attribute the outcome to the matcher rather than to the hook merely existing. That the gate appears at all is the other half: a refused call never reaches it.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "preToolUse": [
+          {
+            "command": "echo HOOK-REFUSED-THIS >&2; exit 2",
+            "matcher": "execute_bash"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "read-the-manifest",
+          "match": {
+            "userInputContains": "read the manifest with a scoped hook"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-scoped",
+                "name": "read_file",
+                "input": "{\"path\":\"package.json\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-the-read",
+          "match": {
+            "hasToolResults": true
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "ScopedReadSucceeded."
               },
               {
                 "type": "metadata",

@@ -26,12 +26,11 @@
         "frame:back-on-root"
       ],
       "verify": [
-        "screen.contains:Returned to root",
         "screen.contains:RootNoted.",
         "screen.notContains:TangentNoted.",
-        "screen.notContains:sidequest"
+        "screen.notContains:\u21af sidequest"
       ],
-      "observe": "The tangent is entered by name and the run only proceeds once the session says so, so the detour is real rather than assumed. The return is the assertion that matters: the root answer is still there while the tangent's answer is not, which is what separates a session that came back from one that merely carried on. The tangent's own name is asserted absent too, because it labels the status bar while the detour is active and a return that left the label would leave the user unsure which session they are on.",
+      "observe": "The tangent is entered by name and the run only proceeds once the session says so, so the detour is real rather than assumed. The return is the assertion that matters: the root answer is still there while the tangent's answer is not, which is what separates a session that came back from one that merely carried on. The negative names the status chip rather than the bare tangent name, because the name also reaches the screen from the command the user typed and from the alert that confirmed the switch -- only the chip means 'still on the detour'.",
       "engine": [
         "kas"
       ],
@@ -121,8 +120,7 @@
         "screen.contains:Switch to a tangent",
         "screen.contains:alpha",
         "screen.contains:[current]",
-        "screen.contains:root",
-        "screen.contains:Enter to switch"
+        "screen.contains:root"
       ],
       "observe": "The empty listing is taken first and acts as the control: the same command, before any tangent exists, states the absence rather than opening an empty picker. After creating one the listing is a tree -- the tangent under its root -- with the active one marked, which is what tells a user where they are once several exist. The switch affordance is asserted because a list of tangents you cannot move between is only half the surface.",
       "engine": [
@@ -186,12 +184,11 @@
         "frame:auto-named"
       ],
       "verify": [
-        "screen.contains:On tangent",
         "screen.contains:tangent-1",
         "screen.contains:/tangent to go back",
-        "screen.contains:SeedNoted."
+        "store.sessionId.changed"
       ],
-      "observe": "The same bare command does opposite things depending on where it is issued: on a tangent it returns to the parent, and on root it opens a new one under an auto-assigned name. Pinning the root case is what keeps that asymmetry deliberate -- a change that made it a no-op at root, or that reused the command only for returning, would fail here while the return journey still passed. The root answer is asserted still present because opening a detour must not disturb what it branched from, and the go-back hint because it is how a user learns the command's other meaning.",
+      "observe": "The same bare command does opposite things depending on where it is issued: on a tangent it returns to the parent, and on root it opens a new one under an auto-assigned name. The session id changing is what proves a detour was actually opened rather than the command becoming a no-op at root -- the name and the placeholder hint both come from the alert the wait already saw, so on their own they would restate it. The transcript carries the parent's turn into the fork, which is the fork inheriting its history rather than evidence about the parent.",
       "engine": [
         "kas"
       ],

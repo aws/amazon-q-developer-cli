@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one.",
+  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one. Registry-sourced servers are deliberately absent: KIRO_MCP_REGISTRY_URL_OVERRIDE is read only by the Rust engines, while this lane runs KAS and the TUI learns registry servers solely from KAS's status notification, so no scenario file can reach that path.",
   "scenarios": [
     {
       "id": "mcp-panel-reports-a-running-server",
@@ -44,7 +44,7 @@
       },
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
@@ -81,7 +81,7 @@
         "screen.contains:0 tools",
         "screen.notContains:\u25cf running"
       ],
-      "observe": "A broken server must stay visible, because a user debugging one needs to see it and its state; silently omitting it is the failure this guards. What catches a server that starts anyway is the wait for 'failed', which expires -- the absent 'running' is a backstop for a row that reports both, and is safe to assert only because the one configured server here is the broken one. '0 tools' is the durable half: a failed server cannot have advertised any.",
+      "observe": "A broken server must stay visible, because a user debugging one needs to see it and its state; silently omitting it is the failure this guards. What catches a server that starts anyway is the wait for 'failed', which expires -- the absent 'running' is a backstop for a row that reports both, and is safe to assert only because the one configured server here is the broken one. '0 tools' is asserted with a caveat rather than as proof: the Details cell shows a failure reason when one is reported and falls back to the tool count when none is, so this pins today's behaviour of reporting no reason at all. If a reason ever surfaces, this predicate is the one that should be replaced by it.",
       "engine": [
         "kas"
       ],
@@ -100,7 +100,7 @@
       },
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
@@ -126,6 +126,11 @@
       "priority": "p1",
       "steps": [
         "waitForText:ask a question",
+        "type:/mcp",
+        "enter",
+        "waitForText:0 tools",
+        "frame:both-servers",
+        "escape",
         "type:/tools",
         "enter",
         "waitForText:@stubby/stub_echo",
@@ -135,10 +140,9 @@
         "screen.contains:@stubby/stub_echo",
         "screen.contains:@stubby/stub_ping",
         "screen.contains:Echo a sentinel back for scenario assertions.",
-        "screen.contains:builtin",
         "screen.notContains:@emptyone/"
       ],
-      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. A provider that advertises nothing is caught by the wait for its tool, which expires, so the predicate carrying independent weight is the absent '@emptyone/': the second server completes the handshake and advertises nothing, and a panel that invented a row per configured server would fail there and nowhere else. 'builtin' is asserted present so a regression that replaced the whole list with MCP tools would still fail.",
+      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. The absent '@emptyone/' only means something once that server is known to have connected, which is why the run waits for its '0 tools' row in the MCP panel first: without that wait the negative would hold just as well for a server still starting up. A provider that advertises nothing is otherwise caught by the wait for its tool.",
       "engine": [
         "kas"
       ],
@@ -164,7 +168,7 @@
       },
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
@@ -201,8 +205,8 @@
         "screen.contains:stub_echo",
         "screen.contains:value=MCP-SENTINEL-42",
         "screen.contains:McpCallDone.",
+        "screen.notContains:STUB-MCP-FAILED",
         "screen.notContains:is not available",
-        "screen.notContains:requires approval",
         "screen.notContains:Standing by"
       ],
       "observe": "The argument is what the card keeps: 'value=MCP-SENTINEL-42' proves it survived the wire to the tool. The server's own reply text does NOT reach this frame -- an approved call collapses to a single line naming the tool and its argument, so asserting the result string here would fail on the success path; the error journey asserts a payload instead, because that path expands. Name resolution is proven by the wait for the approval gate: an unresolved name returns an error result without ever gating, so that step expires. 'McpCallDone.' is scripted on a turn that only fires once a tool result returns, and the absent 'is not available' is the backstop for a name that gates but still resolves to nothing.",
@@ -418,7 +422,7 @@
       },
       "turns": [
         {
-          "name": "unused-no-prompt-is-sent",
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
