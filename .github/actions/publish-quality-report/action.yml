@@ -1,0 +1,29 @@
+name: Publish quality report section
+description: Merge one independently owned section into the shared PR quality comment
+inputs:
+  section:
+    description: Stable quality report section identifier
+    required: true
+  content:
+    description: Path to the section markdown
+    required: true
+  pr-number:
+    description: Pull request number
+    required: true
+  expected-head-sha:
+    description: PR head revision measured by this report
+    required: true
+  github-token:
+    description: Token allowed to update pull request comments
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        EXPECTED_HEAD_SHA: ${{ inputs.expected-head-sha }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPORT_CONTENT: ${{ inputs.content }}
+        REPORT_SECTION: ${{ inputs.section }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/publish-quality-report.sh"

@@ -10,7 +10,7 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
   id-token: write
 
 jobs:
@@ -197,34 +197,6 @@ jobs:
             --gate-readings /tmp/duplication-readings.json \
             --compare-to /tmp/base-measurement.json \
             --report-out coverage-report.md
-
-      - name: Post coverage report
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          tee /tmp/code-quality-coverage-comment.md < coverage-report.md
-
-          COMMENT_ID="$(
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
-              --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- code-quality-coverage-report -->")) | .id' \
-              | sed -n '1p'
-          )"
-
-          if [[ -n "$COMMENT_ID" ]]; then
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
-              --raw-field body="$(cat /tmp/code-quality-coverage-comment.md)" \
-              >/dev/null
-          else
-            gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
-              --raw-field body="$(cat /tmp/code-quality-coverage-comment.md)" \
-              >/dev/null
-          fi
 
       - name: Upload coverage report
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
