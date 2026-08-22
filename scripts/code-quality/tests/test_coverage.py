@@ -104,6 +104,13 @@ def assert_complete_report(
     test.assertIn("Denominators:", report)
     test.assertIn("Floors and denominators are committed in", report)
     test.assertIn("Exclusions:", report)
+    test.assertIn(
+        "<summary>Suites, gates, and coverage policy</summary>", report
+    )
+    test.assertLess(
+        report.index("| Package |"),
+        report.index("<summary>Suites, gates, and coverage policy</summary>"),
+    )
     for package in packages:
         test.assertIn(f"| {package} |", report)
     return report
@@ -119,6 +126,9 @@ class CoverageCheckerStdlibTests(unittest.TestCase):
             report = assert_complete_report(self, report_path, ())
             self.assertIn("Operational errors:", report)
             self.assertIn("no packages were provided", report)
+            self.assertLess(
+                report.index("</details>"), report.index("Operational errors:")
+            )
 
     def test_floors_and_cli_package_sets_must_match_both_ways(self) -> None:
         cases = (
@@ -223,6 +233,11 @@ class CoverageCheckerStdlibTests(unittest.TestCase):
             self.assertIn("Other gates:", report)
             self.assertIn("lint-debt complexity 83/83", report)
             self.assertIn("duplication clones 29/29", report)
+            self.assertLess(
+                report.index("<summary>Suites, gates, and coverage policy</summary>"),
+                report.index("Other gates:"),
+            )
+            self.assertLess(report.index("Other gates:"), report.index("</details>"))
 
     def test_unreported_gate_readings_are_named_without_failing_coverage(self) -> None:
         # A crashed sibling gate must not turn the coverage verdict, but its

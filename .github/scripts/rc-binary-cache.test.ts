@@ -102,6 +102,7 @@ const CERTIFICATION_JOBS = [
   'smoke-krs-mock',
   'scenario-categories',
   'visual',
+  'visual-base',
   'live-parity',
   'summary',
   'tui-unit-tests-required',
@@ -394,7 +395,7 @@ describe('RC binary cache identity', () => {
     const workflow = readCertificationWorkflow();
     const bunVersion = steps(workflow, 'Read pinned Bun version');
 
-    expect(bunVersion).toHaveLength(13);
+    expect(bunVersion).toHaveLength(14);
     for (const step of bunVersion) {
       expect(step).toContain('shell: bash');
       expect(step).toContain('"$RC_CI_ROOT/scripts/const.py"');
@@ -474,6 +475,7 @@ describe('RC binary cache identity', () => {
       'smoke-krs-mock',
       'scenario-categories',
       'visual',
+      'visual-base',
       'live-parity',
     ]);
   });

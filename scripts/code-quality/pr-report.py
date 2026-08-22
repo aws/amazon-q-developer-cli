@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 REPORT_MARKER = "<!-- code-quality-coverage-report -->"
+REPORT_HEADING = "## Quality Metrics"
 SECTION_MARKER = re.compile(
     r"<!-- quality-metrics-section:([a-z0-9-]+):(start|end) -->"
 )
@@ -60,10 +61,15 @@ def _section_marker(section: str, edge: str) -> str:
     return f"<!-- quality-metrics-section:{section}:{edge} -->"
 
 
-def _without_report_marker(content: str) -> str:
-    return "\n".join(
+def _without_report_shell(content: str) -> str:
+    clean = "\n".join(
         line for line in content.splitlines() if line.strip() != REPORT_MARKER
     ).strip()
+    if clean == REPORT_HEADING:
+        return ""
+    if clean.startswith(f"{REPORT_HEADING}\n"):
+        return clean.removeprefix(REPORT_HEADING).lstrip()
+    return clean
 
 
 def _section_ranges(content: str) -> dict[str, tuple[int, int]]:
@@ -98,13 +104,13 @@ def _wrap_section(section: str, content: str) -> str:
 def merge_report_section(current: str, section: str, content: str) -> str:
     """Replace one section while preserving every independently owned section."""
 
-    clean_content = _without_report_marker(content)
+    clean_content = _without_report_shell(content)
     if not clean_content:
         raise ValueError("quality report section content cannot be empty")
     if SECTION_MARKER.search(clean_content):
         raise ValueError("quality report section content cannot contain control markers")
 
-    clean_current = _without_report_marker(current)
+    clean_current = _without_report_shell(current)
     ranges = _section_ranges(clean_current)
     replacement = _wrap_section(section, clean_content)
 
@@ -138,7 +144,7 @@ def merge_report_section(current: str, section: str, content: str) -> str:
         merged = replacement
 
     _section_ranges(merged)
-    report = f"{REPORT_MARKER}\n\n{merged.strip()}\n"
+    report = f"{REPORT_MARKER}\n\n{REPORT_HEADING}\n\n{merged.strip()}\n"
     report_size = len(report.encode("utf-8"))
     if report_size > MAX_REPORT_BYTES:
         raise ValueError(
@@ -378,11 +384,11 @@ def render_acp_integration_section(
             "",
             *_render_capability_gaps(report.uncovered),
             "",
-            "</details>",
-            "",
             "This is manifest-backed capability coverage, not source-code line "
             "coverage. No base delta is claimed because RC does not generate "
             "exact-base ACP evidence.",
+            "",
+            "</details>",
         ]
     )
     if run_url:
@@ -430,6 +436,9 @@ def render_visual_stories_section(
     lines.extend(
         [
             "",
+            "<details>",
+            "<summary>Coverage policy details</summary>",
+            "",
             "Percentage floors are not enforced yet. RC still fails on declared "
             "capture and semantic assertion errors.",
         ]
@@ -438,6 +447,7 @@ def render_visual_stories_section(
         lines.append(
             "The exact PR-base capture was unavailable, so base deltas are not shown."
         )
+    lines.extend(["", "</details>"])
     if run_url:
         lines.extend(["", f"[Open RC Certification artifacts]({run_url})"])
     return "\n".join(lines) + "\n"

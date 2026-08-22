@@ -41,6 +41,9 @@ describe('verification artifact report', () => {
           coveredStories: 5,
           totalVariants: 215,
           executedVariants: 28,
+          verifiedVariants: 21,
+          totalVisualStates: 69,
+          coveredVisualStates: 58,
           totalComponents: 206,
           coveredComponents: 74,
           stories: [{ status: 'ignored by aggregate report' }],
@@ -60,6 +63,9 @@ describe('verification artifact report', () => {
       coveredStories: 5,
       totalVariants: 215,
       executedVariants: 28,
+      verifiedVariants: 21,
+      totalVisualStates: 69,
+      coveredVisualStates: 58,
       totalComponents: 206,
       coveredComponents: 74,
     });
@@ -97,9 +103,9 @@ describe('verification artifact report', () => {
       '`artifacts/verification-visual-workflow-monitor/index.html`'
     );
     expect(markdown).toContain(
-      '| 5/45 (11.1%) | 28/215 (13.0%) | 74/206 (35.9%) |'
+      '| 5/45 (11.1%) | 28/215 (13.0%) | 21/215 (9.8%) | 58/69 (84.1%) | 74/206 (35.9%) |'
     );
-    expect(markdown).toContain('Component coverage is a static reachability');
+    expect(markdown).toContain('Semantic variants have explicit assertions');
     expect(markdown).not.toContain('Interaction');
     expect(markdown).not.toContain('[json](');
     expect(markdown).not.toContain('[artifact](');
@@ -113,7 +119,10 @@ describe('verification artifact report', () => {
     );
     expect(html).toContain('<th>Component Coverage</th>');
     expect(html).toContain('<td>74/206 (35.9%)</td>');
-    expect(html).toContain('Component coverage is a static reachability');
+    expect(html).toContain('<th>Semantic Variants</th>');
+    expect(html).toContain('<td>21/215 (9.8%)</td>');
+    expect(html).toContain('<td>58/69 (84.1%)</td>');
+    expect(html).toContain('Semantic variants have explicit assertions');
     expect(html).not.toContain('Interaction');
   });
 
@@ -136,7 +145,7 @@ describe('verification artifact report', () => {
     writeVerificationReport(root, outDir);
     const markdown = fs.readFileSync(path.join(outDir, 'summary.md'), 'utf8');
     expect(markdown).toContain(
-      '| verification-visual-legacy | legacy | 1 | 0 | n/a | n/a | n/a |'
+      '| verification-visual-legacy | legacy | 1 | 0 | n/a | n/a | n/a | n/a | n/a |'
     );
   });
 
@@ -183,6 +192,9 @@ describe('verification artifact report', () => {
           coveredStories: 2,
           totalVariants: 1,
           executedVariants: 1,
+          verifiedVariants: 1,
+          totalVisualStates: 1,
+          coveredVisualStates: 1,
           totalComponents: 1,
           coveredComponents: 1,
         },

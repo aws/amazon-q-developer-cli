@@ -1789,6 +1789,80 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+  visual-base:
+    name: Visual Stories (PR base / advisory)
+    permissions:
+      contents: read
+      id-token: write
+    needs: resolve
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      needs.resolve.outputs.run_visual == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Login to CodeArtifact
+        uses: ./.github/actions/codeartifact-login
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Twinki workspace dependency
+        run: bun run build
+        working-directory: packages/twinki/packages/twinki
+
+      - name: Validate base visual coverage
+        continue-on-error: true
+        run: bun run test:storybook:coverage
+        working-directory: packages/tui
+
+      - name: Capture base visual stories
+        continue-on-error: true
+        shell: bash
+        env:
+          VISUAL_SUITE: ${{ needs.resolve.outputs.visual_suite }}
+          LANE_ATTEMPTS: ${{ needs.resolve.outputs.lane_attempts }}
+          LANE_RETRY_DELAY_SECONDS: ${{ needs.resolve.outputs.lane_retry_delay_seconds }}
+        run: |
+          mkdir -p "verification-results/visual/$VISUAL_SUITE"
+          ARGS=(--suite "$VISUAL_SUITE" --out "verification-results/visual/$VISUAL_SUITE")
+          bash "$GITHUB_WORKSPACE/.github/scripts/run-with-retry.sh" \
+            --attempts "$LANE_ATTEMPTS" \
+            --delay-seconds "$LANE_RETRY_DELAY_SECONDS" \
+            --label "base visual lane:$VISUAL_SUITE" \
+            -- bun run test:storybook:visual -- "${ARGS[@]}"
+        working-directory: packages/tui
+
+      - name: Upload base visual metrics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: comparison-visual-base-${{ needs.resolve.outputs.visual_suite }}
+          path: packages/tui/verification-results/visual/${{ needs.resolve.outputs.visual_suite }}/coverage.json
+          retention-days: 7
+          if-no-files-found: warn
+
   live-parity:
     name: Live Smoke (ubuntu-latest / ${{ matrix.engine }})
     permissions:

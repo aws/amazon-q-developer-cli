@@ -22,6 +22,9 @@ interface VisualCoverageSummary {
   coveredStories: number;
   totalVariants: number;
   executedVariants: number;
+  verifiedVariants: number;
+  totalVisualStates: number;
+  coveredVisualStates: number;
   totalComponents: number;
   coveredComponents: number;
 }
@@ -90,13 +93,15 @@ function formatCoverage(covered: number, total: number): string {
 
 function visualCoverageCells(
   coverage: VisualCoverageSummary | undefined
-): [string, string, string] {
+): [string, string, string, string, string] {
   if (!coverage) {
-    return ['n/a', 'n/a', 'n/a'];
+    return ['n/a', 'n/a', 'n/a', 'n/a', 'n/a'];
   }
   return [
     formatCoverage(coverage.coveredStories, coverage.totalStories),
     formatCoverage(coverage.executedVariants, coverage.totalVariants),
+    formatCoverage(coverage.verifiedVariants, coverage.totalVariants),
+    formatCoverage(coverage.coveredVisualStates, coverage.totalVisualStates),
     formatCoverage(coverage.coveredComponents, coverage.totalComponents),
   ];
 }
@@ -112,6 +117,9 @@ function parseVisualCoverage(
     value.coveredStories,
     value.totalVariants,
     value.executedVariants,
+    value.verifiedVariants,
+    value.totalVisualStates,
+    value.coveredVisualStates,
     value.totalComponents,
     value.coveredComponents,
   ];
@@ -122,6 +130,8 @@ function parseVisualCoverage(
     ) ||
     value.coveredStories > value.totalStories ||
     value.executedVariants > value.totalVariants ||
+    value.verifiedVariants > value.totalVariants ||
+    value.coveredVisualStates > value.totalVisualStates ||
     value.coveredComponents > value.totalComponents
   ) {
     return undefined;
@@ -131,6 +141,9 @@ function parseVisualCoverage(
     coveredStories: value.coveredStories,
     totalVariants: value.totalVariants,
     executedVariants: value.executedVariants,
+    verifiedVariants: value.verifiedVariants,
+    totalVisualStates: value.totalVisualStates,
+    coveredVisualStates: value.coveredVisualStates,
     totalComponents: value.totalComponents,
     coveredComponents: value.coveredComponents,
   };
@@ -372,9 +385,9 @@ function generateMarkdown(
 
   if (summary.visualSuites.length > 0) {
     lines.push(
-      '| Visual Artifact | Suite | Passed Frames | Failed Frames | Story Coverage | Variant Execution | Component Coverage | Bundle Path |'
+      '| Visual Artifact | Suite | Passed Frames | Failed Frames | Story Coverage | Variant Execution | Semantic Variants | Visual States | Component Coverage | Bundle Path |'
     );
-    lines.push('|---|---|---:|---:|---:|---:|---:|---|');
+    lines.push('|---|---|---:|---:|---:|---:|---:|---:|---:|---|');
     for (const report of summary.visualSuites) {
       const bundlePath =
         publication.visualLinks.get(report.relativePath) ??
@@ -386,7 +399,7 @@ function generateMarkdown(
       );
     }
     lines.push(
-      '_Story coverage counts a story once any variant runs. Component coverage is a static reachability estimate; the linked artifact lists every covered and missed story, variant, and component._'
+      '_Semantic variants have explicit assertions. Visual states are declared states proved by successful evidence. Component coverage is a static reachability estimate; the linked artifact contains the complete inventory._'
     );
     lines.push('');
   }
@@ -468,7 +481,7 @@ a{color:#7dd3fc}
     <h2>Visual Suites</h2>
     ${
       summary.visualSuites.length > 0
-        ? `<p class="explanation">Story coverage counts a story once any variant runs. Component coverage is a static reachability estimate; open the artifact for every covered and missed story, variant, and component.</p><table><thead><tr><th>Artifact</th><th>Suite</th><th>Passed Frames</th><th>Failed Frames</th><th>Story Coverage</th><th>Variant Execution</th><th>Component Coverage</th><th>Link</th></tr></thead><tbody>${visualRows}</tbody></table>`
+        ? `<p class="explanation">Semantic variants have explicit assertions. Visual states are declared states proved by successful evidence. Component coverage is a static reachability estimate; open the artifact for the complete inventory.</p><table><thead><tr><th>Artifact</th><th>Suite</th><th>Passed Frames</th><th>Failed Frames</th><th>Story Coverage</th><th>Variant Execution</th><th>Semantic Variants</th><th>Visual States</th><th>Component Coverage</th><th>Link</th></tr></thead><tbody>${visualRows}</tbody></table>`
         : '<p class="empty">No visual suite artifacts found.</p>'
     }
   </section>

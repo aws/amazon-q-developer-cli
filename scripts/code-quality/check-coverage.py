@@ -1061,17 +1061,6 @@ def _render_report(
             cells.append(_comparison_cell(measured, comparison.get(package), "functions"))
         cells.append("❌" if failed else "✅")
         lines.append("| " + " | ".join(cells) + " |")
-    lines.append("")
-    lines.append(
-        "Denominators: "
-        + " · ".join(
-            f"{package} {_denominator_cell(evaluation, package, 'lines')} lines,"
-            f" {_denominator_cell(evaluation, package, 'functions')} functions"
-            for package in ordered_packages
-            if package in evaluation.measurements
-        )
-    )
-
     suites = [
         suite
         for package in cli.packages
@@ -1089,6 +1078,17 @@ def _render_report(
     lines.extend(
         [
             "",
+            "<details>",
+            "<summary>Suites, gates, and coverage policy</summary>",
+            "",
+            "Denominators: "
+            + " · ".join(
+                f"{package} {_denominator_cell(evaluation, package, 'lines')} lines,"
+                f" {_denominator_cell(evaluation, package, 'functions')} functions"
+                for package in ordered_packages
+                if package in evaluation.measurements
+            ),
+            "",
             f"Suites: {suite_text}",
         ]
     )
@@ -1104,6 +1104,8 @@ def _render_report(
             f"`{_code_path(cli.floors_path)}`; Baseline_Direction fails any "
             "loosening of either that is not recorded in `.baseline-loosening.json`. "
             f"Exclusions: `{_code_path(cli.coverage_config_path)}`.",
+            "",
+            "</details>",
         ]
     )
     if errors.has_errors:

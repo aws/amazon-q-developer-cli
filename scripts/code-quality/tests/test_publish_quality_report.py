@@ -127,6 +127,10 @@ class PublishQualityReportTests(unittest.TestCase):
             self.assertEqual(self.write_methods(directory), ["POST"])
             body = (directory / "written.md").read_text(encoding="utf-8")
             self.assertIn("quality-metrics-section:code-quality:start", body)
+            self.assertIn("## Quality Metrics", body)
+            self.assertNotIn(
+                "<summary><strong>Code Quality</strong></summary>", body
+            )
             self.assertIn(f"_PR head revision: `{HEAD_SHA[:12]}`._", body)
 
     def test_patches_an_existing_comment_without_dropping_other_sections(self) -> None:

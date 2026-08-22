@@ -26,6 +26,7 @@ CapabilityGap = MODULE.CapabilityGap
 MAX_RENDERED_CAPABILITY_GAPS = MODULE.MAX_RENDERED_CAPABILITY_GAPS
 MAX_REPORT_BYTES = MODULE.MAX_REPORT_BYTES
 REPORT_MARKER = MODULE.REPORT_MARKER
+REPORT_HEADING = MODULE.REPORT_HEADING
 merge_report_section = MODULE.merge_report_section
 render_acp_integration_section = MODULE.render_acp_integration_section
 render_visual_stories_section = MODULE.render_visual_stories_section
@@ -55,6 +56,17 @@ class PrReportTests(unittest.TestCase):
             "<!-- quality-metrics-section:visual-stories:end -->",
             merged,
         )
+
+    def test_renders_one_heading_and_keeps_section_content_visible(self) -> None:
+        merged = merge_report_section("", "visual-stories", "visual")
+        merged = merge_report_section(merged, "code-quality", "quality")
+        merged = merge_report_section(merged, "acp-integration", "acp")
+
+        self.assertEqual(merged.count(REPORT_HEADING), 1)
+        self.assertNotIn("<details>", merged)
+        self.assertIn("quality", merged)
+        self.assertIn("acp", merged)
+        self.assertIn("visual", merged)
 
     def test_replaces_only_the_owned_section(self) -> None:
         current = merge_report_section("", "code-quality", "old quality")
@@ -138,6 +150,11 @@ class PrReportTests(unittest.TestCase):
             report,
         )
         self.assertIn("Percentage floors are not enforced yet.", report)
+        self.assertIn("<summary>Coverage policy details</summary>", report)
+        self.assertLess(
+            report.index("| Story coverage |"),
+            report.index("<summary>Coverage policy details</summary>"),
+        )
         self.assertIn("[Open RC Certification artifacts]", report)
 
     def test_marks_missing_base_without_claiming_a_delta(self) -> None:
@@ -222,6 +239,14 @@ class PrReportTests(unittest.TestCase):
         self.assertIn("RC workflow result: **success**", markdown)
         self.assertIn("not source-code line coverage", markdown)
         self.assertIn("No base delta is claimed", markdown)
+        self.assertLess(
+            markdown.index("| ACP session |"),
+            markdown.index("<summary>1 uncovered capabilities</summary>"),
+        )
+        self.assertLess(
+            markdown.index("No base delta is claimed"),
+            markdown.index("</details>"),
+        )
 
     def test_truncates_large_uncovered_capability_details_explicitly(self) -> None:
         total = MAX_RENDERED_CAPABILITY_GAPS + 5
