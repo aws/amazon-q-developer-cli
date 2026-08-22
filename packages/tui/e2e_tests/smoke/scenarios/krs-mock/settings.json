@@ -1,0 +1,59 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Settings journeys. These touch no model at all -- the panel reads and writes local settings -- so they are the cheapest deterministic coverage in the lane and the category had none. Toggling a row needs the left/right arrows, which this runner has no verb for, so these cover what the panel presents and offers rather than the effect of changing a value.",
+  "scenarios": [
+    {
+      "id": "settings-display-lists-the-controls-and-their-values",
+      "name": "The display settings panel names each control, its value and how to change it",
+      "category": "settings",
+      "description": "The display section of the settings panel -- asserts each display control is listed with its current value and its own description, and that the panel states how to toggle and apply",
+      "docRef": "/docs/cli/reference/slash-commands#settings",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/settings display",
+        "enter",
+        "waitForText:How would you like Kiro to display output?",
+        "frame:display-panel"
+      ],
+      "verify": [
+        "screen.contains:/settings \u2013 display",
+        "screen.contains:Animations",
+        "screen.contains:Spinners, progress bars, and loading effects",
+        "screen.contains:ASCII art",
+        "screen.contains:Decorative text art including table lines",
+        "screen.contains:Icons",
+        "screen.contains:Symbols for status, actions, and labels",
+        "screen.contains:\u2190\u2192 to toggle",
+        "screen.contains:to apply and close"
+      ],
+      "observe": "Each control is asserted with its own description rather than its label alone, because the descriptions come from the panel's registry and cannot be echoed from anything the run typed -- a panel that listed labels over the wrong rows would still pass on labels. The three asserted controls are the ones that change how everything else in this lane renders: animations, ASCII art and icons. The toggle and apply hints are asserted because a settings list you cannot act on is only half the surface, and the toggle needle carries its arrow keys because the bare phrase also appears in a launch tip; the run gates on the panel's own question text, so none of these restate the wait.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

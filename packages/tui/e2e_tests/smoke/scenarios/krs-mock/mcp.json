@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one. Registry-sourced servers are deliberately absent: KIRO_MCP_REGISTRY_URL_OVERRIDE is read only by the Rust engines, while this lane runs KAS and the TUI learns registry servers solely from KAS's status notification, so no scenario file can reach that path.",
+  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one. Registry-sourced servers are deliberately absent: KIRO_MCP_REGISTRY_URL_OVERRIDE is read only by the Rust engines, while this lane runs KAS and the TUI learns registry servers solely from KAS's status notification, so no scenario file can reach that path. Completing an OAuth handshake is out of reach from here: the authenticate action hands back a URL for a browser, so a journey can cover the state and the affordance but not the transition to running.",
   "scenarios": [
     {
       "id": "mcp-panel-reports-a-running-server",
@@ -401,6 +401,67 @@
         "screen.notContains:\u2717 failed"
       ],
       "observe": "OAuth applies only to the remote transport, so this server is a real HTTP listener that rejects unauthenticated requests. The value is in the three-way distinction: both 'running' and 'failed' are asserted absent, because a server awaiting authorization is neither, and collapsing it into either is what leaves a user staring at a server that will never work or hunting a failure that is not one. 'Enter to authenticate' is asserted because a state the user cannot act on is only half the surface. Dropping the server's OAuth requirement flips the row to running, which fails the gate and the negative together.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "mcpServers": {
+        "needsauth": {
+          "remote": true,
+          "args": [
+            "--config",
+            "{{fixture:mcp-remote-tools.jsonl}}",
+            "--transport",
+            "http",
+            "--oauth"
+          ]
+        }
+      },
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "mcp-authenticate-action-hands-back-a-usable-url",
+      "name": "Choosing authenticate hands back a URL instead of silently doing nothing",
+      "category": "mcp",
+      "description": "The authenticate action taken on a server awaiting OAuth -- asserts it produces a URL the user can open and keeps offering the action, rather than appearing to succeed or failing silently",
+      "docRef": "/docs/cli/reference/slash-commands#mcp",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/mcp",
+        "enter",
+        "waitForText:Enter to authenticate",
+        "frame:awaiting-auth",
+        "enter",
+        "waitForText:OAuth URL copied to clipboard",
+        "frame:after-authenticate"
+      ],
+      "verify": [
+        "screen.contains:Ctrl+y",
+        "screen.contains:\u26a0 auth-required",
+        "screen.notContains:\u25cf running"
+      ],
+      "observe": "Authorising a hosted MCP server finishes in a browser, so the handshake cannot complete from the terminal and this journey deliberately does not claim it does: the row is asserted to still read auth-required afterwards, and 'running' asserted absent. What it does pin is that the action is not a dead end -- it hands back a URL and keeps the Ctrl+y affordance, which is the difference between a user who can finish authorising elsewhere and one staring at a row that swallowed their keypress. The wait for the clipboard confirmation is the transition; the predicates cover what the row and the affordance say after it.",
       "engine": [
         "kas"
       ],
