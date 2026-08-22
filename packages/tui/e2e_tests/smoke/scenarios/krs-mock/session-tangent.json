@@ -93,6 +93,148 @@
           }
         }
       ]
+    },
+    {
+      "id": "session-tangent-list-goes-from-empty-to-a-tree",
+      "name": "The tangent list states the absence, then shows the tree once one exists",
+      "category": "session-management",
+      "description": "A tangent listing before any tangent exists and again after creating one -- asserts the empty case is stated rather than blank, and the populated case shows the tangent under its root with the current one marked",
+      "docRef": "/docs/cli/chat",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/tangent ls",
+        "enter",
+        "waitForText:No tangents yet",
+        "frame:list-empty",
+        "prompt:seed a root turn SEEDWORD",
+        "waitForIdle",
+        "type:/tangent alpha",
+        "enter",
+        "waitForText:On tangent",
+        "type:/tangent ls",
+        "enter",
+        "waitForText:Last active",
+        "frame:list-one"
+      ],
+      "verify": [
+        "screen.contains:Switch to a tangent",
+        "screen.contains:alpha",
+        "screen.contains:[current]",
+        "screen.contains:root",
+        "screen.contains:Enter to switch"
+      ],
+      "observe": "The empty listing is taken first and acts as the control: the same command, before any tangent exists, states the absence rather than opening an empty picker. After creating one the listing is a tree -- the tangent under its root -- with the active one marked, which is what tells a user where they are once several exist. The switch affordance is asserted because a list of tangents you cannot move between is only half the surface.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "seed-root",
+          "match": {
+            "userInputContains": "SEEDWORD"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SeedNoted."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "session-tangent-bare-command-opens-one-from-root",
+      "name": "The bare tangent command starts a named detour when there is none to leave",
+      "category": "session-management",
+      "description": "The tangent command with no argument, issued on the root session -- asserts it opens an auto-named tangent and marks it, which is the opposite of what the same command does while already on one",
+      "docRef": "/docs/cli/chat",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:seed a root turn SEEDWORD",
+        "waitForIdle",
+        "type:/tangent",
+        "enter",
+        "waitForText:On tangent",
+        "frame:auto-named"
+      ],
+      "verify": [
+        "screen.contains:On tangent",
+        "screen.contains:tangent-1",
+        "screen.contains:/tangent to go back",
+        "screen.contains:SeedNoted."
+      ],
+      "observe": "The same bare command does opposite things depending on where it is issued: on a tangent it returns to the parent, and on root it opens a new one under an auto-assigned name. Pinning the root case is what keeps that asymmetry deliberate -- a change that made it a no-op at root, or that reused the command only for returning, would fail here while the return journey still passed. The root answer is asserted still present because opening a detour must not disturb what it branched from, and the go-back hint because it is how a user learns the command's other meaning.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "seed-root",
+          "match": {
+            "userInputContains": "SEEDWORD"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SeedNoted."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

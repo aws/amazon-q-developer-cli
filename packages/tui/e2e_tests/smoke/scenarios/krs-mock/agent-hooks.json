@@ -137,6 +137,126 @@
           }
         }
       ]
+    },
+    {
+      "id": "agent-hooks-empty-state-names-the-absence",
+      "name": "With no hooks declared the listing says so instead of rendering an empty table",
+      "category": "agents",
+      "description": "An agent declaring no hooks -- asserts the listing reports zero and states the absence, rather than showing headers over no rows",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/hooks",
+        "enter",
+        "waitForText:type to filter",
+        "frame:hooks-empty"
+      ],
+      "verify": [
+        "screen.contains:0 hooks",
+        "screen.contains:No hooks configured",
+        "screen.notContains:SessionStart",
+        "screen.notContains:UserPromptSubmit"
+      ],
+      "observe": "The empty state is the control for the populated listing: the same panel with the same chrome, distinguished only by the count and the stated absence. Both trigger names are asserted absent because they are what appears once any hook is read, so a panel that listed hooks from somewhere other than the active agent would fail here rather than looking merely empty.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "unused-no-prompt-is-sent",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "agent-pretool-hook-refusal-stops-the-tool",
+      "name": "A pre-tool hook that refuses stops the tool from running",
+      "category": "agents",
+      "description": "A preToolUse hook matched to the file-read tool that exits non-zero -- asserts the tool is reported as failed rather than executed, and the turn continues afterwards",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:run the refused command",
+        "waitForIdle",
+        "frame:after-refusal"
+      ],
+      "verify": [
+        "screen.contains:Tool execution failed",
+        "screen.contains:ToolRefusedFollowUp."
+      ],
+      "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The tool is an auto-approved read, so nothing here depends on an approval prompt -- a refusal that stopped working would let the read complete quietly, which is exactly the case the asserted failure text catches. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "preToolUse": [
+          {
+            "command": "echo HOOK-REFUSED-THIS >&2; exit 2",
+            "matcher": "read_file"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "call-the-shell",
+          "match": {
+            "userInputContains": "run the refused command"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "toolUse",
+                "toolUseId": "tu-refused",
+                "name": "read_file",
+                "input": "{\"path\":\"package.json\"}",
+                "stop": true
+              },
+              {
+                "type": "metadata",
+                "stopReason": "TOOL_USE"
+              }
+            ]
+          }
+        },
+        {
+          "name": "after-the-refusal",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "ToolRefusedFollowUp."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
