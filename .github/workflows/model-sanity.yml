@@ -78,14 +78,31 @@ jobs:
           KIRO_TEST_TUI_JS_PATH: ${{ github.workspace }}/packages/tui/dist/tui.js
           KIRO_CHAT_CLI_BIN: ${{ github.workspace }}/target/debug/chat_cli
           KIRO_API_KEY: ${{ secrets.KIRO_REVIEW_PAT }}
+          # Reaches bash as data. Interpolated into the run body, a free-text
+          # dispatch input containing a quote would close it and run the rest.
+          MODEL: ${{ inputs.model }}
         run: |
           bun packages/tui/e2e_tests/smoke/run-smoke.ts \
             --backend live \
             --engine "${{ matrix.engine }}" \
             --category model-sanity \
-            --model "${{ inputs.model }}" \
+            --model "$MODEL" \
             --format tap \
             --output-dir model-sanity-results/${{ matrix.engine }}
+
+      # Runs even when the scenarios fail: a failed dispatch is when the
+      # per-scenario breakdown is most worth having on the summary page. Its own
+      # failure must not fail the leg — this only presents results.
+      - name: Summarize results
+        if: always()
+        continue-on-error: true
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          bun .github/scripts/model-sanity-summary.ts \
+            model-sanity-results/${{ matrix.engine }} \
+            "$MODEL" \
+            "${{ matrix.engine }}"
 
       - name: Upload results
         if: always()
