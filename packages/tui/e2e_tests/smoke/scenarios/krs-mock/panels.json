@@ -31,14 +31,25 @@
           "times": 0,
           "respond": {
             "events": [
-              { "type": "text", "content": "ok" },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "ok"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         }
       ],
-      "tags": ["journey", "scenario"],
-      "engine": ["kas"]
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
     },
     {
       "id": "agent-picker-lists-registry",
@@ -47,7 +58,12 @@
       "priority": "p1",
       "description": "The picker must show real registry entries and mark which one is live, so a user can see what they are choosing between",
       "docRef": "/docs/cli/agents",
-      "steps": ["type:/agent", "enter", "waitForText:Select agent", "sleep:2000"],
+      "steps": [
+        "type:/agent",
+        "enter",
+        "waitForText:Select agent",
+        "sleep:2000"
+      ],
       "verify": [
         "screen.contains:Select agent",
         "screen.contains:Bundled",
@@ -61,14 +77,25 @@
           "times": 0,
           "respond": {
             "events": [
-              { "type": "text", "content": "Standing by." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         }
       ],
-      "tags": ["journey", "scenario"],
-      "engine": ["kas"]
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
     },
     {
       "id": "session-picker-lists-then-restores-prompt",
@@ -87,16 +114,26 @@
         "escape",
         "sleep:2000"
       ],
-      "verify": ["screen.contains:ask a question"],
+      "verify": [
+        "screen.contains:ask a question"
+      ],
       "observe": "The picker renders its column header and search placeholder, then escape returns to the prompt. Those two picker strings are gated by waitForText steps rather than verify on purpose: the picker is a full-screen takeover whose content never enters scrollback, so it is absent from the settled frame once dismissed -- the waitForText step catches them while the picker is still up, and fails if they never render. Verify then carries the other half: the prompt placeholder is off screen entirely while the picker is up, so finding it proves the takeover was dismissed rather than merely opened.",
       "turns": [
         {
           "name": "one-entry",
-          "match": { "userInputContains": "establish one session entry" },
+          "match": {
+            "userInputContains": "establish one session entry"
+          },
           "respond": {
             "events": [
-              { "type": "text", "content": "Session entry established." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Session entry established."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         },
@@ -105,14 +142,25 @@
           "times": 0,
           "respond": {
             "events": [
-              { "type": "text", "content": "Standing by." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         }
       ],
-      "tags": ["journey", "scenario"],
-      "engine": ["kas"]
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
     },
     {
       "id": "session-dashboard-search-narrows-rows",
@@ -144,21 +192,37 @@
       "turns": [
         {
           "name": "first-session",
-          "match": { "userInputContains": "vermilion pigment notes" },
+          "match": {
+            "userInputContains": "vermilion pigment notes"
+          },
           "respond": {
             "events": [
-              { "type": "text", "content": "Noted the pigment." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Noted the pigment."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         },
         {
           "name": "second-session",
-          "match": { "userInputContains": "cobalt mineral notes" },
+          "match": {
+            "userInputContains": "cobalt mineral notes"
+          },
           "respond": {
             "events": [
-              { "type": "text", "content": "Noted the mineral." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Noted the mineral."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         },
@@ -167,14 +231,25 @@
           "times": 0,
           "respond": {
             "events": [
-              { "type": "text", "content": "Standing by." },
-              { "type": "metadata", "stopReason": "END_TURN" }
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
             ]
           }
         }
       ],
-      "tags": ["journey", "scenario"],
-      "engine": ["kas"]
+      "tags": [
+        "journey",
+        "scenario"
+      ],
+      "engine": [
+        "kas"
+      ]
     },
     {
       "id": "tools-panel-view",
@@ -211,6 +286,114 @@
               {
                 "type": "text",
                 "content": "ok"
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "hooks-panel-lists-each-trigger-and-command",
+      "name": "An agent's hooks are listed with the trigger and command they will run",
+      "category": "panels",
+      "description": "Two hooks declared by the planted agent, on different triggers -- asserts the listing names each one's resolved trigger and the exact command, and counts them",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/hooks",
+        "enter",
+        "waitForText:2 hooks",
+        "frame:hooks-panel"
+      ],
+      "verify": [
+        "screen.contains:2 hooks",
+        "screen.contains:echo HOOK-SPAWN-SENTINEL-77",
+        "screen.contains:HOOK-PROMPT-OUT-$((40 + 48))",
+        "screen.contains:SessionStart",
+        "screen.contains:UserPromptSubmit",
+        "screen.notContains:No hooks configured"
+      ],
+      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. Both triggers are asserted because the config spells one `agentSpawn` while the row reads SessionStart, so the pair proves the vocabulary is resolved rather than echoed. The run gates on the count, not on either trigger name, so the names are predicates that can fail rather than restatements of the wait.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "agentSpawn": [
+          {
+            "command": "echo HOOK-SPAWN-SENTINEL-77"
+          }
+        ],
+        "userPromptSubmit": [
+          {
+            "command": "echo HOOK-PROMPT-OUT-$((40 + 48))"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "hooks-panel-states-the-absence-when-none-are-declared",
+      "name": "With no hooks declared the listing says so instead of rendering an empty table",
+      "category": "panels",
+      "description": "An agent declaring no hooks -- asserts the listing reports zero and states the absence, rather than showing headers over no rows",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/hooks",
+        "enter",
+        "waitForText:type to filter",
+        "frame:hooks-empty"
+      ],
+      "verify": [
+        "screen.contains:0 hooks",
+        "screen.contains:No hooks configured",
+        "screen.notContains:SessionStart",
+        "screen.notContains:UserPromptSubmit"
+      ],
+      "observe": "The empty state is the control for the populated listing: the same panel with the same chrome, distinguished only by the count and the stated absence. Both trigger names are asserted absent because they are what appears once any hook is read, so a panel that listed hooks from somewhere other than the active agent would fail here rather than looking merely empty.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
               },
               {
                 "type": "metadata",
