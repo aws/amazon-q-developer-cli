@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "Settings journeys. These touch no model at all -- the panel reads and writes local settings -- so they are the cheapest deterministic coverage in the lane and the category had none. Toggling a row needs the left/right arrows, which this runner has no verb for, so these cover what the panel presents and offers rather than the effect of changing a value.",
+  "notes": "Settings journeys. These touch no model at all -- the panel reads and writes local settings -- so they are the cheapest deterministic coverage in the lane and the category had none. One covers what the panel presents; the other changes a value and reopens the panel to prove it stuck, which is the half a contents-only assertion cannot reach.",
   "scenarios": [
     {
       "id": "settings-display-lists-the-controls-and-their-values",
@@ -29,6 +29,57 @@
         "screen.contains:to apply and close"
       ],
       "observe": "Each control is asserted with its own description rather than its label alone, because the descriptions come from the panel's registry and cannot be echoed from anything the run typed -- a panel that listed labels over the wrong rows would still pass on labels. The three asserted controls are the ones that change how everything else in this lane renders: animations, ASCII art and icons. The toggle and apply hints are asserted because a settings list you cannot act on is only half the surface, and the toggle needle carries its arrow keys because the bare phrase also appears in a launch tip; the run gates on the panel's own question text, so none of these restate the wait.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "settings-display-toggle-applies-and-persists",
+      "name": "Toggling a display setting applies it and it survives reopening the panel",
+      "category": "settings",
+      "description": "One display control toggled, applied, and the panel reopened -- asserts the new value is what the panel reports afterwards and that the neighbouring control is untouched",
+      "docRef": "/docs/cli/reference/slash-commands#settings",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/settings display",
+        "enter",
+        "waitForText:How would you like Kiro to display output?",
+        "arrowDown",
+        "arrowLeft",
+        "enter",
+        "type:/settings display",
+        "enter",
+        "waitForText:How would you like Kiro to display output?",
+        "frame:reopened"
+      ],
+      "verify": [
+        "screen.contains:Animations      off",
+        "screen.contains:ASCII art       on"
+      ],
+      "observe": "The value is asserted only after the panel has been applied and reopened, so the assertion can be satisfied by nothing except the setting having been written -- the in-panel change is never asserted, which keeps the predicate from restating a step. The neighbouring control is asserted still on because a toggle that wrote the whole section, or wrote the wrong row, would otherwise look identical to a correct one. Both needles carry their column spacing, which couples them to the table's layout: if the widths change, both fail together and loudly rather than one silently matching elsewhere.",
       "engine": [
         "kas"
       ],
