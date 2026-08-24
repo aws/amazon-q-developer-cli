@@ -849,6 +849,12 @@ const LIST_AVAILABLE_MODELS: &str = "ListAvailableModels";
 const GENERATE_ASSISTANT_RESPONSE: &str = "GenerateAssistantResponse";
 /// The model this fixture advertises. KAS only needs an id it can carry.
 const MOCK_MODEL_ID: &str = "mock-krs-model";
+/// The entry a scenario switches to. It advertises an effort schema, which is
+/// what makes an effort ladder appear at all.
+const EFFORT_MODEL_ID: &str = "mock-krs-model-effort";
+/// A third entry advertising no schema, so a scenario can show the ladder is
+/// per-model rather than global.
+const PLAIN_MODEL_ID: &str = "mock-krs-model-plain";
 
 /// The operation from an `x-amz-target` header (`Service.Operation`).
 ///
@@ -863,15 +869,52 @@ fn target_operation(headers: &HeaderMap) -> Option<String> {
 
 /// The body of a `ListAvailableModels` answer.
 ///
-/// Held to the two members KAS reads — a model carrying an id, and a default.
+/// Held to the members KAS reads — a model carrying an id, and a default.
 /// Everything else it treats as optional, and every field added here is a field
 /// that can drift from the real service without anything noticing.
+///
+/// Three models rather than one: a single-entry registry cannot express
+/// switching, and an effort ladder is offered only for a model whose
+/// `additionalModelRequestFieldsSchema` declares an `effort` enum, so one entry
+/// carries that schema and the others deliberately do not. Ids are this
+/// fixture's own — the engine attaches nothing to an id it merely recognises.
+/// The levels are named unlike a real ladder's on purpose: a scenario asserts
+/// them as bare screen text, and short common words match the tips this lane
+/// draws at random. The default stays the fixture's plain model, so a
+/// scenario that never opens the picker sees exactly what it saw before.
 fn list_available_models_body() -> Value {
     json!({
         "models": [{
             "modelId": MOCK_MODEL_ID,
             "modelName": "Mock KRS Model",
             "description": "Served by mock-krs-server so a prompt can reach the fake KRS.",
+            "status": "Active",
+            "modelProvider": "DEFAULT",
+        }, {
+            "modelId": EFFORT_MODEL_ID,
+            "modelName": "Mock KRS Effort Model",
+            "description": "Second registry entry, advertising an effort ladder.",
+            "status": "Active",
+            "modelProvider": "DEFAULT",
+            "additionalModelRequestFieldsSchema": {
+                "type": "object",
+                "properties": {
+                    "output_config": {
+                        "type": "object",
+                        "properties": {
+                            "effort": {
+                                "type": "string",
+                                "enum": ["minimal", "balanced", "exhaustive"],
+                                "default": "balanced",
+                            },
+                        },
+                    },
+                },
+            },
+        }, {
+            "modelId": PLAIN_MODEL_ID,
+            "modelName": "Mock KRS Plain Model",
+            "description": "Third registry entry, advertising no effort ladder.",
             "status": "Active",
             "modelProvider": "DEFAULT",
         }],
@@ -1130,6 +1173,31 @@ mod tests {
             );
         }
         assert_eq!(body["defaultModel"]["modelId"], models[0]["modelId"]);
+    }
+
+    /// An effort ladder is offered only for a model advertising an `effort`
+    /// enum, so a lane can only show the ladder is per-model while exactly one
+    /// entry carries the schema and the default carries none.
+    #[test]
+    fn exactly_one_model_advertises_an_effort_ladder() {
+        let body = list_available_models_body();
+        let models = body["models"].as_array().expect("models is an array");
+
+        let advertising: Vec<&str> = models
+            .iter()
+            .filter(|model| {
+                !model["additionalModelRequestFieldsSchema"]["properties"]["output_config"]["properties"]["effort"]
+                    ["enum"]
+                    .is_null()
+            })
+            .map(|model| model["modelId"].as_str().unwrap_or_default())
+            .collect();
+
+        assert_eq!(advertising, vec![EFFORT_MODEL_ID]);
+        assert_ne!(
+            body["defaultModel"]["modelId"], EFFORT_MODEL_ID,
+            "the default must stay effort-less, or the refusal has nothing to refuse"
+        );
     }
 
     /// One rule, both services: a token good enough for KRS must be good enough
