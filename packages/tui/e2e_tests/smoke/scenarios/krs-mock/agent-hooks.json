@@ -21,13 +21,8 @@
         "screen.notContains:NoSpawnHookInBody."
       ],
       "observe": "A session-start hook runs once, before any prompt, so its output has to survive until the first request or it is lost -- and nothing on screen would say so either way. The answering turn is matched on the request body containing the hook's stdout; the paired turn requires that same output absent, so it cannot fire for any other reason, and whichever fires names the outcome on screen. This is the hook whose output has the furthest to travel, which is what makes it worth asserting separately from the per-prompt one.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "hooks": {
         "agentSpawn": [
           {
@@ -112,13 +107,8 @@
         "screen.notContains:NoPromptHookInBody."
       ],
       "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn requires that same output absent, which turns a silently dropped hook into a named string rather than a timeout. Both name this prompt and both are sticky, so a background call can neither consume the positive nor be answered by either.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "hooks": {
         "userPromptSubmit": [
           {
@@ -203,13 +193,8 @@
         "screen.contains:ToolRefusedFollowUp."
       ],
       "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The follow-up turn is matched on the request carrying a tool result, so it can only answer the continuation of the refused call -- a refusal that ended the turn outright leaves it unanswered. The refusal also preempts the approval gate entirely: this same read asks for approval when the matcher does not name it, and here no gate ever appears, so the hook is consulted before the user is. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "hooks": {
         "preToolUse": [
           {
@@ -297,13 +282,8 @@
         "screen.notContains:Tool execution failed"
       ],
       "observe": "This is the control for the refusal journey, and without it a hook engine that refused every tool would pass that one. The hook is identical and still exits non-zero; only its matcher differs, naming a tool this turn never calls. The read therefore reaches its approval gate and completes once approved, which the absent failure text checks -- the same string the refusal journey asserts present, so the two together attribute the outcome to the matcher rather than to the hook merely existing. That the gate appears at all is the other half: a refused call never reaches it.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "hooks": {
         "preToolUse": [
           {
@@ -336,6 +316,7 @@
         },
         {
           "name": "after-the-read",
+          "times": 0,
           "match": {
             "hasToolResults": true
           },
@@ -344,6 +325,22 @@
               {
                 "type": "text",
                 "content": "ScopedReadSucceeded."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
               },
               {
                 "type": "metadata",

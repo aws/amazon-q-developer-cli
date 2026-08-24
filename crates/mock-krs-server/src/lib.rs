@@ -1198,6 +1198,15 @@ mod tests {
             body["defaultModel"]["modelId"], EFFORT_MODEL_ID,
             "the default must stay effort-less, or the refusal has nothing to refuse"
         );
+        // The effort model sits at index 1 (the second picker row). A switch
+        // journey selects it with a single arrowDown from the default and pairs
+        // the answering turn with `modelId: mock-krs-model-effort`; reordering
+        // the registry would make that arrowDown land elsewhere and the journey
+        // fail confusingly rather than here.
+        assert_eq!(
+            models[1]["modelId"], EFFORT_MODEL_ID,
+            "the effort model must stay the second row the switch journey arrows to"
+        );
     }
 
     /// One rule, both services: a token good enough for KRS must be good enough

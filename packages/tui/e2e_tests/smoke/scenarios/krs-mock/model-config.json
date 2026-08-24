@@ -145,13 +145,18 @@
         "type:/model set-current-as-default",
         "enter",
         "waitForText:as default model",
-        "frame:saved"
+        "frame:saved",
+        "type:/chat new",
+        "enter",
+        "sleep:2500",
+        "frame:new-session-adopts-it"
       ],
       "verify": [
         "screen.contains:Saved Mock KRS Effort Model as default model",
-        "screen.notContains:Failed to save"
+        "screen.notContains:Failed to save",
+        "screen.contains:Default \u00b7 Mock KRS Effort Model"
       ],
-      "observe": "The switch beforehand is what makes this assertable: with the registry's own default still active, a command that saved the wrong model would produce the same message as one that saved the right one. Naming the switched-to model is therefore the whole assertion. What is NOT pinned is the write itself -- nothing in the session reads the persisted default back, and the picker marks what is active rather than what is saved -- so a confirmation that was shown without the file being written would pass here. The paired negative covers the reported-failure path.",
+      "observe": "The switch beforehand is what makes this assertable: with the registry's own default still active, a command that saved the wrong model would produce the same message as one that saved the right one. The write is then proven, not merely confirmed: a fresh session reads the persisted default back on creation and adopts it, so the status line of the new session carries 'Mock KRS Effort Model' rather than the fixture's own default of 'Mock KRS Model'. A confirmation shown without the file being written would leave the new session on the fixture default and fail the status-line needle. The paired negative covers the reported-failure path.",
       "engine": ["kas"],
       "tags": ["scenario", "journey"],
       "turns": [
@@ -375,7 +380,7 @@
         "screen.contains:Set exhaustive as default effort for Mock KRS Effort Model",
         "screen.notContains:Failed to save"
       ],
-      "observe": "An effort default is stored per model, so a confirmation that named only the level would leave a user unable to tell which model it was stored against. Both halves are asserted from the one message, and the chosen level is not the advertised default, so a command that saved whatever was already in force would name the wrong one. What is NOT pinned is the write itself: nothing in the session reads the persisted default back, so a confirmation shown without the file being written would pass here. This is the success counterpart to the journey where no level is set at all.",
+      "observe": "An effort default is stored per model, so a confirmation that named only the level would leave a user unable to tell which model it was stored against. Both halves are asserted from the one message, and the chosen level is not the advertised default, so a command that saved whatever was already in force would name the wrong one. Unlike the default-model journey, the write is not proven here: a new session and a switch away and back both re-adopt the schema's own default rather than the saved level in this lane, so nothing in-session reflects the persisted effort. The assertion is therefore the confirmation only; the persisted-effort round trip has no observable surface a journey can reach from here.",
       "engine": ["kas"],
       "tags": ["scenario", "journey"],
       "turns": [
@@ -471,7 +476,7 @@
         "screen.notContains:Effort set to",
         "screen.notContains:as default effort for"
       ],
-      "observe": "A command that cannot apply is only well behaved if it says why and what to do instead, so the wait carries the whole refusal including the remedy -- the half a user acts on, and the half a refusal is likeliest to drop. Saving the current level as a default is a second, separately-coded refusal, and its message is the predicate: it names the active model, which is what tells a user the limitation belongs to their model rather than to the command. The two success strings are asserted absent because neither command may quietly appear to have worked, and the absent picker header is what proves the first refusal replaced the ladder rather than opening an empty one. Only the second refusal is asserted from the screen: these are transient alerts, and the second has replaced the first by the time the predicates run.",
+      "observe": "A command that cannot apply is only well behaved if it says why and what to do instead, so the picker refusal is waited on in full including the remedy -- the half a user acts on, and the half a refusal is likeliest to drop. The save-as-default command is a separate code path that produces its own single-sentence refusal; the gate takes its first clause and the predicate its remainder, so what the predicate independently adds over the gate is the model-name interpolation -- naming the active model is what tells a user the limitation belongs to their model rather than to the command. The two success strings are asserted absent because neither command may quietly appear to have worked, and the absent picker header proves the first refusal replaced the ladder rather than opening an empty one. Only the save-default refusal is asserted from the screen: these are transient alerts, and it has replaced the picker refusal by the time the predicates run.",
       "engine": ["kas"],
       "tags": ["scenario", "journey"],
       "turns": [

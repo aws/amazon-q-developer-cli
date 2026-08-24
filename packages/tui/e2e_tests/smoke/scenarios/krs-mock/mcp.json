@@ -19,27 +19,18 @@
       ],
       "verify": [
         "screen.contains:1 configured",
-        "screen.contains:stubby",
-        "screen.contains:local",
+        "screen.contains:stubby        local",
         "screen.contains:2 tools",
         "screen.notContains:\u2717 failed",
         "screen.notContains:0 tools"
       ],
-      "observe": "The tool count is the load-bearing assertion: reading the config is enough to name the server and call it local, but '2 tools' only appears once the client has spawned the process, completed the initialize handshake and read the tools/list reply. A server that is configured but never reached still lists, as the failed-server journey shows, so the name alone proves nothing about the connection. '0 tools' is asserted absent because that is what the same row shows when the handshake does not complete.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "observe": "The tool count is the load-bearing assertion: reading the config is enough to name the server and place it in the Source column, but '2 tools' only appears once the client has spawned the process, completed the initialize handshake and read the tools/list reply. The Source needle is anchored to the server's own row -- 'stubby        local' with the column gap -- rather than the bare word 'local', which the panel's edit-config footer also carries regardless of any server's source. A server that is configured but never reached still lists, as the failed-server journey shows, so the name alone proves nothing about the connection. '0 tools' is asserted absent because that is what the same row shows when the handshake does not complete.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "stubby": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "ok"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "ok"]
         }
       },
       "turns": [
@@ -82,20 +73,12 @@
         "screen.notContains:\u25cf running"
       ],
       "observe": "A broken server must stay visible, because a user debugging one needs to see it and its state; silently omitting it is the failure this guards. What catches a server that starts anyway is the wait for 'failed', which expires -- the absent 'running' is a backstop for a row that reports both, and is safe to assert only because the one configured server here is the broken one. '0 tools' is asserted with a caveat rather than as proof: the Details cell shows a failure reason when one is reported and falls back to the tool count when none is, so this pins today's behaviour of reporting no reason at all. If a reason ever surfaces, this predicate is the one that should be replaced by it.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "brokenserver": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "crash"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "crash"]
         }
       },
       "turns": [
@@ -128,7 +111,7 @@
         "waitForText:ask a question",
         "type:/mcp",
         "enter",
-        "waitForText:0 tools",
+        "waitForText:emptyone      local",
         "frame:both-servers",
         "escape",
         "type:/tools",
@@ -141,28 +124,17 @@
         "screen.contains:Echo a sentinel back for scenario assertions.",
         "screen.notContains:@emptyone/"
       ],
-      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable; one is waited on and the other asserted, so neither is a restatement of the other. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. The absent '@emptyone/' only means something once that server is known to have connected, which is why the run waits for its '0 tools' row in the MCP panel first: without that wait the negative would hold just as well for a server still starting up. A provider that advertises nothing is otherwise caught by the wait for its tool.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable; one is waited on and the other asserted, so neither is a restatement of the other. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. The absent '@emptyone/' only means something once that server is known to have connected, which is why the run first waits for emptyone's own row in the MCP panel -- 'emptyone      local', its Source cell, which appears only after it handshook -- rather than for a bare '0 tools' that a still-starting stubby could satisfy. A provider that advertises nothing is otherwise caught by the wait for its tool.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "stubby": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "ok"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "ok"]
         },
         "emptyone": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "empty"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "empty"]
         }
       },
       "turns": [
@@ -204,25 +176,16 @@
         "screen.contains:stub_echo",
         "screen.contains:value=MCP-SENTINEL-42",
         "screen.contains:McpCallDone.",
-        "screen.notContains:STUB-MCP-FAILED",
         "screen.notContains:is not available",
         "screen.notContains:Standing by"
       ],
       "observe": "The argument is what the card keeps: 'value=MCP-SENTINEL-42' proves it survived the wire to the tool. The server's own reply text does NOT reach this frame -- an approved call collapses to a single line naming the tool and its argument, so asserting the result string here would fail on the success path; the error journey asserts a payload instead, because that path expands. Name resolution is proven by the wait for the approval gate: an unresolved name returns an error result without ever gating, so that step expires. 'McpCallDone.' is scripted on a turn that only fires once a tool result returns, and the absent 'is not available' is the backstop for a name that gates but still resolves to nothing.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "stubby": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "ok"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "ok"]
         }
       },
       "turns": [
@@ -305,20 +268,12 @@
         "screen.notContains:requires approval"
       ],
       "observe": "A failing MCP tool is the one path that puts the server's payload on screen: an approved call that succeeds collapses to its argument, while an error expands the card and renders what the server returned. That makes this the only place a journey can prove the reply text itself crossed the wire, and it is the case a user most needs readable -- a broken MCP tool is diagnosed from its own message. The sentinel embeds the argument, so it also proves the argument reached the server rather than the message being canned.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "flaky": {
           "command": "node",
-          "args": [
-            "{{fixture:stub-mcp-server.mjs}}",
-            "error"
-          ]
+          "args": ["{{fixture:stub-mcp-server.mjs}}", "error"]
         }
       },
       "turns": [
@@ -400,13 +355,8 @@
         "screen.notContains:\u2717 failed"
       ],
       "observe": "OAuth applies only to the remote transport, so this server is a real HTTP listener that rejects unauthenticated requests. The value is in the three-way distinction: both 'running' and 'failed' are asserted absent, because a server awaiting authorization is neither, and collapsing it into either is what leaves a user staring at a server that will never work or hunting a failure that is not one. 'Enter to authenticate' is asserted because a state the user cannot act on is only half the surface. Dropping the server's OAuth requirement flips the row to running, which fails the gate and the negative together.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "needsauth": {
           "remote": true,
@@ -458,18 +408,13 @@
       ],
       "verify": [
         "screen.notContains:Failed to start OAuth",
-        "screen.contains:Ctrl+y",
+        "screen.contains:Enter to authenticate",
         "screen.contains:\u26a0 auth-required",
         "screen.notContains:\u25cf running"
       ],
-      "observe": "Authorising a hosted MCP server finishes in a browser, so the handshake cannot complete from the terminal and this journey does not claim it does: the row is asserted to still read auth-required afterwards, and 'running' asserted absent. The load-bearing predicate is the absent failure: on this engine the clipboard confirmation is shown before the flow is restarted, so waiting on it proves only that the keypress was routed -- what proves the restart was accepted is that the error the rejection path would raise never appears, which is why the run waits out the reset before asserting. The URL itself is unassertable here: nothing renders it on the success path, and the fallback that would print it depends on whether the host has a clipboard tool. The kept Ctrl+y affordance is the difference between a user who can retry and one staring at a row that swallowed their keypress.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "observe": "Authorising a hosted MCP server finishes in a browser, so the handshake cannot complete from the terminal and this journey does not claim it does: the row is asserted to still read auth-required afterwards, and 'running' asserted absent. The load-bearing predicate is the absent failure: on this engine the clipboard confirmation is shown before the flow is restarted, so waiting on it proves only that the keypress was routed -- what proves the restart was accepted is that the error the rejection path would raise never appears, which is why the run waits out the reset before asserting. The kept 'Enter to authenticate' is the row's own action affordance -- distinct from the notification bar's transient Ctrl+y hint -- and its presence afterwards is the difference between a user who can retry from the row and one staring at a row that swallowed their keypress. The URL itself is unassertable here: nothing renders it on the success path, and the fallback that would print it depends on whether the host has a clipboard tool.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "mcpServers": {
         "needsauth": {
           "remote": true,

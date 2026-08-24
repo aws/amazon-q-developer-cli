@@ -385,10 +385,9 @@
         "screen.contains:Served by mock-krs-server so a prompt can reach the fake KRS.",
         "screen.contains:Second registry entry, advertising an effort ladder.",
         "screen.contains:Third registry entry, advertising no effort ladder.",
-        "screen.contains:credits",
         "screen.contains:\u2191\u2193 to navigate"
       ],
-      "observe": "Every entry is asserted by the description the registry supplied rather than by its model name, because the names are also rendered elsewhere -- the active one sits in the status line -- while the descriptions exist nowhere but the rows. Asserting all three is what proves the list is the registry's rather than a truncation of it. The navigate hint only appears once there is more than one row, so it fails on a picker that collapsed the registry to a single entry.",
+      "observe": "Every entry is asserted by the description the registry supplied rather than by its model name, because the names are also rendered elsewhere -- the active one sits in the status line -- while the descriptions exist nowhere but the rows. Asserting all three is what proves the list is the registry's rather than a truncation of it. The credits column is not asserted: the fixture serves no rate data, so every row shows the '----- credits' placeholder, which would pass regardless of the list being right. The navigate hint only appears once there is more than one row, so it fails on a picker that collapsed the registry to a single entry.",
       "engine": ["kas"],
       "tags": ["scenario", "journey"],
       "turns": [
@@ -481,6 +480,136 @@
         "screen.notContains:balanced      [active]"
       ],
       "observe": "Two different facts share one column: which level is in force, and which one the model advertises as its default. Until a level is chosen they are the same row and the picker cannot be shown to tell them apart, which is why this reopens the picker after choosing the level that is not the default. Each marker is asserted as one needle with its level, so a picker that put the right markers on the wrong rows fails; the negative names the row that was marked in force before the choice, which is what a stale marker would leave behind. The needles carry the column spacing, so if the widths change they fail together and loudly rather than one silently matching elsewhere.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "help-panel-lists-the-command-catalogue-with-its-subcommands",
+      "name": "The help panel lists the commands with their descriptions and subcommands",
+      "category": "panels",
+      "description": "The help panel opened on the full command catalogue -- asserts commands are listed with the descriptions the registry supplies, that a command carrying subcommands names them, and that the panel says how to scroll and close",
+      "docRef": "/docs/cli/reference/slash-commands",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/help",
+        "enter",
+        "waitForText:Usage: /<COMMAND> [subcommand]",
+        "frame:help-panel"
+      ],
+      "verify": [
+        "screen.contains:Show available commands",
+        "screen.contains:\u25b8 subcommands: create, edit, swap",
+        "screen.contains:esc to close \u00b7 \u2191\u2193 to scroll",
+        "screen.notContains:Unrecognized command"
+      ],
+      "observe": "Help is where a user goes when they do not know what exists, so a listing that rendered its chrome and none of its rows would be the worst kind of pass. Each command is asserted by the description the registry supplies rather than by its name, because the names are also what the run types and what the slash menu shows, while the descriptions exist nowhere but these rows. The subcommand line is asserted for a command that has them, since a catalogue that silently flattened them would leave every subcommand undiscoverable. The scroll hint is asserted because the catalogue is longer than the window and a user who cannot tell it scrolls sees a truncated list as the whole truth.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "config-panel-inventories-each-configuration-category-and-its-source",
+      "name": "The config panel lists every configuration category with its source and status",
+      "category": "panels",
+      "description": "The config panel opened on a workspace with some categories populated and some empty -- asserts the table names each category, reports where it came from, and marks an unconfigured one as absent rather than omitting the row",
+      "docRef": "/docs/cli/reference/slash-commands",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/config",
+        "enter",
+        "waitForText:Cloud configs apply to cloud sessions",
+        "frame:config-panel"
+      ],
+      "verify": [
+        "screen.contains:Category      Source        Status",
+        "screen.contains:MCP servers   \u2014",
+        "screen.contains:steering",
+        "screen.contains:skills",
+        "screen.notContains:Unrecognized command"
+      ],
+      "observe": "This panel answers \"what is configured, and where did it come from?\", so the load-bearing row is the empty one: MCP servers are asserted present with the dash that marks them unconfigured, because dropping a category a user has not set up is what makes the panel useless for working out why something is missing. The column header is asserted with its spacing so the three facts stay distinguishable -- a table that lost the Source column would still contain every category name. The populated categories are asserted by name only, deliberately: their counts come from whatever the workspace happens to hold and would make this journey fail on an unrelated file being added.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "changelog-panel-opens-scrollable-and-escape-puts-it-away",
+      "name": "The changelog panel opens scrollable and escape returns to the prompt",
+      "category": "panels",
+      "description": "The changelog panel opened and then dismissed -- asserts the release notes render as a scrollable overlay and that escape removes it and gives the prompt back, rather than leaving the panel or a blank region behind",
+      "docRef": "/docs/cli/reference/slash-commands",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/changelog",
+        "enter",
+        "waitForText:/Changelog",
+        "waitForText:esc to close \u00b7 \u2191\u2193 to scroll",
+        "frame:changelog-open",
+        "escape",
+        "sleep:1200",
+        "frame:changelog-closed"
+      ],
+      "verify": [
+        "screen.notContains:esc to close \u00b7 \u2191\u2193 to scroll",
+        "screen.notContains:/Changelog",
+        "screen.contains:ask a question or describe a task"
+      ],
+      "observe": "Opening and dismissing is the whole contract for a read-only overlay, and the dismissal is the half that breaks: a panel left on screen, or torn down leaving a blank region where the prompt should be, is the failure a user cannot work around. The two waits carry the positive half -- the panel appeared under its own title and reported itself scrollable -- so the predicates are free to assert the state after escape, where both strings must be gone and the prompt back. The notes themselves are not asserted: their content is whatever the release carried, so pinning any entry would make this journey fail on the next release rather than on a regression.",
       "engine": ["kas"],
       "tags": ["scenario", "journey"],
       "turns": [

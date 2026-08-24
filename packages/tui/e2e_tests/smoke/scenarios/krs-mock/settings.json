@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "Settings journeys. These touch no model at all -- the panel reads and writes local settings -- so they are the cheapest deterministic coverage in the lane and the category had none. One covers what the panel presents; the other changes a value and reopens the panel to prove it stuck, which is the half a contents-only assertion cannot reach.",
+  "notes": "Settings journeys. These touch no model at all -- the panel reads and writes local settings -- so they are the cheapest deterministic coverage in the lane. Two cover the display sub-panel: what it presents, and a toggle that survives a reopen. Two cover the /settings overlay itself: that it opens on its top screen, descends into a section, and climbs back out via escape without closing -- the wiring a documented past regression broke -- and that the interrupt-behaviour screen marks the mode in force. Navigation is by arrow rather than by typing a filter, because the top screen's search narrows on label and a typed section name can select a different row than intended.",
   "scenarios": [
     {
       "id": "settings-display-lists-the-controls-and-their-values",
@@ -29,13 +29,8 @@
         "screen.contains:to apply and close"
       ],
       "observe": "Each control is asserted with its own description rather than its label alone, because the descriptions come from the panel's registry and cannot be echoed from anything the run typed -- a panel that listed labels over the wrong rows would still pass on labels. The panel offers more rows than these three; the three asserted are the ones that change how everything else in this lane renders, and their values are left to the journey that toggles one. The toggle and apply hints are asserted because a settings list you cannot act on is only half the surface, and the toggle needle carries its arrow keys because the bare phrase also appears in a launch tip; the run gates on the panel's own question text, so none of these restate the wait.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",
@@ -67,6 +62,7 @@
         "type:/settings display",
         "enter",
         "waitForText:How would you like Kiro to display output?",
+        "waitForText:Default UI      tui",
         "arrowDown",
         "arrowLeft",
         "enter",
@@ -79,14 +75,118 @@
         "screen.contains:Animations      off",
         "screen.contains:ASCII art       on"
       ],
-      "observe": "The value is asserted only after the panel has been applied and reopened, so the assertion can be satisfied by nothing except the setting having been written -- the in-panel change is never asserted, which keeps the predicate from restating a step. The neighbouring control is asserted still on because a toggle that wrote the whole section, or wrote the wrong row, would otherwise look identical to a correct one. Both needles carry their column spacing, which couples them to the table's layout: if the widths change, both fail together and loudly rather than one silently matching elsewhere.",
-      "engine": [
-        "kas"
+      "observe": "The value is asserted only after the panel has been applied and reopened, so the assertion can be satisfied by nothing except the setting having been written -- the in-panel change is never asserted, which keeps the predicate from restating a step. The run waits for the 'Default UI      tui' row before stepping down: that row is present only in the rollout cohort, and its presence is what puts 'Animations' one row below the cursor's start. The needle carries the row's value so it cannot be satisfied by a launch tip that merely mentions the Default UI setting. Off cohort the row is dropped and 'Animations' moves to the top, so gating on it makes the single arrowDown land on the intended row by construction rather than by luck -- and fails loudly if the cohort ever flips instead of silently toggling ASCII art. The neighbouring control is asserted still on because a toggle that wrote the whole section, or wrote the wrong row, would otherwise look identical to a correct one. Both needles carry their column spacing, which couples them to the table's layout: if the widths change, both fail together and loudly rather than one silently matching elsewhere.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "settings-navigates-into-terminal-and-back-out",
+      "name": "The settings panel opens on its top screen, drills into a sub-screen and escapes back out",
+      "category": "settings",
+      "description": "The bare /settings overlay -- asserts the top screen lists its sections, that selecting Terminal descends into the terminal sub-screen, and that escape returns to the terminal screen then to the top rather than closing the overlay outright",
+      "docRef": "/docs/cli/reference/slash-commands#settings",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/settings",
+        "enter",
+        "waitForText:esc to cancel",
+        "frame:top",
+        "arrowDown",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForText:/settings \u2013 terminal",
+        "frame:terminal",
+        "arrowDown",
+        "enter",
+        "waitForText:/settings \u2013 interrupt behaviour",
+        "frame:interrupt",
+        "escape",
+        "waitForText:/settings \u2013 terminal",
+        "frame:back-terminal",
+        "escape",
+        "waitForText:esc to cancel",
+        "frame:back-top"
       ],
-      "tags": [
-        "scenario",
-        "journey"
+      "verify": [
+        "screen.contains:Keybindings",
+        "screen.contains:Prompt history scope (session or global)",
+        "screen.contains:esc to cancel",
+        "screen.notContains:/settings \u2013 terminal"
       ],
+      "observe": "A documented past regression made a settings option unreachable from the panel because selecting a section jumped past its own screen, and the only guard was unit tests over pure row builders that cannot catch the component wiring. This drives the real overlay: three arrowDowns reach Terminal from the top (Display, Verbosity, Theme precede it), Enter descends, and the wait on '/settings \u2013 terminal' proves the descent landed on the terminal screen. Descent into the interrupt screen and each escape are gated by waitForText, so the whole path -- top to terminal to interrupt and back up -- is asserted step by step in the steps rather than in the predicates. The predicates run against the final frame, which is the top screen after two escapes: a panel is a live region erased on dismissal, so only the top screen's own rows survive to assert against. 'Keybindings' and the history-scope description are top-only rows; '/settings \u2013 terminal' is asserted absent to prove the last escape climbed a level rather than leaving a sub-screen on show, and 'esc to cancel' is the top screen's footer, distinct from the sub-screens' 'esc to go back', proving the overlay is open at the top rather than closed.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "settings-interrupt-behaviour-marks-the-active-mode",
+      "name": "The interrupt-behaviour screen offers steer and queue and marks the one in force",
+      "category": "settings",
+      "description": "The terminal interrupt-behaviour sub-screen -- asserts both modes are offered with their own descriptions and that the default mode carries the active marker while the other does not",
+      "docRef": "/docs/cli/reference/slash-commands#settings",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/settings",
+        "enter",
+        "waitForText:esc to cancel",
+        "arrowDown",
+        "arrowDown",
+        "arrowDown",
+        "enter",
+        "waitForText:/settings \u2013 terminal",
+        "arrowDown",
+        "enter",
+        "waitForText:/settings \u2013 interrupt behaviour",
+        "frame:interrupt"
+      ],
+      "verify": [
+        "screen.contains:Steer \u25cf",
+        "screen.contains:Inject your message mid-turn at tool boundaries",
+        "screen.contains:Queue",
+        "screen.contains:Buffer your message and send after turn ends",
+        "screen.notContains:Queue \u25cf"
+      ],
+      "observe": "Steer is the default interrupt behaviour, so with no prior change it is the mode in force, and the active marker asserted on it -- 'Steer \u25cf' -- proves the panel read the current value rather than rendering an unmarked list a user could not read their own state from. Both modes carry their own descriptions, which come from the panel's row builder and cannot be echoed from anything typed, so asserting them proves the screen was populated rather than merely titled. 'Queue \u25cf' is asserted absent because exactly one mode may hold the marker; a panel that marked both, or the wrong one, fails here. The run gates on the screen title, so none of the mode text restates the wait.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",

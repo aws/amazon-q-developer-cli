@@ -134,6 +134,7 @@ jobs:
       smoke_priority: ${{ steps.resolve.outputs.smoke_priority }}
       visual_suite: ${{ steps.resolve.outputs.visual_suite }}
       scenario_categories: ${{ steps.resolve.outputs.scenario_categories }}
+      smoke_categories: ${{ steps.resolve.outputs.smoke_categories }}
       scenario_tag: ${{ steps.resolve.outputs.scenario_tag }}
       scenario_runner_retries: ${{ steps.resolve.outputs.scenario_runner_retries }}
       lane_attempts: ${{ steps.resolve.outputs.lane_attempts }}
@@ -413,6 +414,15 @@ jobs:
           fi
           SCENARIO_CATEGORIES="$(bun packages/tui/e2e_tests/verification/list-scenario-categories.ts "${ARGS[@]}")"
 
+          # The krs-mock smoke lane is sharded by category so its wall-clock
+          # stays flat as journeys are added (the runner executes scenarios
+          # sequentially within a shard). This list drives that matrix. It is
+          # computed for the krs-mock backend specifically — a scenario only
+          # runs there if it scripts KRS turns, which the lister already filters
+          # on — and is unfiltered by priority to match the lane, which runs
+          # every priority.
+          SMOKE_CATEGORIES="$(bun packages/tui/e2e_tests/verification/list-scenario-categories.ts --backend krs-mock --engine kas)"
+
           echo "run_smoke=${{ inputs.run_smoke }}" >> "$GITHUB_OUTPUT"
           echo "run_scenarios=${{ inputs.run_scenarios }}" >> "$GITHUB_OUTPUT"
           echo "run_visual=${{ inputs.run_visual }}" >> "$GITHUB_OUTPUT"
@@ -423,6 +433,7 @@ jobs:
           echo "smoke_priority=${{ inputs.smoke_priority }}" >> "$GITHUB_OUTPUT"
           echo "visual_suite=$VISUAL_SUITE" >> "$GITHUB_OUTPUT"
           echo "scenario_categories=$SCENARIO_CATEGORIES" >> "$GITHUB_OUTPUT"
+          echo "smoke_categories=$SMOKE_CATEGORIES" >> "$GITHUB_OUTPUT"
           echo "scenario_tag=$SCENARIO_TAG" >> "$GITHUB_OUTPUT"
           echo "scenario_runner_retries=${{ inputs.scenario_runner_retries }}" >> "$GITHUB_OUTPUT"
           echo "lane_attempts=${{ inputs.lane_attempts }}" >> "$GITHUB_OUTPUT"
@@ -1398,14 +1409,18 @@ jobs:
           if-no-files-found: warn
 
   smoke-krs-mock:
-    name: Smoke Lane (krs-mock / ubuntu-latest)
+    name: Smoke Lane (krs-mock / ${{ matrix.category }})
     permissions:
       contents: read
       id-token: write
     needs: [resolve, build-assets]
-    if: needs.resolve.outputs.run_smoke == 'true'
+    if: needs.resolve.outputs.run_smoke == 'true' && needs.resolve.outputs.smoke_categories != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        category: ${{ fromJSON(needs.resolve.outputs.smoke_categories) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -1499,26 +1514,85 @@ jobs:
           mkdir -p verification-results/krs-mock
           bun packages/tui/e2e_tests/smoke/run-smoke.ts \
             --backend krs-mock \
+            --category "${{ matrix.category }}" \
             --format tap \
             --retries "$SCENARIO_RUNNER_RETRIES" \
             --capture-frames \
             --output-dir verification-results/krs-mock
 
+      - name: Upload krs-mock artifacts
+        # Per-shard results and this shard's slice of the coverage lcov. The
+        # coverage drift check does not run here: each shard only produces its
+        # own category's lcov, and the floor is whole-lane, so drift is judged
+        # once in smoke-krs-mock-coverage after every shard's slice is merged.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-smoke-krs-mock-${{ matrix.category }}
+          path: |
+            verification-results/krs-mock/
+            verification-results/scenario-coverage/
+            packages/tui/e2e_tests/test-outputs/
+          retention-days: 7
+          if-no-files-found: warn
+
+  smoke-krs-mock-coverage:
+    name: Smoke Lane (krs-mock / coverage)
+    permissions:
+      contents: read
+    needs: [resolve, smoke-krs-mock]
+    # Aggregates the per-category coverage slices and judges drift once against
+    # the whole-lane floor. Runs whenever the shards ran, pass or fail, since a
+    # partial lane still measures something worth reporting — but not when the
+    # shard matrix was skipped outright.
+    if: always() && needs.resolve.outputs.run_smoke == 'true' && needs.resolve.outputs.smoke_categories != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+          allow-unsafe-pr-checkout: ${{ inputs.execution_mode == 'fork' }}
+
+      - name: Read pinned Bun version
+        id: bun-ver
+        shell: bash
+        run: |
+          version="$(sed -n 's/^BUN_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)"$/\1/p' "$RC_CI_ROOT/scripts/const.py" | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No pinned Bun version in $RC_CI_ROOT/scripts/const.py"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ steps.bun-ver.outputs.version }}
+
+      - name: Download all krs-mock coverage slices
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: verification-smoke-krs-mock-*
+          path: shards
+          merge-multiple: true
+
       - name: Check scenario coverage drift
-        # Only judges a lane run that actually happened: with `always()` this
-        # step would also fire after a failed lane, where the coverage dir is
-        # empty for the obvious reason, and "no lcov" would bury the real error.
-        #
-        # Both outcomes are advisory — coverage reporting does not gate merge —
-        # but they are not equally quiet. Drift below the floor is a warning.
-        # Producing no lcov at all is how this lane silently stops measuring
-        # anything, so that surfaces as an error annotation on a green run.
-        if: success()
+        # Advisory, never blocks merge. The per-scenario lcov dirs from every
+        # shard land together under one scenario-coverage/ after merge-multiple,
+        # so this merges the whole lane and compares against the whole-lane
+        # floor. Drift below the floor is a warning; producing no lcov at all is
+        # how the lane silently stops measuring, so that surfaces as an error.
+        if: always()
         continue-on-error: true
         shell: bash
         run: |
+          COVERAGE_DIR="${{ github.workspace }}/shards/verification-results/scenario-coverage"
+          if [ ! -d "$COVERAGE_DIR" ]; then
+            echo "::warning::no aggregated coverage directory — every shard may have failed before measuring"
+            exit 0
+          fi
           FLOOR=packages/tui/e2e_tests/smoke/scenarios.coverage.json
-          ARGS=(check --coverage-dir "${{ github.workspace }}/verification-results/scenario-coverage")
+          ARGS=(check --coverage-dir "$COVERAGE_DIR")
           if [ -f "$FLOOR" ]; then
             ARGS+=(--floor "$FLOOR")
           fi
@@ -1532,18 +1606,6 @@ jobs:
             *) echo "::error::scenario coverage check failed (exit $status) — see the log above; if no lcov was produced the lane measured nothing"
                exit "$status" ;;
           esac
-
-      - name: Upload krs-mock artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: verification-smoke-krs-mock
-          path: |
-            verification-results/krs-mock/
-            verification-results/scenario-coverage/
-            packages/tui/e2e_tests/test-outputs/
-          retention-days: 7
-          if-no-files-found: warn
 
   scenario-categories:
     name: Scenario Lane (${{ matrix.os }} / ${{ matrix.category }})
@@ -1984,6 +2046,7 @@ jobs:
         e2e,
         smoke,
         smoke-krs-mock,
+        smoke-krs-mock-coverage,
         scenario-categories,
         visual,
         live-parity,
@@ -1999,6 +2062,7 @@ jobs:
         needs.e2e.result != 'skipped' ||
         needs.smoke.result != 'skipped' ||
         needs.smoke-krs-mock.result != 'skipped' ||
+        needs.smoke-krs-mock-coverage.result != 'skipped' ||
         needs.scenario-categories.result != 'skipped' ||
         needs.visual.result != 'skipped' ||
         needs.live-parity.result != 'skipped'

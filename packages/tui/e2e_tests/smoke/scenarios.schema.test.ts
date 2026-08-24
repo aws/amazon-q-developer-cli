@@ -77,14 +77,18 @@ describe('scenario corpus', () => {
   it('keeps every category within the schema enum', () => {
     const offenders = corpus
       .filter(({ scenario }) => !categoryEnum.includes(scenario.category!))
-      .map(({ file, scenario }) => `${file}:${scenario.id}=${scenario.category}`);
+      .map(
+        ({ file, scenario }) => `${file}:${scenario.id}=${scenario.category}`
+      );
     expect(offenders).toEqual([]);
   });
 
   it('keeps every priority within the schema enum', () => {
     const offenders = corpus
       .filter(({ scenario }) => !priorityEnum.includes(scenario.priority!))
-      .map(({ file, scenario }) => `${file}:${scenario.id}=${scenario.priority}`);
+      .map(
+        ({ file, scenario }) => `${file}:${scenario.id}=${scenario.priority}`
+      );
     expect(offenders).toEqual([]);
   });
 
@@ -104,10 +108,31 @@ describe('scenario corpus', () => {
   // the feature working, and a negative can fail while it does. Positives are
   // the worse half — they lose coverage silently instead of flaking.
   //
-  // Scoped to the krs-mock lane, which holds zero collisions across all three
-  // shapes. shared/scenarios.json carries pre-existing ones on single words
-  // (`agent`, `plan`, `Kiro`, `line`) and is knowingly excluded rather than
-  // silently passing under a narrower check.
+  // Two checks, deliberately overlapping. The first keeps the corpus-wide
+  // `notContains` guard the suite has always had: every lane's negatives,
+  // shared included, must clear the tips. The second adds `contains` and
+  // `waitForText` on top, but only for krs-mock, because shared/scenarios.json
+  // carries pre-existing positive/gate collisions on single words (`agent`,
+  // `plan`, `Kiro`, `line`) that are out of scope here; narrowing the stronger
+  // check to krs-mock is what lets it run without first fixing those.
+  it('keeps every notContains needle clear of the launch tips', () => {
+    const { SHARED, TUI_ONLY, LITE_ONLY } = __TIPS_FOR_TESTS;
+    const tips = [...SHARED, ...TUI_ONLY, ...LITE_ONLY].map((tip) =>
+      typeof tip.text === 'string' ? tip.text : String(tip.text)
+    );
+    const offenders: string[] = [];
+    for (const { file, scenario } of corpus) {
+      for (const predicate of scenario.verify ?? []) {
+        if (!predicate.startsWith('screen.notContains:')) continue;
+        const needle = predicate.slice('screen.notContains:'.length);
+        const clash = tips.find((tip) => tip.includes(needle));
+        if (clash)
+          offenders.push(`${file} ${scenario.id}: ${needle} <- ${clash}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('keeps every krs-mock needle clear of the launch tips', () => {
     const { SHARED, TUI_ONLY, LITE_ONLY } = __TIPS_FOR_TESTS;
     // A tip's text may be a function of launch context; its source carries the
@@ -123,7 +148,10 @@ describe('scenario corpus', () => {
     const offenders: string[] = [];
     for (const { file, scenario } of corpus) {
       if (!file.includes(`krs-mock${path.sep}`)) continue;
-      const predicates = [...(scenario.verify ?? []), ...(scenario.steps ?? [])];
+      const predicates = [
+        ...(scenario.verify ?? []),
+        ...(scenario.steps ?? []),
+      ];
       for (const predicate of predicates) {
         const prefix = prefixes.find((p) => predicate.startsWith(p));
         if (!prefix) continue;
@@ -131,7 +159,9 @@ describe('scenario corpus', () => {
         if (needle.length < 3) continue;
         const clash = tips.find((tip) => tip.includes(needle));
         if (clash) {
-          offenders.push(`${file} ${scenario.id}: ${prefix}${needle} <- ${clash}`);
+          offenders.push(
+            `${file} ${scenario.id}: ${prefix}${needle} <- ${clash}`
+          );
         }
       }
     }

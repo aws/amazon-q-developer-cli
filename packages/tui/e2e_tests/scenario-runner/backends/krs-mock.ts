@@ -328,9 +328,7 @@ const FIXTURES_DIR = join(import.meta.dir, '../../fixtures');
  * none. The agent is selected by name at launch, so the servers it names are
  * the only ones the engine spawns.
  */
-async function mcpAgentConfig(
-  scenario: Scenario
-): Promise<{
+async function mcpAgentConfig(scenario: Scenario): Promise<{
   name: string;
   filePath: string;
   contents: string;
@@ -416,10 +414,18 @@ async function spawnRemoteMcpServer(
 ): Promise<{ url: string; stop: () => void }> {
   const bin = resolveMockMcpBinary();
   const portFile = join(tempDir, `mcp-port-${name}`);
-  const child = spawn(bin, [...(spec.args ?? []), '--port-file', portFile], {
-    stdio: 'ignore',
-    detached: false,
-  });
+  // --port 0 lets the OS assign a free port, which is then read back from
+  // --port-file. Without it the server binds its default (8080) and two remote
+  // scenarios running at once would collide; the scenario's own args win if it
+  // ever needs a fixed port. Mirrors the Rust spawn path in mock-mcp-server.
+  const child = spawn(
+    bin,
+    ['--port', '0', ...(spec.args ?? []), '--port-file', portFile],
+    {
+      stdio: 'ignore',
+      detached: false,
+    }
+  );
   const stop = () => {
     try {
       child.kill('SIGKILL');
@@ -446,15 +452,24 @@ async function spawnRemoteMcpServer(
 }
 
 function resolveMockMcpBinary(): string {
-  const fromEnv = process.env.MOCK_MCP_BIN;
-  if (fromEnv && existsSync(fromEnv)) return fromEnv;
-  for (const profile of ['debug', 'release']) {
-    const candidate = join(REPO_ROOT, 'target', profile, 'mock-mcp-server');
-    if (existsSync(candidate)) return candidate;
+  const override = process.env.MOCK_MCP_BIN;
+  if (override) {
+    if (!existsSync(override)) {
+      throw new Error(`MOCK_MCP_BIN points at a missing file: ${override}`);
+    }
+    return override;
   }
-  throw new Error(
-    'mock-mcp-server not found: build it (cargo build -p mock-mcp-server) or set MOCK_MCP_BIN'
-  );
+  const candidates = [
+    join(REPO_ROOT, 'target/release/mock-mcp-server'),
+    join(REPO_ROOT, 'target/debug/mock-mcp-server'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      'mock-mcp-server not found: build it (cargo build -p mock-mcp-server) or set MOCK_MCP_BIN'
+    );
+  }
+  return found;
 }
 
 export function createKrsMockBackend(engine: Engine = 'kas'): ScenarioBackend {
