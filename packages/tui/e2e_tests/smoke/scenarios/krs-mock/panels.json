@@ -43,13 +43,8 @@
           }
         }
       ],
-      "tags": [
-        "journey",
-        "scenario"
-      ],
-      "engine": [
-        "kas"
-      ]
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
     },
     {
       "id": "agent-picker-lists-registry",
@@ -89,13 +84,8 @@
           }
         }
       ],
-      "tags": [
-        "journey",
-        "scenario"
-      ],
-      "engine": [
-        "kas"
-      ]
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
     },
     {
       "id": "session-picker-lists-then-restores-prompt",
@@ -114,9 +104,7 @@
         "escape",
         "sleep:2000"
       ],
-      "verify": [
-        "screen.contains:ask a question"
-      ],
+      "verify": ["screen.contains:ask a question"],
       "observe": "The picker renders its column header and search placeholder, then escape returns to the prompt. Those two picker strings are gated by waitForText steps rather than verify on purpose: the picker is a full-screen takeover whose content never enters scrollback, so it is absent from the settled frame once dismissed -- the waitForText step catches them while the picker is still up, and fails if they never render. Verify then carries the other half: the prompt placeholder is off screen entirely while the picker is up, so finding it proves the takeover was dismissed rather than merely opened.",
       "turns": [
         {
@@ -154,13 +142,8 @@
           }
         }
       ],
-      "tags": [
-        "journey",
-        "scenario"
-      ],
-      "engine": [
-        "kas"
-      ]
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
     },
     {
       "id": "session-dashboard-search-narrows-rows",
@@ -243,13 +226,8 @@
           }
         }
       ],
-      "tags": [
-        "journey",
-        "scenario"
-      ],
-      "engine": [
-        "kas"
-      ]
+      "tags": ["journey", "scenario"],
+      "engine": ["kas"]
     },
     {
       "id": "tools-panel-view",
@@ -270,13 +248,8 @@
         "screen.contains:write"
       ],
       "observe": "The /tools slash command opens the panel listing the builtin tool groups with a search filter and an esc-to-close hint. What is pinned is that the list rendered and was populated from the tool registry -- two distinct group names cannot come from chrome. What is NOT pinned is any trust state, filtering behaviour, or per-tool permission, despite this being the trust-management surface; the permissions category covers the trust verbs separately.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "catch-all",
@@ -307,29 +280,23 @@
         "waitForText:ask a question",
         "type:/hooks",
         "enter",
-        "waitForText:2 hooks",
+        "waitForText:HOOK-PROMPT-OUT-$((40 + 48))",
         "frame:hooks-panel"
       ],
       "verify": [
         "screen.contains:2 hooks",
-        "screen.contains:echo HOOK-SPAWN-SENTINEL-77",
-        "screen.contains:HOOK-PROMPT-OUT-$((40 + 48))",
+        "screen.contains:echo HOOK-SPAWN-OUT-$((30 + 47))",
         "screen.contains:SessionStart",
         "screen.contains:UserPromptSubmit",
         "screen.notContains:No hooks configured"
       ],
-      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. Both triggers are asserted because the config spells one `agentSpawn` while the row reads SessionStart, so the pair proves the vocabulary is resolved rather than echoed. The run gates on the count, not on either trigger name, so the names are predicates that can fail rather than restatements of the wait.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "observe": "The command strings are asserted verbatim because they are what will actually run: a listing that named the hook but not its command would leave a user unable to tell which of several hooks is about to execute. The run waits on one hook's command and asserts the other's, so neither is a restatement of the other, and the count is left as a predicate that fails if the panel finds more or fewer hooks than were declared. Both triggers are asserted because the config spells one `agentSpawn` while the row reads SessionStart, so the pair proves the vocabulary is resolved rather than echoed.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "hooks": {
         "agentSpawn": [
           {
-            "command": "echo HOOK-SPAWN-SENTINEL-77"
+            "command": "echo HOOK-SPAWN-OUT-$((30 + 47))"
           }
         ],
         "userPromptSubmit": [
@@ -377,14 +344,145 @@
         "screen.notContains:SessionStart",
         "screen.notContains:UserPromptSubmit"
       ],
-      "observe": "The empty state is the control for the populated listing: the same panel with the same chrome, distinguished only by the count and the stated absence. Both trigger names are asserted absent because they are what appears once any hook is read, so a panel that listed hooks from somewhere other than the active agent would fail here rather than looking merely empty.",
-      "engine": [
-        "kas"
+      "observe": "The empty state is the counterpart to the populated listing: the same panel and the same chrome, distinguished by the count and the stated absence. It runs against the default agent, which declares no hooks, rather than a planted agent with its hooks removed -- so what it pins is that an agent without hooks reports none, not that removing hooks from one agent empties the list. Both trigger names are asserted absent because they are what appears once any hook is read, so a panel that listed hooks from somewhere other than the active agent would fail here rather than looking merely empty.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-picker-lists-every-registry-entry-and-marks-the-active-one",
+      "name": "The model picker lists every model the registry offers and marks the active one",
+      "category": "panels",
+      "description": "The model picker opened on a three-model registry -- asserts each entry appears with the description the registry supplied, the active model is marked, and the list is navigable",
+      "docRef": "/docs/cli/reference/slash-commands#model",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model",
+        "enter",
+        "waitForText:Select model:",
+        "frame:picker"
       ],
-      "tags": [
-        "scenario",
-        "journey"
+      "verify": [
+        "screen.contains:[active]",
+        "screen.contains:Served by mock-krs-server so a prompt can reach the fake KRS.",
+        "screen.contains:Second registry entry, advertising an effort ladder.",
+        "screen.contains:Third registry entry, advertising no effort ladder.",
+        "screen.contains:credits",
+        "screen.contains:\u2191\u2193 to navigate"
       ],
+      "observe": "Every entry is asserted by the description the registry supplied rather than by its model name, because the names are also rendered elsewhere -- the active one sits in the status line -- while the descriptions exist nowhere but the rows. Asserting all three is what proves the list is the registry's rather than a truncation of it. The navigate hint only appears once there is more than one row, so it fails on a picker that collapsed the registry to a single entry.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-effort-picker-lists-the-advertised-ladder",
+      "name": "A model that advertises effort levels offers them and marks the one in force",
+      "category": "panels",
+      "description": "The effort picker opened on a model whose registry entry declares an effort enum -- asserts every advertised level is offered, the level in force is marked, and the status line carries it",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model mock-krs-model-effort",
+        "enter",
+        "waitForText:Switched to Mock KRS Effort Model",
+        "type:/effort",
+        "enter",
+        "waitForText:Select effort:",
+        "frame:effort-picker"
+      ],
+      "verify": [
+        "screen.contains:minimal",
+        "screen.contains:exhaustive",
+        "screen.contains:balanced      [active]",
+        "screen.contains:\u2191\u2193 to navigate"
+      ],
+      "observe": "The three levels are the enum the registry advertised, so asserting all of them proves the ladder was read from the model rather than being a fixed list the client carries. The marked level is asserted as one needle with its marker, which pins the mark onto the level the schema names as its default -- the level in force before anything is chosen, and a ladder offered with nothing marked would leave a user unable to tell what they are already running. What the level does once chosen is a domain effect and is asserted with the model journeys, not here. The navigate hint only appears once there is more than one row, so it fails on a ladder collapsed to a single level.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "effort-picker-marks-the-level-in-force-apart-from-the-model-default",
+      "name": "The effort picker distinguishes the level in force from the model's own default",
+      "category": "panels",
+      "description": "The effort picker reopened after a non-default level was chosen -- asserts the chosen level is marked as in force, the model's advertised default is marked as the default, and the old marking is gone",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model mock-krs-model-effort",
+        "enter",
+        "waitForText:Switched to Mock KRS Effort Model",
+        "type:/effort exhaustive",
+        "enter",
+        "waitForText:Effort set to",
+        "type:/effort",
+        "enter",
+        "waitForText:Select effort:",
+        "frame:markers"
+      ],
+      "verify": [
+        "screen.contains:exhaustive    [active]",
+        "screen.contains:balanced      [default]",
+        "screen.notContains:balanced      [active]"
+      ],
+      "observe": "Two different facts share one column: which level is in force, and which one the model advertises as its default. Until a level is chosen they are the same row and the picker cannot be shown to tell them apart, which is why this reopens the picker after choosing the level that is not the default. Each marker is asserted as one needle with its level, so a picker that put the right markers on the wrong rows fails; the negative names the row that was marked in force before the choice, which is what a stale marker would leave behind. The needles carry the column spacing, so if the widths change they fail together and loudly rather than one silently matching elsewhere.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",

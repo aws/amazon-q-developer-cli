@@ -1,8 +1,99 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "Agent hook journeys. These cover hooks as an agent capability -- whether a declared hook runs and what its output reaches -- rather than the listing that shows them, which is a panel and lives with the panels. The effect a user depends on is asserted through the request body, by scripting a turn that only answers when the hook's stdout is present and pairing it with a turn that answers when it is not.",
+  "notes": "Agent hook journeys. These cover hooks as an agent capability -- whether a declared hook runs and what its output reaches -- rather than the listing that shows them, which is a panel and lives with the panels. The effect a user depends on is asserted through the request body, by scripting a turn that answers only when the hook's stdout is present and pairing it with one that answers only when it is absent, so a dropped hook renders a named string instead of timing out. Each sentinel is arithmetic the shell resolves, so the matched literal exists nowhere in the agent config that declares the hook -- only in what the hook printed. One journey per hook, because a turn can require one body substring and these need to fail separately to say which hook was dropped.",
   "scenarios": [
+    {
+      "id": "agent-spawn-hook-output-reaches-the-model",
+      "name": "A session-start hook's output is in the request the model receives",
+      "category": "agents",
+      "description": "An agentSpawn hook that prints a sentinel -- asserts the sentinel is present in the request body the agent sends, which is the only place a session-start hook's effect can be observed",
+      "docRef": "/docs/cli/reference/slash-commands#hooks",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "prompt:answer once the spawn hook has run",
+        "waitForIdle",
+        "frame:after-prompt"
+      ],
+      "verify": [
+        "screen.contains:SpawnHookReachedModel.",
+        "screen.notContains:NoSpawnHookInBody."
+      ],
+      "observe": "A session-start hook runs once, before any prompt, so its output has to survive until the first request or it is lost -- and nothing on screen would say so either way. The answering turn is matched on the request body containing the hook's stdout; the paired turn requires that same output absent, so it cannot fire for any other reason, and whichever fires names the outcome on screen. This is the hook whose output has the furthest to travel, which is what makes it worth asserting separately from the per-prompt one.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "hooks": {
+        "agentSpawn": [
+          {
+            "command": "echo HOOK-SPAWN-OUT-$((30 + 47))"
+          }
+        ]
+      },
+      "turns": [
+        {
+          "name": "spawn-hook-reached-model",
+          "times": 0,
+          "match": {
+            "userInputContains": "answer once the spawn hook has run",
+            "bodyContains": "HOOK-SPAWN-OUT-77"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "SpawnHookReachedModel."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "spawn-hook-output-missing-from-body",
+          "times": 0,
+          "match": {
+            "userInputContains": "answer once the spawn hook has run",
+            "bodyNotContains": "HOOK-SPAWN-OUT-77"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "NoSpawnHookInBody."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
     {
       "id": "agent-prompt-hook-output-reaches-the-model",
       "name": "A per-prompt hook's output is in the request the model receives",
@@ -18,9 +109,9 @@
       ],
       "verify": [
         "screen.contains:PromptHookReachedModel.",
-        "screen.notContains:NoHookOutputInBody."
+        "screen.notContains:NoPromptHookInBody."
       ],
-      "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn answers whenever that is missing, which turns a silently dropped hook into a named string on screen instead of a timeout. The sentinel is arithmetic the shell resolves, so the matched literal exists nowhere in the agent config that declares the hook -- only in what the hook printed. Asserting the second absent is what makes the first meaningful.",
+      "observe": "A context hook exists to put something in front of the model, and no panel can show whether it did. The answering turn is matched on the request body containing the hook's stdout, so it can only fire if the hook ran and its output was injected; the paired turn requires that same output absent, which turns a silently dropped hook into a named string rather than a timeout. Both name this prompt and both are sticky, so a background call can neither consume the positive nor be answered by either.",
       "engine": [
         "kas"
       ],
@@ -29,11 +120,6 @@
         "journey"
       ],
       "hooks": {
-        "agentSpawn": [
-          {
-            "command": "echo HOOK-SPAWN-SENTINEL-77"
-          }
-        ],
         "userPromptSubmit": [
           {
             "command": "echo HOOK-PROMPT-OUT-$((40 + 48))"
@@ -43,7 +129,9 @@
       "turns": [
         {
           "name": "prompt-hook-reached-model",
+          "times": 0,
           "match": {
+            "userInputContains": "answer once the prompt hook has run",
             "bodyContains": "HOOK-PROMPT-OUT-88"
           },
           "respond": {
@@ -60,13 +148,33 @@
           }
         },
         {
-          "name": "hook-output-missing-from-body",
+          "name": "prompt-hook-output-missing-from-body",
+          "times": 0,
+          "match": {
+            "userInputContains": "answer once the prompt hook has run",
+            "bodyNotContains": "HOOK-PROMPT-OUT-88"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "NoPromptHookInBody."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-background-catch-all",
           "times": 0,
           "respond": {
             "events": [
               {
                 "type": "text",
-                "content": "NoHookOutputInBody."
+                "content": "Standing by."
               },
               {
                 "type": "metadata",
@@ -94,7 +202,7 @@
         "screen.contains:Tool execution failed",
         "screen.contains:ToolRefusedFollowUp."
       ],
-      "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The refusal also preempts the approval gate entirely -- this same read asks for approval when the matcher does not name it, and here no gate ever appears, so the hook is consulted before the user is. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
+      "observe": "A pre-tool hook is the one hook that can stop an action, and this pins that it does: the call is reported failed and the model still gets its turn, so a refusal neither runs the tool nor wedges the session. The follow-up turn is matched on the request carrying a tool result, so it can only answer the continuation of the refused call -- a refusal that ended the turn outright leaves it unanswered. The refusal also preempts the approval gate entirely: this same read asks for approval when the matcher does not name it, and here no gate ever appears, so the hook is consulted before the user is. Known gap this deliberately does not assert: the hook's own stderr never reaches the screen, so the card says only 'Tool execution failed' and a user cannot see which hook refused or why. Asserting the reason would fail today; asserting its absence would fail once it is surfaced.",
       "engine": [
         "kas"
       ],
@@ -135,11 +243,30 @@
         {
           "name": "after-the-refusal",
           "times": 0,
+          "match": {
+            "hasToolResults": true
+          },
           "respond": {
             "events": [
               {
                 "type": "text",
                 "content": "ToolRefusedFollowUp."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
               },
               {
                 "type": "metadata",

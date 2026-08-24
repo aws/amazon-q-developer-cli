@@ -1,57 +1,8 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "Model and effort journeys. The fake runtime's registry carries three models: a default, one advertising an effort ladder, and one advertising none. The decisive assertion for a switch is not the status line but the request -- a turn scripted to answer only when the wire carries the chosen model id or effort, paired with one that answers otherwise, so a change that never reached the wire renders a named string instead of passing. An effort ladder is offered only for a model whose request-fields schema declares an effort enum, which is why the ladder appears on one entry, is refused on the others, and can be shown to follow the model rather than the session. Its levels are named unlike a real ladder's because a journey asserts them as bare screen text and the obvious names are substrings of the launch tips this lane draws at random. Switches that are not themselves under test are made by id rather than by arrow, so a journey cannot fail on where a picker put its cursor.",
+  "notes": "Model and effort configuration journeys. What a picker renders is a panel and lives with the panels; these assert the effects -- what becomes active, what the request carries, what a refusal says. The decisive assertion for a switch is not the status line but the request: a turn scripted to answer only when the wire carries the chosen model id or effort, paired with one that answers otherwise, so a change that never reached the wire renders a named string instead of passing. An effort ladder is offered only for a model whose request-fields schema declares an effort enum, which is why the ladder is refused on the entries without one and can be shown to follow the model rather than the session. Its levels are named unlike a real ladder's because a journey asserts them as bare screen text and the obvious names are substrings of the launch tips this lane draws at random. Both commands take a level or model as an argument as well as offering a picker, and both can save the current choice as a default; the save is confirmed but not read back, because nothing in a running session reflects the persisted value. Switches that are not themselves under test are made by id rather than by arrow, so a journey cannot fail on where a picker put its cursor.",
   "scenarios": [
-    {
-      "id": "model-picker-lists-every-registry-entry-and-marks-the-active-one",
-      "name": "The model picker lists every model the registry offers and marks the active one",
-      "category": "model-config",
-      "description": "The model picker opened on a three-model registry -- asserts each entry appears with the description the registry supplied, the active model is marked, and the list is navigable",
-      "docRef": "/docs/cli/reference/slash-commands#model",
-      "priority": "p1",
-      "steps": [
-        "waitForText:ask a question",
-        "type:/model",
-        "enter",
-        "waitForText:Select model:",
-        "frame:picker"
-      ],
-      "verify": [
-        "screen.contains:[active]",
-        "screen.contains:Served by mock-krs-server so a prompt can reach the fake KRS.",
-        "screen.contains:Second registry entry, advertising an effort ladder.",
-        "screen.contains:Third registry entry, advertising no effort ladder.",
-        "screen.contains:credits",
-        "screen.contains:\u2191\u2193 to navigate"
-      ],
-      "observe": "Every entry is asserted by the description the registry supplied rather than by its model name, because the names are also rendered elsewhere -- the active one sits in the status line -- while the descriptions exist nowhere but the rows. Asserting all three is what proves the list is the registry's rather than a truncation of it. The navigate hint only appears once there is more than one row, so it fails on a picker that collapsed the registry to a single entry.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
-      "turns": [
-        {
-          "name": "sticky-background-catch-all",
-          "times": 0,
-          "respond": {
-            "events": [
-              {
-                "type": "text",
-                "content": "Standing by."
-              },
-              {
-                "type": "metadata",
-                "stopReason": "END_TURN"
-              }
-            ]
-          }
-        }
-      ]
-    },
     {
       "id": "model-switch-changes-the-status-line-and-the-request",
       "name": "Switching models is reflected in the status line and in what the model receives",
@@ -78,13 +29,8 @@
         "screen.notContains:Select model:"
       ],
       "observe": "A switch that only repaints the status line is indistinguishable from one that took effect, so the load-bearing assertion is the answering turn: it fires only when the request carries both this prompt and the chosen model id, and the paired turn answers the same prompt on any other model, which turns a switch that never reached the wire into a named string rather than a passing run. Both are sticky and both name the prompt, so a background call can neither consume the positive nor be answered by the negative. The confirmation is waited on without its model name, leaving the name a predicate the status line has to satisfy. Choosing the second row rather than the first is what makes this a switch at all -- selecting the active model would confirm and change nothing.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "answered-as-the-chosen-model",
@@ -144,37 +90,70 @@
       ]
     },
     {
-      "id": "model-effort-picker-lists-the-advertised-ladder",
-      "name": "A model that advertises effort levels offers them and marks the one in force",
+      "id": "model-switch-to-an-unknown-model-is-refused-and-keeps-the-active-one",
+      "name": "Switching to a model that does not exist is refused and the active one is kept",
       "category": "model-config",
-      "description": "The effort picker opened on a model whose registry entry declares an effort enum -- asserts every advertised level is offered, the level in force is marked, and the status line carries it",
-      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "description": "A model id absent from the registry passed to the switch command -- asserts the refusal names the id it could not find and the model it kept, and that the status line still shows the model that was already active",
+      "docRef": "/docs/cli/reference/slash-commands#model",
       "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model ghost-model-zzz",
+        "enter",
+        "waitForText:is not available",
+        "frame:refused"
+      ],
+      "verify": [
+        "screen.contains:The model 'ghost-model-zzz' is not available. Continuing with Mock KRS Model.",
+        "screen.contains:Mock KRS Model \u00b7 \u25d4",
+        "screen.notContains:Switched to"
+      ],
+      "observe": "A rejected switch has two jobs a bare error does not do: say which id failed, and say what is running now -- without the second a user cannot tell whether they were left on their old model or on nothing. Both are asserted from the one message, and the status-line needle is the independent half: it proves the previously active model is still the one in force rather than merely being named in an alert. The absent success string is what separates a refusal from a switch that reported both.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-default-is-saved-for-the-active-model",
+      "name": "Saving the default model targets the model that is active, not the registry default",
+      "category": "model-config",
+      "description": "The save-as-default command issued after switching models -- asserts the confirmation names the model that was made active rather than the one the registry defaults to",
+      "docRef": "/docs/cli/reference/slash-commands#model",
+      "priority": "p2",
       "steps": [
         "waitForText:ask a question",
         "type:/model mock-krs-model-effort",
         "enter",
         "waitForText:Switched to Mock KRS Effort Model",
-        "type:/effort",
+        "type:/model set-current-as-default",
         "enter",
-        "waitForText:Select effort:",
-        "frame:effort-picker"
+        "waitForText:as default model",
+        "frame:saved"
       ],
       "verify": [
-        "screen.contains:minimal",
-        "screen.contains:exhaustive",
-        "screen.contains:balanced      [active]",
-        "screen.contains:Mock KRS Effort Model \u00b7 balanced \u00b7",
-        "screen.contains:\u2191\u2193 to navigate"
+        "screen.contains:Saved Mock KRS Effort Model as default model",
+        "screen.notContains:Failed to save"
       ],
-      "observe": "The three levels are the enum the registry advertised, so asserting all of them proves the ladder was read from the model rather than being a fixed list the client carries. The marked level is asserted as one needle with its marker, which pins the mark onto the level the schema names as its default -- the one in force before anything is chosen, and a ladder offered with nothing marked would leave a user unable to tell what they are already running. The status-line needle pins the level next to the model name, which is what makes the level visible without opening the picker; it is spelled with its separators so a chip rendered elsewhere, or a model rendered without one, fails here.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "observe": "The switch beforehand is what makes this assertable: with the registry's own default still active, a command that saved the wrong model would produce the same message as one that saved the right one. Naming the switched-to model is therefore the whole assertion. What is NOT pinned is the write itself -- nothing in the session reads the persisted default back, and the picker marks what is active rather than what is saved -- so a confirmation that was shown without the file being written would pass here. The paired negative covers the reported-failure path.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",
@@ -224,13 +203,8 @@
         "screen.notContains:Select effort:"
       ],
       "observe": "An effort level a user selects is worth nothing if it does not reach the model, and no panel can show whether it did. The answering turn is matched on the request body carrying the effort at the path the registry's schema declared, so it can only fire once the selection has been serialized into the request; the paired turn answers the same prompt without it, which turns a level that stopped at the status line into a named string. Both are sticky and both name the prompt, so a background call can neither consume the positive nor be answered by the negative. The confirmation is waited on without its level, leaving the level a predicate the status line has to satisfy.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "answered-with-the-chosen-effort",
@@ -290,6 +264,140 @@
       ]
     },
     {
+      "id": "model-effort-set-by-argument-applies-without-the-picker",
+      "name": "An effort level given as an argument applies without opening the picker",
+      "category": "model-config",
+      "description": "A valid effort level passed directly to the effort command -- asserts it is confirmed and reaches the status line, and that no picker was opened on the way",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model mock-krs-model-effort",
+        "enter",
+        "waitForText:Switched to Mock KRS Effort Model",
+        "type:/effort exhaustive",
+        "enter",
+        "waitForText:Effort set to",
+        "frame:applied"
+      ],
+      "verify": [
+        "screen.contains:Mock KRS Effort Model \u00b7 exhaustive \u00b7",
+        "screen.notContains:Select effort:",
+        "screen.notContains:not available"
+      ],
+      "observe": "The argument form is a separate code path from the picker and is the one a user scripts or repeats, so it is worth its own journey. The confirmation is waited on without its level, leaving the level a predicate the status line has to satisfy; the absent picker header is what proves the argument was applied directly rather than falling back to a menu. The absent refusal covers the path where the level is accepted by the command but never adopted, which reports the level as unavailable rather than failing outright.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-effort-unknown-level-is-refused-and-keeps-the-current-one",
+      "name": "An effort level the model does not advertise is refused and the current level stands",
+      "category": "model-config",
+      "description": "A level absent from the advertised ladder passed to the effort command -- asserts the refusal names the level and that the level already in force is unchanged",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model mock-krs-model-effort",
+        "enter",
+        "waitForText:Switched to Mock KRS Effort Model",
+        "type:/effort ghostlevel",
+        "enter",
+        "waitForText:not available",
+        "frame:refused"
+      ],
+      "verify": [
+        "screen.contains:Effort 'ghostlevel' not available",
+        "screen.contains:Mock KRS Effort Model \u00b7 balanced \u00b7",
+        "screen.notContains:Effort set to"
+      ],
+      "observe": "The runtime accepts a level it does not advertise and silently leaves the effort unchanged, so the client has to notice and say so -- this pins that it does, by name. The status-line needle is the independent half and the more important one: it proves the level in force is still the advertised default rather than the rejected string, which is what a user would otherwise have no way to check. The absent success string separates a refusal from a switch that reported both.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-effort-default-is-saved-for-the-active-model",
+      "name": "Saving the default effort names both the level and the model it applies to",
+      "category": "model-config",
+      "description": "The save-as-default effort command issued after choosing a level -- asserts the confirmation names the chosen level and the model it was saved for",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model mock-krs-model-effort",
+        "enter",
+        "waitForText:Switched to Mock KRS Effort Model",
+        "type:/effort exhaustive",
+        "enter",
+        "waitForText:Effort set to",
+        "type:/effort set-current-as-default",
+        "enter",
+        "waitForText:as default effort for",
+        "frame:saved"
+      ],
+      "verify": [
+        "screen.contains:Set exhaustive as default effort for Mock KRS Effort Model",
+        "screen.notContains:Failed to save"
+      ],
+      "observe": "An effort default is stored per model, so a confirmation that named only the level would leave a user unable to tell which model it was stored against. Both halves are asserted from the one message, and the chosen level is not the advertised default, so a command that saved whatever was already in force would name the wrong one. What is NOT pinned is the write itself: nothing in the session reads the persisted default back, so a confirmation shown without the file being written would pass here. This is the success counterpart to the journey where no level is set at all.",
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "id": "model-effort-ladder-follows-the-model-it-was-advertised-for",
       "name": "Switching to a model without effort levels takes the ladder away again",
       "category": "model-config",
@@ -318,13 +426,8 @@
         "screen.notContains:Mock KRS Plain Model \u00b7 balanced"
       ],
       "observe": "A ladder that appeared for one model and was still offered after switching to a model that advertises none would let a user select a level the request cannot carry, so what this pins is the withdrawal. The run reaches the ladder first -- the wait for the picker is what makes this a withdrawal rather than a ladder that never appeared -- then switches and waits for the refusal. The status-line needle is the assertion: the model name followed straight by the context gauge means no level sits between them, and the paired negative names the level that was in force on the previous model, so a chip left behind fails rather than passing quietly.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",
@@ -369,13 +472,8 @@
         "screen.notContains:as default effort for"
       ],
       "observe": "A command that cannot apply is only well behaved if it says why and what to do instead, so the wait carries the whole refusal including the remedy -- the half a user acts on, and the half a refusal is likeliest to drop. Saving the current level as a default is a second, separately-coded refusal, and its message is the predicate: it names the active model, which is what tells a user the limitation belongs to their model rather than to the command. The two success strings are asserted absent because neither command may quietly appear to have worked, and the absent picker header is what proves the first refusal replaced the ladder rather than opening an empty one. Only the second refusal is asserted from the screen: these are transient alerts, and the second has replaced the first by the time the predicates run.",
-      "engine": [
-        "kas"
-      ],
-      "tags": [
-        "scenario",
-        "journey"
-      ],
+      "engine": ["kas"],
+      "tags": ["scenario", "journey"],
       "turns": [
         {
           "name": "sticky-background-catch-all",

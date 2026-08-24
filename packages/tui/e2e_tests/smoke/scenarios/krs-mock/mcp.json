@@ -1,7 +1,7 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, split by transport because the surfaces need different things. Local stdio journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose wire behaviour is fixed by that file and which needs no build step, so a tool count or a status is identical on every run; its mode argument selects two tools, no tools, every call failing, or a process that refuses to start. Remote journeys use the checked-in mock-mcp-server binary over HTTP, because that is the transport hosted servers use and the only one OAuth applies to, and it already implements the full OAuth handshake. A remote server's port is assigned by the OS and read back before launch, so no journey names one. Registry-sourced servers are deliberately absent: KIRO_MCP_REGISTRY_URL_OVERRIDE is read only by the Rust engines, while this lane runs KAS and the TUI learns registry servers solely from KAS's status notification, so no scenario file can reach that path. Completing an OAuth handshake is out of reach from here: the authenticate action hands back a URL for a browser, so a journey can cover the state and the affordance but not the transition to running.",
+  "notes": "MCP journeys. Each declares its own servers and the engine spawns them for real. Two fixtures, because they model different failures. Local journeys use e2e_tests/fixtures/stub-mcp-server.mjs, whose mode argument selects two tools, no tools, every call answering with a tool-level isError payload, or a process that exits non-zero before answering initialize -- the last two have no equivalent in the Rust fixture. Remote journeys use the checked-in mock-mcp-server binary over HTTP, which is the transport hosted servers use and the only one OAuth applies to, and which implements the OAuth handshake the stub does not. Both are already built by the lane. A remote server's port is assigned by the OS and read back before launch, so no journey names one. Registry-sourced servers are deliberately absent: KIRO_MCP_REGISTRY_URL_OVERRIDE is read only by the Rust engines, while this lane runs KAS and the TUI learns registry servers solely from KAS's status notification, so no scenario file can reach that path. Completing an OAuth handshake is out of reach from here: the authenticate action hands a regenerated URL to the clipboard for a browser, so a journey can cover the state and the action but not the transition to running.",
   "scenarios": [
     {
       "id": "mcp-panel-reports-a-running-server",
@@ -121,7 +121,7 @@
       "id": "mcp-tools-are-listed-under-their-server",
       "name": "An MCP server's tools join the tool list under its name",
       "category": "mcp",
-      "description": "Two servers, one advertising two tools and one advertising none -- asserts both tools appear namespaced to their server with an mcp source and their own descriptions, and that the server with no tools contributes no rows",
+      "description": "Two servers, one advertising two tools and one advertising none -- asserts both tools appear namespaced to their server with their own descriptions, and that the server with no tools contributes no rows",
       "docRef": "/docs/cli/reference/slash-commands#tools",
       "priority": "p1",
       "steps": [
@@ -137,12 +137,11 @@
         "frame:tools-panel"
       ],
       "verify": [
-        "screen.contains:@stubby/stub_echo",
         "screen.contains:@stubby/stub_ping",
         "screen.contains:Echo a sentinel back for scenario assertions.",
         "screen.notContains:@emptyone/"
       ],
-      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. The absent '@emptyone/' only means something once that server is known to have connected, which is why the run waits for its '0 tools' row in the MCP panel first: without that wait the negative would hold just as well for a server still starting up. A provider that advertises nothing is otherwise caught by the wait for its tool.",
+      "observe": "Both tool names carry the server that provided them, which is what keeps two servers exposing the same name distinguishable; one is waited on and the other asserted, so neither is a restatement of the other. The description comes from the server's own tools/list reply, so asserting it proves the listing is built from the handshake rather than from config. The absent '@emptyone/' only means something once that server is known to have connected, which is why the run waits for its '0 tools' row in the MCP panel first: without that wait the negative would hold just as well for a server still starting up. A provider that advertises nothing is otherwise caught by the wait for its tool.",
       "engine": [
         "kas"
       ],
@@ -289,7 +288,7 @@
       "name": "An MCP tool that fails surfaces the server's own message",
       "category": "mcp",
       "description": "The model calls a tool on a server that answers every call with isError -- asserts the card expands and shows the text the server sent, rather than a generic failure",
-      "docRef": "/docs/cli/chat/permissions",
+      "docRef": "/docs/cli/reference/slash-commands#mcp",
       "priority": "p1",
       "steps": [
         "waitForText:ask a question",
@@ -440,10 +439,10 @@
       ]
     },
     {
-      "id": "mcp-authenticate-action-hands-back-a-usable-url",
-      "name": "Choosing authenticate hands back a URL instead of silently doing nothing",
+      "id": "mcp-authenticate-action-restarts-the-oauth-flow",
+      "name": "Choosing authenticate restarts the OAuth flow instead of failing or claiming success",
       "category": "mcp",
-      "description": "The authenticate action taken on a server awaiting OAuth -- asserts it produces a URL the user can open and keeps offering the action, rather than appearing to succeed or failing silently",
+      "description": "The authenticate action taken on a server awaiting OAuth -- asserts the request to restart the flow is accepted rather than reported as failed, and that the row keeps both its state and the action afterwards",
       "docRef": "/docs/cli/reference/slash-commands#mcp",
       "priority": "p1",
       "steps": [
@@ -454,14 +453,16 @@
         "frame:awaiting-auth",
         "enter",
         "waitForText:OAuth URL copied to clipboard",
+        "sleep:2500",
         "frame:after-authenticate"
       ],
       "verify": [
+        "screen.notContains:Failed to start OAuth",
         "screen.contains:Ctrl+y",
         "screen.contains:\u26a0 auth-required",
         "screen.notContains:\u25cf running"
       ],
-      "observe": "Authorising a hosted MCP server finishes in a browser, so the handshake cannot complete from the terminal and this journey deliberately does not claim it does: the row is asserted to still read auth-required afterwards, and 'running' asserted absent. What it does pin is that the action is not a dead end -- it hands back a URL and keeps the Ctrl+y affordance, which is the difference between a user who can finish authorising elsewhere and one staring at a row that swallowed their keypress. The wait for the clipboard confirmation is the transition; the predicates cover what the row and the affordance say after it.",
+      "observe": "Authorising a hosted MCP server finishes in a browser, so the handshake cannot complete from the terminal and this journey does not claim it does: the row is asserted to still read auth-required afterwards, and 'running' asserted absent. The load-bearing predicate is the absent failure: on this engine the clipboard confirmation is shown before the flow is restarted, so waiting on it proves only that the keypress was routed -- what proves the restart was accepted is that the error the rejection path would raise never appears, which is why the run waits out the reset before asserting. The URL itself is unassertable here: nothing renders it on the success path, and the fallback that would print it depends on whether the host has a clipboard tool. The kept Ctrl+y affordance is the difference between a user who can retry and one staring at a row that swallowed their keypress.",
       "engine": [
         "kas"
       ],
