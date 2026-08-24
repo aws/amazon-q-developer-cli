@@ -1,0 +1,166 @@
+{
+  "$schema": "../../scenarios.schema.json",
+  "version": "2.0.0",
+  "notes": "Model-configuration journeys. The fake runtime serves a single-model registry, so these cover what the picker says about the registry it was given, what selecting does, and the refusal path for a model that offers no effort levels -- not switching between models, which needs a registry with more than one entry. The model name and its description come from the fake runtime rather than from a scenario file, so a journey cannot vary them; the mutation that proves these predicates are specific is opening a different surface and finding them absent.",
+  "scenarios": [
+    {
+      "id": "model-picker-lists-the-registry-with-the-active-model-marked",
+      "name": "The model picker lists the registry and marks which model is answering",
+      "category": "model-config",
+      "description": "The model picker opened on a single-model registry -- asserts the entry carries the description the registry supplied, its credit column, and the marker showing it is the active model",
+      "docRef": "/docs/cli/reference/slash-commands#model",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model",
+        "enter",
+        "waitForText:Select model:",
+        "frame:picker"
+      ],
+      "verify": [
+        "screen.contains:[active]",
+        "screen.contains:Served by mock-krs-server so a prompt can reach the fake KRS.",
+        "screen.contains:credits",
+        "screen.contains:\u21b5 to select"
+      ],
+      "observe": "The description is the load-bearing assertion: it is supplied by the runtime's model registry, so it cannot be echoed from anything the run typed, and a picker built from a local default rather than the registry would fail on it while still showing a plausible model name. The name itself is deliberately not asserted -- it also sits in the status line, so it would pass with the picker closed. The active marker is what tells a user which model is answering, and the credit column is part of the row a user reads before choosing.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-selection-closes-the-picker-and-keeps-the-session-usable",
+      "name": "Selecting a model closes the picker and the next turn still answers",
+      "category": "model-config",
+      "description": "A model selected from the picker, then an ordinary prompt -- asserts the picker is dismissed and the session goes on to answer, rather than the selection leaving the prompt captured",
+      "docRef": "/docs/cli/reference/slash-commands#model",
+      "priority": "p1",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/model",
+        "enter",
+        "waitForText:Select model:",
+        "enter",
+        "waitForText:Switched to",
+        "prompt:answer after the model change",
+        "waitForIdle",
+        "frame:after-turn"
+      ],
+      "verify": [
+        "screen.contains:AnsweredAfterSwitch.",
+        "screen.notContains:Select model:",
+        "screen.notContains:[active]"
+      ],
+      "observe": "Choosing from a picker has two failure modes and this covers both: the overlay staying up, and the input never being handed back. The confirmation is waited on rather than asserted, so the predicates carry the part after it -- the answered turn proves the prompt still reaches the runtime, and the absent picker chrome proves the overlay released the screen. Both negatives are safe here because the picker is a live region that repaints rather than scrolling away, so its rows do not linger once it closes.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "after-the-switch",
+          "match": {
+            "userInputContains": "answer after the model change"
+          },
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "AnsweredAfterSwitch."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "model-effort-is-refused-and-says-what-to-do",
+      "name": "Effort levels on a model that has none are refused with the way forward",
+      "category": "model-config",
+      "description": "The effort command issued while a model without effort levels is active -- asserts the refusal names the limitation and tells the user what would let them proceed",
+      "docRef": "/docs/cli/reference/slash-commands#effort",
+      "priority": "p2",
+      "steps": [
+        "waitForText:ask a question",
+        "type:/effort",
+        "enter",
+        "waitForText:Effort is not available",
+        "frame:refused"
+      ],
+      "verify": [
+        "screen.contains:Select a model that supports effort levels"
+      ],
+      "observe": "A command that cannot apply is only well behaved if it says why and what to do instead, so the run waits on the limitation and asserts the remedy -- the half a user acts on, and the half a refusal is likeliest to drop. Keeping them separate means the predicate is not a restatement of the wait. The active model comes from the fake runtime and offers no effort levels, which is what makes this path the deterministic one here.",
+      "engine": [
+        "kas"
+      ],
+      "tags": [
+        "scenario",
+        "journey"
+      ],
+      "turns": [
+        {
+          "name": "sticky-background-catch-all",
+          "times": 0,
+          "respond": {
+            "events": [
+              {
+                "type": "text",
+                "content": "Standing by."
+              },
+              {
+                "type": "metadata",
+                "stopReason": "END_TURN"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

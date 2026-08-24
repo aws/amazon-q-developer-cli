@@ -1,12 +1,12 @@
 {
   "$schema": "../../scenarios.schema.json",
   "version": "2.0.0",
-  "notes": "Tangent journeys. A tangent is a child session in this engine -- /tangent <name> switches onto one and bare /tangent returns to the parent -- so it belongs with the session journeys rather than with conversation history, and it shares the switch path that loading a session uses. What a user depends on is that the detour leaves no trace on the session they came back to, which is asserted from the transcript after the return.",
+  "notes": "Tangent journeys. A tangent is a side conversation: it is entered by name, takes turns of its own, and is left again, and the taxonomy files it under conversation because what these assert is conversation logic -- where a return lands and what the transcript holds afterwards. That it is implemented as a child session, reached through the same switch path as loading one, is why the transcript is rebuilt rather than appended to, but the bug a failure here describes is a conversational one.",
   "scenarios": [
     {
-      "id": "session-tangent-holds-a-detour-then-returns-clean",
+      "id": "tangent-holds-a-detour-then-returns-clean",
       "name": "A tangent takes the session aside and returns it without the detour",
-      "category": "session-management",
+      "category": "conversation",
       "description": "A turn on the root session, a named tangent with a turn of its own, then a return -- asserts the tangent is entered and marked, and that returning restores the root transcript without the tangent's turns",
       "docRef": "/docs/cli/chat",
       "priority": "p1",
@@ -94,9 +94,9 @@
       ]
     },
     {
-      "id": "session-tangent-list-goes-from-empty-to-a-tree",
+      "id": "tangent-list-goes-from-empty-to-a-tree",
       "name": "The tangent list states the absence, then shows the tree once one exists",
-      "category": "session-management",
+      "category": "conversation",
       "description": "A tangent listing before any tangent exists and again after creating one -- asserts the empty case is stated rather than blank, and the populated case shows the tangent under its root with the current one marked",
       "docRef": "/docs/cli/chat",
       "priority": "p1",
@@ -168,9 +168,9 @@
       ]
     },
     {
-      "id": "session-tangent-bare-command-opens-one-from-root",
+      "id": "tangent-bare-command-opens-one-from-root",
       "name": "The bare tangent command starts a named detour when there is none to leave",
-      "category": "session-management",
+      "category": "conversation",
       "description": "The tangent command with no argument, issued on the root session -- asserts it opens an auto-named tangent and marks it, which is the opposite of what the same command does while already on one",
       "docRef": "/docs/cli/chat",
       "priority": "p2",
@@ -234,9 +234,9 @@
       ]
     },
     {
-      "id": "session-tangent-returns-to-a-mid-tree-parent",
+      "id": "tangent-returns-to-a-mid-tree-parent",
       "name": "Returning from a nested tangent lands on its parent and stays marked",
-      "category": "session-management",
+      "category": "conversation",
       "description": "A tangent opened from inside another tangent, then a return -- asserts the return lands on the intermediate parent rather than the root, and that the session is still marked as being on a tangent",
       "docRef": "/docs/cli/chat",
       "priority": "p1",
@@ -263,7 +263,7 @@
         "screen.notContains:\u21af beta",
         "screen.contains:AlphaNoted."
       ],
-      "observe": "Returning from a nested tangent has two ways to go wrong and this separates them. Landing on the root instead of the intermediate parent is caught by the wait for 'Returned to alpha'. The subtler one is the marker: the session is still on a tangent after this return, so the chip must still be set, and clearing it would leave a user believing they are back on the root while their turns go to a branch. The chip is asserted for the parent and asserted absent for the branch just left, which is the pair that distinguishes 'moved up one level' from 'cleared'. The parent's own answer is asserted present because the return replays that session, not the branch's.",
+      "observe": "Returning from a nested tangent has two ways to go wrong and this separates them. Landing on the root instead of the intermediate parent is caught by the wait for 'Returned to alpha'. The subtler one is the marker: the session is still on a tangent after this return, so the chip must still be set, and clearing it would leave a user believing they are back on the root while their turns go to a branch. The chip is asserted for the parent and asserted absent for the branch just left, which is the pair that distinguishes 'moved up one level' from 'cleared'. The parent's own answer is asserted present because the return replays that conversation, not the branch's.",
       "engine": [
         "kas"
       ],
