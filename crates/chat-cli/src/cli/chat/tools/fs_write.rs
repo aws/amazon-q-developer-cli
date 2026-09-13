@@ -133,7 +133,10 @@ impl FsWrite {
             },
             FsWrite::StrReplace { old_str, new_str, .. } => {
                 let file = os.fs.read_to_string(&path).await?;
-                let matches = file.match_indices(old_str).collect::<Vec<_>>();
+                let line_ending = if file.contains("\r\n") { "\r\n" } else { "\n" };
+                let old_str = old_str.replace("\r\n", "\n").replace('\n', line_ending);
+                let new_str = new_str.replace("\r\n", "\n").replace('\n', line_ending);
+                let matches = file.match_indices(&old_str).collect::<Vec<_>>();
                 queue!(
                     output,
                     style::Print("Updating: "),
@@ -145,7 +148,7 @@ impl FsWrite {
                 match matches.len() {
                     0 => return Err(eyre!("no occurrences of \"{old_str}\" were found")),
                     1 => {
-                        let file = file.replacen(old_str, new_str, 1);
+                        let file = file.replacen(&old_str, &new_str, 1);
                         os.fs.write(&path, file).await?;
                     },
                     x => return Err(eyre!("{x} occurrences of old_str were found when only 1 is expected")),
@@ -1066,6 +1069,29 @@ mod tests {
             "1: Goodbye world!",
             "expected the only occurrence to be replaced"
         );
+    }
+
+    #[tokio::test]
+    async fn test_fs_write_tool_str_replace_preserves_crlf() {
+        let os = Os::new().await.unwrap();
+        let mut stdout = std::io::stdout();
+        let mut line_tracker = HashMap::new();
+        let path = "/crlf.txt";
+        os.fs.write(path, "first\r\nsecond\r\nthird").await.unwrap();
+
+        let v = serde_json::json!({
+            "path": path,
+            "command": "str_replace",
+            "old_str": "first\nsecond",
+            "new_str": "one\ntwo",
+        });
+        serde_json::from_value::<FsWrite>(v)
+            .unwrap()
+            .invoke(&os, &mut stdout, &mut line_tracker)
+            .await
+            .unwrap();
+
+        assert_eq!(os.fs.read_to_string(path).await.unwrap(), "one\r\ntwo\r\nthird");
     }
 
     #[tokio::test]
