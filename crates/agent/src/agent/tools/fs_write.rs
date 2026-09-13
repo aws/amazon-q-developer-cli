@@ -220,7 +220,10 @@ impl StrReplace {
             .await
             .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
 
-        let matches = file.match_indices(&self.old_str).collect::<Vec<_>>();
+        let line_ending = if file.contains("\r\n") { "\r\n" } else { "\n" };
+        let old_str = self.old_str.replace("\r\n", "\n").replace('\n', line_ending);
+        let new_str = self.new_str.replace("\r\n", "\n").replace('\n', line_ending);
+        let matches = file.match_indices(&old_str).collect::<Vec<_>>();
         match matches.len() {
             0 => {
                 return Err(ToolExecutionError::Custom(format!(
@@ -229,7 +232,7 @@ impl StrReplace {
                 )));
             },
             1 => {
-                let file = file.replacen(&self.old_str, &self.new_str, 1);
+                let file = file.replacen(&old_str, &new_str, 1);
                 tokio::fs::write(path, file)
                     .await
                     .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
@@ -240,7 +243,7 @@ impl StrReplace {
                         "{x} occurrences of old_str were found when only 1 is expected"
                     )));
                 }
-                let file = file.replace(&self.old_str, &self.new_str);
+                let file = file.replace(&old_str, &new_str);
                 tokio::fs::write(path, file)
                     .await
                     .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
@@ -419,6 +422,25 @@ mod tests {
 
         let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
         assert_eq!(content, "baz bar baz");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_preserves_crlf() {
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "first\r\nsecond\r\nthird"))
+            .await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_base.join("test.txt").to_string_lossy().to_string(),
+            old_str: "first\nsecond".to_string(),
+            new_str: "one\ntwo".to_string(),
+            replace_all: false,
+        });
+
+        assert!(tool.execute(None, &test_base).await.is_ok());
+        let content = tokio::fs::read_to_string(test_base.join("test.txt")).await.unwrap();
+        assert_eq!(content, "one\r\ntwo\r\nthird");
     }
 
     #[tokio::test]
