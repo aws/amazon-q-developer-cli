@@ -1314,6 +1314,68 @@ mod tests {
         assert_eq!(nested_content, "content in nested path\n");
     }
 
+    // Issue 1932: printing the diff opened the literal "~/..." path and returned
+    // "No such file or directory", while fs_read already resolved that home path.
+    #[tokio::test]
+    async fn test_fs_write_tilde_path_queue_description() {
+        let os = Os::new().await.unwrap();
+        let mut output = Vec::new();
+        let mut line_tracker = HashMap::new();
+
+        let home = os.fs.chroot_path(os.env.home().unwrap_or_default());
+        os.fs.create_dir_all(&home).await.unwrap();
+
+        serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "~/karakuri-checkstyle.xml",
+            "command": "create",
+            "file_text": "<?xml version=\"1.0\"?>\n<module>\n</module>\n"
+        }))
+        .unwrap()
+        .invoke(&os, &mut output, &mut line_tracker)
+        .await
+        .unwrap();
+
+        let replace = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "~/karakuri-checkstyle.xml",
+            "command": "str_replace",
+            "old_str": "<module>",
+            "new_str": "<module name=\"karakuri\">"
+        }))
+        .unwrap();
+
+        replace
+            .queue_description(&os, &mut output)
+            .expect("fs_write should print a diff for paths starting with ~/");
+
+        replace
+            .invoke(&os, &mut output, &mut line_tracker)
+            .await
+            .expect("fs_write should update a file addressed with ~/");
+
+        assert_eq!(
+            os.fs
+                .read_to_string(home.join("karakuri-checkstyle.xml"))
+                .await
+                .unwrap(),
+            "<?xml version=\"1.0\"?>\n<module name=\"karakuri\">\n</module>\n"
+        );
+
+        serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "$HOME/from-home-env.txt",
+            "command": "create",
+            "file_text": "expanded"
+        }))
+        .unwrap()
+        .invoke(&os, &mut output, &mut line_tracker)
+        .await
+        .expect("fs_write should create a file addressed with $HOME");
+
+        assert_eq!(
+            os.fs.read_to_string(home.join("from-home-env.txt")).await.unwrap(),
+            "expanded\n"
+        );
+    }
+
     #[tokio::test]
     async fn test_eval_perm() {
         const DENIED_PATH_ONE: &str = "/some/denied/path";

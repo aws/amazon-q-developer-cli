@@ -375,17 +375,18 @@ impl Default for OutputKind {
     }
 }
 
-/// Performs tilde expansion and other required sanitization modifications for handling tool use
-/// path arguments.
+/// Performs tilde / `$HOME` expansion and other required sanitization modifications for handling
+/// tool use path arguments.
 ///
-/// Required since path arguments are defined by the model.
+/// Required since path arguments are defined by the model. Only a leading `~` or `$HOME`
+/// component is expanded.
 #[allow(dead_code)]
 pub fn sanitize_path_tool_arg(os: &Os, path: impl AsRef<Path>) -> PathBuf {
     let mut res = PathBuf::new();
-    // Expand `~` only if it is the first part.
+    // Expand `~` and `$HOME` only if either is the first part.
     let mut path = path.as_ref().components();
     match path.next() {
-        Some(p) if p.as_os_str() == "~" => {
+        Some(p) if is_home_path_alias(p.as_os_str()) => {
             res.push(os.env.home().unwrap_or_default());
         },
         Some(p) => res.push(p),
@@ -397,6 +398,11 @@ pub fn sanitize_path_tool_arg(os: &Os, path: impl AsRef<Path>) -> PathBuf {
     // For testing scenarios, we need to make sure paths are appropriately handled in chroot test
     // file systems since they are passed directly from the model.
     os.fs.chroot_path(res)
+}
+
+/// `~` and `$HOME` are aliases for the user home directory when they are the first path component.
+fn is_home_path_alias(component: &std::ffi::OsStr) -> bool {
+    component == "~" || component == "$HOME"
 }
 
 /// Converts `path` to a relative path according to the current working directory `cwd`.
@@ -562,11 +568,25 @@ mod tests {
             os.fs.chroot_path(expected_home.join("hello")),
             "tilde should expand"
         );
+        let actual = sanitize_path_tool_arg(&os, "$HOME/hello");
+        assert_eq!(
+            actual,
+            os.fs.chroot_path(expected_home.join("hello")),
+            "$HOME should expand"
+        );
+        let actual = sanitize_path_tool_arg(&os, "$HOME");
+        assert_eq!(actual, os.fs.chroot_path(&expected_home), "$HOME should expand");
         let actual = sanitize_path_tool_arg(&os, "/~");
         assert_eq!(
             actual,
             os.fs.chroot_path("/~"),
             "tilde should not expand when not the first component"
+        );
+        let actual = sanitize_path_tool_arg(&os, "dir/$HOME");
+        assert_eq!(
+            actual,
+            os.fs.chroot_path("dir/$HOME"),
+            "$HOME should not expand when not the first component"
         );
     }
 
